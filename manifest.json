@@ -1,0 +1,55 @@
+{
+  "id": "/dor-mis-dashboard",
+  "name": "DoR MIS Dashboard",
+  "short_name": "DoR MIS",
+  "description": "Department of Roads – Progress Monitoring Dashboard",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#0a2e1e",
+  "theme_color": "#1a5c3a",
+  "orientation": "any",
+  "scope": "/",
+  "lang": "ne",
+  "dir": "ltr",
+  "categories": [
+    "government",
+    "productivity"
+  ],
+  "icons": [
+    {
+      "src": "/logo.png",
+      "sizes": "any",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/logo.png",
+      "sizes": "any",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ],
+  "shortcuts": [
+    {
+      "name": "Dashboard",
+      "url": "/",
+      "description": "View progress dashboard"
+    }
+  ],
+  "screenshots": [
+    {
+      "src": "/logo.png",
+      "sizes": "1920x1080",
+      "type": "image/png",
+      "form_factor": "wide",
+      "label": "Dashboard Desktop Overview"
+    },
+    {
+      "src": "/logo.png",
+      "sizes": "750x1334",
+      "type": "image/png",
+      "form_factor": "narrow",
+      "label": "Dashboard Mobile View"
+    }
+  ]
+}

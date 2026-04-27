@@ -1,0 +1,11 @@
+{
+    "emeraldwalk.runonsave": {
+        "commands": [
+            {
+                "match": "wrangler\\.toml$",
+                "isAsync": true,
+                "cmd": "npx wrangler types"
+            }
+        ]
+    }
+}

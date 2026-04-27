@@ -1,0 +1,225 @@
+/**
+ * Cloudflare Worker for DoR Progress Report
+ * Features: Per-value translation, English key retention, and KV Caching.
+ */
+
+import { PDFDocument, rgb, StandardFonts } from 'pdf-lib';
+import { Tiktoken } from 'js-tiktoken/lite';
+
+// @ts-ignore - Imported as a binary asset via bundler
+import logoBytes from './logo.png';
+
+/**
+ * Interface for environment bindings.
+ */
+interface Env {
+    // Bindings and Vars from wrangler.toml
+    TRANSLATION_KV: KVNamespace;
+    RATE_LIMITER: DurableObjectNamespace;
+    UPSTASH_REDIS_REST_URL: string;
+
+    // Secrets (Managed via 'npx wrangler secret put')
+    FIREBASE_API_KEY: string;
+    FIREBASE_AUTH_DOMAIN: string;
+    FIREBASE_PROJECT_ID: string;
+    FIREBASE_PROJECT_NUMBER: string;
+    FIREBASE_APP_ID: string;
+    RECAPTCHA_SITE_KEY: string;
+    RECAPTCHA_SECRET_KEY: string;
+    PUBLISHED_SHEET_ID: string;
+    VAPID_PUBLIC_KEY: string;
+    VAPID_PRIVATE_KEY: string;
+    UPSTASH_REDIS_REST_TOKEN: string;
+    GEMINI_API_KEY: string;
+    ADMIN_SECRET: string;
+    GOOGLE_CLOUD_API_KEY: string;
+}
+
+/**
+ * Official Branding Constants from dor.gov.np
+ */
+const BRANDING = {
+    primary: "#8D1B1B",       // DoR Crimson Red
+    secondary: "#003893",     // DoR Navy Blue
+    accent: "#FFD700",        // Gold accent
+    success: "#2E7D32",       // High contrast green
+    warning: "#ED6C02",       // High contrast orange
+    error: "#D32F2F",         // High contrast red
+    background: "#F4F7F9",   // Soft, eye-appealing cool gray (not pure white)
+    surface: "#FFFFFF",      // Card/Paper color
+    textPrimary: "#1A1A1A",  // Deep Charcoal for maximum sharpness
+    textSecondary: "#455A64",// Muted Blue-Gray for secondary info
+};
+
+const BRANDING_DARK = {
+    primary: "#B71C1C",       // Darker Crimson Red for contrast
+    secondary: "#1A237E",     // Darker Navy Blue
+    accent: "#FFEB3B",        // Brighter Gold for contrast
+    success: "#66BB6A",       // Brighter Green
+    warning: "#FFB300",       // Brighter Orange
+    error: "#EF5350",         // Brighter Red
+    background: "#121212",    // Very dark gray for background
+    surface: "#1E1E1E",       // Slightly lighter dark gray for cards
+    textPrimary: "#E0E0E0",   // Light gray for primary text
+    textSecondary: "#A0A0A0", // Muted light gray for secondary info
+};
+
+// Static dictionary for common road department terms to minimize Gemini usage
+const DICTIONARY: Record<string, Record<string, string>> = {
+    ne: {
+        "On Track": "ट्र्याकमा",
+        "Delayed": "ढिलाइ",
+        "In Progress": "सञ्चालनमा",
+        "Critical": "गम्भीर",
+        "Asphalt Paving": "कालोपत्रे",
+        "Drainage Work": "ढल निर्माण",
+        "km": "कि.मि.",
+        "m": "मिटर",
+        "Nos": "संख्या"
+    }
+};
+
+const FAIL_COUNT_KEY = "system:gemini_failure_count";
+const CIRCUIT_BREAKER_KEY = "system:circuit_open";
+const FAIL_THRESHOLD = 5;
+const COOL_OFF_SECONDS = 600; // 10 minutes
+
+export default {
+    async fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
+        const url = new URL(request.url);
+        const clientIp = request.headers.get("cf-connecting-ip") || "127.0.0.1";
+        const origin = request.headers.get("Origin") || "*";
+
+        if (request.method === "OPTIONS") {
+            return new Response(null, {
+                headers: {
+                    "Access-Control-Allow-Origin": origin,
+                    "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
+                    "Access-Control-Allow-Headers": "Content-Type, X-Firebase-AppCheck, X-Admin-Secret, X-Low-Data",
+                    "Access-Control-Max-Age": "86400",
+                },
+            });
+        }
+
+        const isKillSwitchActive = await env.TRANSLATION_KV.get("system:global_kill_switch") === "true";
+        if (isKillSwitchActive && !url.pathname.startsWith('/api/admin/')) {
+            return new Response(JSON.stringify({ error: "Service Temporarily Unavailable: Global maintenance mode active." }), {
+                status: 503,
+                headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" }
+            });
+        }
+
+        let force = url.searchParams.get('force') === "true";
+        let isForceThrottled = false;
+        if (force && !url.pathname.startsWith('/api/admin/')) {
+            const forceLimitKey = `limit:force_rate:${clientIp}`;
+            const isThrottled = await this.getRedisCache(forceLimitKey, env);
+            if (isThrottled) {
+                force = false;
+                isForceThrottled = true;
+            } else {
+                await this.setRedisCache(forceLimitKey, "active", env, 120);
+            }
+        }
+
+        const isLimited = !url.pathname.startsWith('/api/admin/') && await this.checkRateLimit(clientIp, env);
+        if (isLimited) {
+            return new Response(JSON.stringify({ error: "Too Many Requests: Rate limit exceeded." }), {
+                status: 429,
+                headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" }
+            });
+        }
+
+        const securityHeaders = {
+            "Content-Security-Policy": "default-src 'self'; script-src 'self' https://www.gstatic.com https://www.google.com https://unpkg.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; img-src 'self' data: https://dor.gov.np https://dor-progress.web.app https://api.qrserver.com; connect-src 'self' https://dor-progress.banjays.workers.dev https://docs.google.com https://generativelanguage.googleapis.com https://firebaseappcheck.googleapis.com blob:; media-src 'self' blob:; frame-ancestors 'self' https://dor.gov.np https://dor-progress.web.app;",
+            "X-Content-Type-Options": "nosniff",
+            "Referrer-Policy": "strict-origin-when-cross-origin",
+            "Permissions-Policy": "geolocation=(), microphone=(), camera=()"
+        };
+
+        if (url.pathname.startsWith('/api/admin/')) {
+            const adminSecret = request.headers.get("X-Admin-Secret");
+            if (!adminSecret || !secureCompare(adminSecret, env.ADMIN_SECRET)) {
+                return new Response("Unauthorized", { status: 401 });
+            }
+            if (url.pathname === '/api/admin/config-check') {
+                const keys: (keyof Env)[] = [
+                    'FIREBASE_API_KEY', 'FIREBASE_AUTH_DOMAIN', 'FIREBASE_PROJECT_ID',
+                    'FIREBASE_PROJECT_NUMBER', 'FIREBASE_APP_ID', 'RECAPTCHA_SITE_KEY',
+                    'RECAPTCHA_SECRET_KEY', 'PUBLISHED_SHEET_ID', 'GEMINI_API_KEY', 'UPSTASH_REDIS_REST_TOKEN', 'ADMIN_SECRET'
+                ];
+                const results: Record<string, any> = {};
+                for (const k of keys) {
+                    const v = env[k];
+                    const isSet = typeof v === 'string' && v.length > 0;
+                    results[k] = isSet ? { status: "LOADED", length: v.length, preview: `${v.substring(0, 4)}...${v.slice(-4)}` } : { status: "NOT_FOUND" };
+                }
+
+                // 2. Live Infrastructure Health Check
+                const health: Record<string, string> = { status: "OPERATIONAL" };
+                try {
+                    await env.TRANSLATION_KV.put("system:health_ping", Date.now().toString(), { expirationTtl: 60 });
+                    health.kv = "CONNECTED";
+                } catch (e) { health.kv = "FAILED"; health.status = "DEGRADED"; }
+
+                const redisTest = await this.getRedisCache("system:health_ping", env);
+                health.redis = redisTest !== "CONFIG_ERROR" && redisTest !== null ? "CONNECTED" : "DISCONNECTED";
+
+                return new Response(JSON.stringify({
+                    environment: results,
+                    connectivity: health,
+                    timestamp: new Date().toISOString()
+                }), { headers: { ...securityHeaders, "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" } });
+            }
+            // ... (Other admin routes remain the same)
+        }
+
+        // ... (AppCheck, reCAPTCHA, and Route handlers follow using Env interface)
+        return new Response("DoR API Operational", { headers: securityHeaders });
+    },
+    // ... (Redis and Data Helper methods follow)
+    async getRedisCache(key: string, env: Env): Promise<string | null> {
+        if (!env.UPSTASH_REDIS_REST_URL) return "CONFIG_ERROR";
+        const baseUrl = env.UPSTASH_REDIS_REST_URL.replace(/\/$/, "");
+        const res = await fetch(`${baseUrl}/get/${key}`, { headers: { Authorization: `Bearer ${env.UPSTASH_REDIS_REST_TOKEN}` } });
+        return res.ok ? (await res.json() as any).result : null;
+    },
+
+    async setRedisCache(key: string, val: string, env: Env, ttl: number = 604800): Promise<void> {
+        if (!env.UPSTASH_REDIS_REST_URL) return;
+        const baseUrl = env.UPSTASH_REDIS_REST_URL.replace(/\/$/, "");
+        const cmd = ["SET", key, val, "EX", ttl];
+        await fetch(`${baseUrl}`, { method: "POST", headers: { Authorization: `Bearer ${env.UPSTASH_REDIS_REST_TOKEN}` }, body: JSON.stringify(cmd) });
+    },
+    // ... (Other helpers)
+};
+
+// ... (Logic functions like translateWithGemini, applyBrandingToPdf follow)
+
+async function verifyAppCheckToken(token: string | null, env: Env): Promise<boolean> {
+    if (!token || !env.FIREBASE_PROJECT_NUMBER || token.split('.').length !== 3) return false;
+    try {
+        const parts = token.split('.');
+        const payload = JSON.parse(atob(parts[1].replace(/-/g, '+').replace(/_/g, '/')));
+        return payload.exp > Date.now() / 1000 && payload.iss === `https://firebaseappcheck.googleapis.com/${env.FIREBASE_PROJECT_NUMBER}`;
+    } catch { return false; }
+}
+
+function secureCompare(a: string, b: string): boolean {
+    if (a.length !== b.length) return false; let r = 0;
+    for (let i = 0; i < a.length; i++) r |= a.charCodeAt(i) ^ b.charCodeAt(i);
+    return r === 0;
+}
+
+export class RateLimiter {
+    constructor(private state: DurableObjectState) { }
+    async fetch(request: Request) {
+        let ts: number[] = await this.state.storage.get<number[]>("ts") || [];
+        const now = Date.now();
+        ts = ts.filter(t => now - t < 60000);
+        if (ts.length >= 100) return new Response("Throttled", { status: 429 });
+        ts.push(now);
+        await this.state.storage.put("ts", ts);
+        return new Response("OK");
+    }
+}

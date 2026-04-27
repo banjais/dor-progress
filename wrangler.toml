@@ -1,0 +1,43 @@
+name = "dor-progress"
+main = "src/index.ts"
+compatibility_date = "2026-04-23"
+minify = true
+
+compatibility_flags = ["nodejs_compat"]
+
+[[kv_namespaces]]
+binding = "TRANSLATION_KV"
+id = "d032e134adec47ab85ea1b5a8c18caab"
+
+[[durable_objects.bindings]]
+name = "RATE_LIMITER"
+class_name = "RateLimiter"
+
+[env.staging]
+name = "dor-progress-staging"
+[[env.staging.kv_namespaces]]
+binding = "TRANSLATION_KV"
+id = "4caaec8be173466a8259a46d9ca3d14c"
+
+[[env.staging.durable_objects.bindings]]
+name = "RATE_LIMITER"
+class_name = "RateLimiter"
+
+[env.staging.vars]
+# No vars needed here, as secrets are managed via 'wrangler secret put'
+
+[[migrations]]
+tag = "v2"
+new_sqlite_classes = ["RateLimiter"]
+deleted_classes = ["IdempotencyLock"]
+
+[vars]
+# These variables are now managed exclusively as Secrets via 'wrangler secret put'
+
+[triggers]
+crons = ["0 * * * *"]
+
+[[rules]]
+globs = ["**/*.png", "**/*.ttf"]
+type = "Data"
+fallthrough = true
