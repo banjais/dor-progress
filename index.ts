@@ -33,6 +33,9 @@ interface Env {
     GEMINI_API_KEY: string;
     ADMIN_SECRET: string;
     GOOGLE_CLOUD_API_KEY: string;
+    API_BASE_URL: string;
+    BUILD_ID: string;
+    COMMIT_SHA: string;
 }
 
 /**
@@ -134,19 +137,21 @@ export default {
             "Content-Security-Policy": "default-src 'self'; script-src 'self' https://www.gstatic.com https://www.google.com https://unpkg.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; img-src 'self' data: https://dor.gov.np https://dor-progress.web.app https://api.qrserver.com; connect-src 'self' https://dor-progress.banjays.workers.dev https://docs.google.com https://generativelanguage.googleapis.com https://firebaseappcheck.googleapis.com blob:; media-src 'self' blob:; frame-ancestors 'self' https://dor.gov.np https://dor-progress.web.app;",
             "X-Content-Type-Options": "nosniff",
             "Referrer-Policy": "strict-origin-when-cross-origin",
-            "Permissions-Policy": "geolocation=(), microphone=(), camera=()"
+            "Permissions-Policy": "geolocation=(), microphone=(), camera=()",
+            "Access-Control-Allow-Origin": origin
         };
 
         if (url.pathname.startsWith('/api/admin/')) {
             const adminSecret = request.headers.get("X-Admin-Secret");
             if (!adminSecret || !secureCompare(adminSecret, env.ADMIN_SECRET)) {
-                return new Response("Unauthorized", { status: 401 });
+                return new Response("Unauthorized", { status: 401, headers: securityHeaders });
             }
             if (url.pathname === '/api/admin/config-check') {
                 const keys: (keyof Env)[] = [
                     'FIREBASE_API_KEY', 'FIREBASE_AUTH_DOMAIN', 'FIREBASE_PROJECT_ID',
                     'FIREBASE_PROJECT_NUMBER', 'FIREBASE_APP_ID', 'RECAPTCHA_SITE_KEY',
-                    'RECAPTCHA_SECRET_KEY', 'PUBLISHED_SHEET_ID', 'GEMINI_API_KEY', 'UPSTASH_REDIS_REST_TOKEN', 'ADMIN_SECRET'
+                    'RECAPTCHA_SECRET_KEY', 'PUBLISHED_SHEET_ID', 'GEMINI_API_KEY',
+                    'UPSTASH_REDIS_REST_TOKEN', 'ADMIN_SECRET', 'API_BASE_URL', 'BUILD_ID', 'COMMIT_SHA'
                 ];
                 const results: Record<string, any> = {};
                 for (const k of keys) {
@@ -162,14 +167,33 @@ export default {
                     health.kv = "CONNECTED";
                 } catch (e) { health.kv = "FAILED"; health.status = "DEGRADED"; }
 
+                // 3. Durable Object Storage Integrity Check (Internal DB)
+                try {
+                    const id = env.RATE_LIMITER.idFromName("health_probe");
+                    const stub = env.RATE_LIMITER.get(id);
+                    const doRes = await stub.fetch(new Request("https://rate.limit/health_check"));
+                    health.internalDb = doRes.ok ? "HEALTHY" : "CORRUPT";
+                    if (!doRes.ok) health.status = "DEGRADED";
+                } catch (e) { health.internalDb = "UNREACHABLE"; health.status = "DEGRADED"; }
+
                 const redisTest = await this.getRedisCache("system:health_ping", env);
                 health.redis = redisTest !== "CONFIG_ERROR" && redisTest !== null ? "CONNECTED" : "DISCONNECTED";
 
+                // Free TTS Connectivity Probe
+                try {
+                    const ttsProbe = await fetch("https://translate.google.com/translate_tts?q=ping&tl=en&client=tw-ob");
+                    health.ttsProxy = ttsProbe.ok ? "CONNECTED" : "THROTTLED";
+                } catch (e) { health.ttsProxy = "UNREACHABLE"; }
+
                 return new Response(JSON.stringify({
+                    metadata: {
+                        build: env.BUILD_ID || "NOT_INJECTED",
+                        sha: (env.COMMIT_SHA || "NOT_INJECTED").substring(0, 7)
+                    },
                     environment: results,
                     connectivity: health,
                     timestamp: new Date().toISOString()
-                }), { headers: { ...securityHeaders, "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" } });
+                }), { headers: { ...securityHeaders, "Content-Type": "application/json" } });
             }
             // ... (Other admin routes remain the same)
         }
@@ -177,7 +201,15 @@ export default {
         // ... (AppCheck, reCAPTCHA, and Route handlers follow using Env interface)
         return new Response("DoR API Operational", { headers: securityHeaders });
     },
-    // ... (Redis and Data Helper methods follow)
+
+    async checkRateLimit(clientIp: string, env: Env): Promise<boolean> {
+        if (!env.RATE_LIMITER) return false;
+        const id = env.RATE_LIMITER.idFromName(clientIp);
+        const stub = env.RATE_LIMITER.get(id);
+        const res = await stub.fetch(new Request("https://rate.limit/"));
+        return res.status === 429;
+    },
+
     async getRedisCache(key: string, env: Env): Promise<string | null> {
         if (!env.UPSTASH_REDIS_REST_URL) return "CONFIG_ERROR";
         const baseUrl = env.UPSTASH_REDIS_REST_URL.replace(/\/$/, "");
@@ -214,6 +246,17 @@ function secureCompare(a: string, b: string): boolean {
 export class RateLimiter {
     constructor(private state: DurableObjectState) { }
     async fetch(request: Request) {
+        const url = new URL(request.url);
+
+        // Health Check Probe for Storage Integrity
+        if (url.pathname === '/health_check') {
+            try {
+                await this.state.storage.put("integrity_ping", Date.now());
+                const val = await this.state.storage.get("integrity_ping");
+                return new Response(val ? "OK" : "FAIL");
+            } catch (e) { return new Response("FAIL", { status: 500 }); }
+        }
+
         let ts: number[] = await this.state.storage.get<number[]>("ts") || [];
         const now = Date.now();
         ts = ts.filter(t => now - t < 60000);

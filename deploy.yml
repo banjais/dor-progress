@@ -22,15 +22,6 @@ jobs:
       - name: Install Dependencies
         run: npm install
 
-      - name: Inject Build Metadata into Frontend
-        run: |
-          sed -i "s|__API_BASE_URL__|${{ secrets.API_BASE_URL }}|g" index.html
-          sed -i "s|__API_BASE_URL__|${{ secrets.API_BASE_URL }}|g" sw.v2.js
-          sed -i "s|__BUILD_ID__|${{ github.run_id }}-${{ github.run_number }}|g" index.html
-          sed -i "s|__BUILD_ID__|${{ github.run_id }}-${{ github.run_number }}|g" sw.v2.js
-          sed -i "s|__COMMIT_SHA__|${{ github.sha }}|g" index.html
-          sed -i "s|__COMMIT_SHA__|${{ github.sha }}|g" sw.v2.js
-
       - name: Sync Secrets to Cloudflare
         shell: bash
         env:
@@ -50,12 +41,9 @@ jobs:
           VAPID_PRIVATE_KEY: ${{ secrets.VAPID_PRIVATE_KEY }}
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
           GOOGLE_CLOUD_API_KEY: ${{ secrets.GOOGLE_CLOUD_API_KEY }}
-          API_BASE_URL: ${{ secrets.API_BASE_URL }}
-          BUILD_ID: "${{ github.run_id }}-${{ github.run_number }}"
-          COMMIT_SHA: ${{ github.sha }}
           ADMIN_SECRET: ${{ secrets.ADMIN_SECRET }}
         run: |
-          for secret in UPSTASH_REDIS_REST_URL UPSTASH_REDIS_REST_TOKEN FIREBASE_API_KEY FIREBASE_AUTH_DOMAIN FIREBASE_PROJECT_ID FIREBASE_PROJECT_NUMBER FIREBASE_APP_ID RECAPTCHA_SITE_KEY RECAPTCHA_SECRET_KEY PUBLISHED_SHEET_ID VAPID_PUBLIC_KEY VAPID_PRIVATE_KEY GEMINI_API_KEY GOOGLE_CLOUD_API_KEY API_BASE_URL BUILD_ID COMMIT_SHA ADMIN_SECRET; do
+          for secret in UPSTASH_REDIS_REST_URL UPSTASH_REDIS_REST_TOKEN FIREBASE_API_KEY FIREBASE_AUTH_DOMAIN FIREBASE_PROJECT_ID FIREBASE_PROJECT_NUMBER FIREBASE_APP_ID RECAPTCHA_SITE_KEY RECAPTCHA_SECRET_KEY PUBLISHED_SHEET_ID VAPID_PUBLIC_KEY VAPID_PRIVATE_KEY GEMINI_API_KEY GOOGLE_CLOUD_API_KEY ADMIN_SECRET; do
             echo "Pushing secret: $secret"
             echo "${!secret}" | npx wrangler secret put "$secret"
           done
@@ -64,3 +52,9 @@ jobs:
         uses: cloudflare/wrangler-action@v3
         with:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+
+      - name: Post-Deployment Diagnostics
+        run: |
+          echo "Waiting for propagation..."
+          sleep 5
+          curl -H "X-Admin-Secret: ${{ secrets.ADMIN_SECRET }}" "https://dor-progress.banjays.workers.dev/api/admin/config-check"

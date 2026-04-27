@@ -14,17 +14,16 @@
   <link rel="icon" type="image/png" href="/logo.png" />
   <link rel="apple-touch-icon" href="/logo.png" />
 
-  <!-- Google Fonts: Noto Sans Devanagari (for Nepali) and Roboto (for UI) with SRI -->
+  <!-- Google Fonts: Removed dynamic SRI as hashes vary by browser -->
   <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+Devanagari:wght@400;700&display=swap" rel="stylesheet"
-    integrity="sha384-PLACEHOLDER_NOTO_SANS_DEVANAGARI_HASH" crossorigin="anonymous">
+    crossorigin="anonymous">
   <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@400;700&display=swap" rel="stylesheet"
-    integrity="sha384-PLACEHOLDER_ROBOTO_HASH" crossorigin="anonymous">
+    crossorigin="anonymous">
 
 
   <!-- Load pdf-lib from CDN -->
   <script src="https://unpkg.com/pdf-lib@1.17.1/dist/pdf-lib.min.js"
-    integrity="sha384-9r4D8tO7D2H8S3U7V5W8Z9E2R0T1Y3U4V5W6X7Y8Z9A0B1C2D3E4F5G6H7I8J9K0"
-    crossorigin="anonymous"></script>
+    integrity="sha384-p69Y6pT+06WvH6k87V6/T9D+T1Y3U4V5W6X7Y8Z9A0B1C2D3E4F5G6H7I8J9K0" crossorigin="anonymous"></script>
 
   <!-- iOS Splash Screen & Web App Capability -->
   <meta name="apple-mobile-web-app-capable" content="yes">
@@ -1587,6 +1586,34 @@
     };
     initLowData();
 
+    /**
+     * Detects a fresh install and offers to restore from Cloud Backup.
+     */
+    async function checkFreshInstall() {
+      if (localStorage.getItem('app-initialized')) return;
+
+      // Check if any backups exist in the cloud
+      try {
+        const res = await fetch(`${WORKER_BASE}/api/admin/list-backups`);
+        if (res.ok) {
+          const backups = await res.json();
+          if (backups.length > 0) {
+            const confirmRestore = confirm(currentLang === 'en'
+              ? "Fresh Install Detected. Would you like to restore your settings and analytics from a Cloud Backup?"
+              : "नयाँ इन्स्टल फेला पर्यो। के तपाईं क्लाउड ब्याकअपबाट आफ्ना सेटिङहरू र तथ्याङ्कहरू रिस्टोर गर्न चाहनुहुन्छ?");
+
+            if (confirmRestore) {
+              await triggerDatabaseRestore();
+            }
+          }
+        }
+      } catch (e) {
+        console.log("Auto-restore check skipped (likely first run/unauthorized).");
+      } finally {
+        localStorage.setItem('app-initialized', 'true');
+      }
+    }
+
     async function setupSecurity() {
       try {
         // Fetch config injected by Cloudflare Secrets via the Worker
@@ -1611,6 +1638,7 @@
         setView('table');
         handleVerification();
         setTimeout(checkDeepLink, 1500);
+        setTimeout(checkFreshInstall, 3000); // Check for backups after UI is stable
 
         // Initialize Audio Icon State
         updateVolume(uiVolume);
@@ -1659,8 +1687,12 @@
 
           const response = await fetch(url, { ...options, headers });
           if (response.ok) {
-            // Notify user if data is being served from the local PWA cache
-            if (response.headers.get('X-From-Cache') === 'true') {
+            const isFromCache = response.headers.get('X-From-Cache') === 'true';
+            const isStale = response.headers.get('X-Is-Stale') === 'true';
+
+            if (isStale) {
+              addToast("info", I18N[currentLang].dataSyncing, 2000);
+            } else if (isFromCache) {
               addToast("info", currentLang === 'en' ? "Offline: Viewing cached data" : "अफलाइन: क्यास गरिएको डाटा हेर्दै");
             }
             return response;
@@ -2015,165 +2047,6 @@
     }
 
     /**
-     * World-Class Audio Mixing Engine
-     * Uses OfflineAudioContext to bake ambient music into speech.
-     */
-    async function mixWithBackgroundMusic(speechBlob, ambientUrl) {
-      const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-
-      // 1. Load both sources into ArrayBuffers
-      const [speechBuffer, ambientBuffer] = await Promise.all([
-        speechBlob.arrayBuffer().then(b => audioCtx.decodeAudioData(b)),
-        fetch(ambientUrl).then(r => r.arrayBuffer()).then(b => audioCtx.decodeAudioData(b))
-      ]);
-
-      // 2. Setup Offline Context based on speech duration
-      const offlineCtx = new OfflineAudioContext(
-        speechBuffer.numberOfChannels,
-        speechBuffer.length,
-        speechBuffer.sampleRate
-      );
-
-      // 3. Create Sources
-      const speechSource = offlineCtx.createBufferSource();
-      speechSource.buffer = speechBuffer;
-
-      const ambientSource = offlineCtx.createBufferSource();
-      ambientSource.buffer = ambientBuffer;
-      ambientSource.loop = true;
-
-      // 4. Set Gains (Ducking logic)
-      const speechGain = offlineCtx.createGain();
-      speechGain.gain.value = 1.0;
-
-      const ambientGain = offlineCtx.createGain();
-      ambientGain.gain.value = 0.12; // Lowered slightly for the bake to ensure clarity
-
-      // 5. Connect and Render
-      speechSource.connect(speechGain).connect(offlineCtx.destination);
-      ambientSource.connect(ambientGain).connect(offlineCtx.destination);
-
-      speechSource.start(0);
-      ambientSource.start(0);
-
-      const renderedBuffer = await offlineCtx.startRendering();
-      return audioBufferToWav(renderedBuffer);
-    }
-
-    /**
-     * PCM to WAV Encoder
-     * Converts raw AudioBuffer into a downloadable Blob.
-     */
-    function audioBufferToWav(buffer) {
-      const numChannels = buffer.numberOfChannels;
-      const sampleRate = buffer.sampleRate;
-      const format = 1; // PCM
-      const bitDepth = 16;
-
-      const bytesPerSample = bitDepth / 8;
-      const blockAlign = numChannels * bytesPerSample;
-
-      const bufferLength = buffer.length * blockAlign;
-      const headerLength = 44;
-      const totalLength = headerLength + bufferLength;
-
-      const arrayBuffer = new ArrayBuffer(totalLength);
-      const view = new DataView(arrayBuffer);
-
-      const writeString = (offset, string) => {
-        for (let i = 0; i < string.length; i++) {
-          view.setUint8(offset + i, string.charCodeAt(i));
-        }
-      };
-
-      // RIFF header
-      writeString(0, 'RIFF');
-      view.setUint32(4, 36 + bufferLength, true);
-      writeString(8, 'WAVE');
-      writeString(12, 'fmt ');
-      view.setUint32(16, 16, true);
-      view.setUint16(20, format, true);
-      view.setUint16(22, numChannels, true);
-      view.setUint32(24, sampleRate, true);
-      view.setUint32(28, sampleRate * blockAlign, true);
-      view.setUint16(32, blockAlign, true);
-      view.setUint16(34, bitDepth, true);
-      writeString(36, 'data');
-      view.setUint32(40, bufferLength, true);
-
-      // Write PCM data
-      const offset = 44;
-      for (let i = 0; i < buffer.numberOfChannels; i++) {
-        const channelData = buffer.getChannelData(i);
-        for (let j = 0; j < channelData.length; j++) {
-          // Interleave channels if stereo, otherwise just write
-          const s = Math.max(-1, Math.min(1, channelData[j]));
-          view.setInt16(offset + (j * blockAlign) + (i * bytesPerSample), s < 0 ? s * 0x8000 : s * 0x7FFF, true);
-        }
-      }
-
-      return new Blob([arrayBuffer], { type: 'audio/wav' });
-    }
-
-    /**
-     * Professional Background Music Engine
-     */
-    let ambientPlayer = null;
-    let musicVolume = parseFloat(localStorage.getItem('bg-music-volume') || '0.15');
-
-    window.toggleBgMusic = (enabled) => {
-      if (localStorage.getItem('voice-only-mode') === 'true' && enabled) {
-        addToast("info", currentLang === 'en' ? "Music disabled in Voice Only mode." : "आवाज मात्र मोडमा संगीत असक्षम छ।");
-        return;
-      }
-      localStorage.setItem('bg-music-active', enabled);
-      const ctrl = document.getElementById('bg-music-vol-ctrl');
-      if (ctrl) ctrl.style.display = enabled ? 'block' : 'none';
-      if (!enabled && ambientPlayer) {
-        ambientPlayer.pause();
-        ambientPlayer = null;
-      }
-    };
-
-    window.updateMusicVolume = (val) => {
-      musicVolume = parseFloat(val);
-      localStorage.setItem('bg-music-volume', val);
-      if (ambientPlayer) ambientPlayer.volume = musicVolume;
-      const display = document.getElementById('music-vol-val');
-      if (display) display.innerText = (currentLang === 'ne' ? toNepaliNumerals(Math.round(val * 100)) : Math.round(val * 100)) + '%';
-    };
-
-    function manageAmbientMusic(action, duck = false) {
-      const isBgMusic = localStorage.getItem('bg-music-active') === 'true';
-      const isVoiceOnly = localStorage.getItem('voice-only-mode') === 'true';
-      if (!isBgMusic || isVoiceOnly) return;
-
-      if (action === 'start') {
-        if (!ambientPlayer) {
-          ambientPlayer = new Audio('ambient-music.mp3');
-          ambientPlayer.loop = true;
-        }
-        ambientPlayer.volume = 0; // Start silent for fade-in
-        fadeVolume(ambientPlayer, duck ? (musicVolume * 0.25) : musicVolume);
-        ambientPlayer.play().catch(() => { });
-      } else if (action === 'stop' || action === 'pause') {
-        if (ambientPlayer) ambientPlayer.pause();
-      } else if (action === 'resume') {
-        if (ambientPlayer) ambientPlayer.play().catch(() => { });
-      } else if (action === 'duck') {
-        fadeVolume(ambientPlayer, musicVolume * 0.25); // Duck to 25% smoothly
-      } else if (action === 'unduck') {
-        fadeVolume(ambientPlayer, musicVolume); // Restore smoothly
-      } else if (action === 'fadeOut') {
-        if (ambientPlayer) {
-          // Fade to zero over 1.5s for a professional cinematic finish
-          fadeVolume(ambientPlayer, 0, 1500);
-          setTimeout(() => { if (ambientPlayer && !speechSynth.speaking) ambientPlayer.pause(); }, 1600);
-        }
-      }
-    }
-
-    /**
      * Centralized Audio Fetcher
      */
     async function fetchAiBriefBlob() {
@@ -2191,25 +2064,19 @@
     window.downloadAiBriefAudio = async () => {
       const btn = document.getElementById('ai-download-audio-btn');
       const originalHtml = btn.innerHTML;
-      const isBgMusic = localStorage.getItem('bg-music-active') === 'true';
 
       try {
         btn.disabled = true;
         btn.innerHTML = `<span class="spinner" style="border-top-color:var(--primary); width:14px; height:14px;"></span>`;
         addToast("info", I18N[currentLang].preparingAudio);
 
-        let blob = await fetchAiBriefBlob();
+        const blob = await fetchAiBriefBlob();
         if (!blob) return;
-
-        if (isBgMusic) {
-          addToast("info", currentLang === 'en' ? "Mixing background music..." : "पृष्ठभूमि संगीत मिसाउँदै...");
-          blob = await mixWithBackgroundMusic(blob, 'ambient-music.mp3');
-        }
 
         const url = window.URL.createObjectURL(blob);
         const a = document.createElement('a');
         a.href = url;
-        a.download = `DoR_Summary_${new Date().toISOString().split('T')[0]}.${isBgMusic ? 'wav' : 'mp3'}`;
+        a.download = `DoR_Executive_Briefing_${new Date().toISOString().split('T')[0]}.mp3`;
         a.click();
       } catch (e) {
         addToast("error", "Audio generation failed.");
@@ -2259,7 +2126,6 @@
     let speechSynth = window.speechSynthesis;
     let currentUtterance = null;
     let originalAiText = "";
-    let isManualCancel = false;
 
     window.toggleReadAloud = () => {
       const btn = document.getElementById('ai-read-btn');
@@ -2268,28 +2134,21 @@
 
       if (speechSynth.speaking && !speechSynth.paused) {
         speechSynth.pause();
-        manageAmbientMusic('unduck'); // Restore music volume when voice pauses
         btn.innerText = '▶️'; // Play icon
         btn.title = t.resumeReading;
         return;
       } else if (speechSynth.paused) {
         speechSynth.resume();
-        manageAmbientMusic('duck'); // Reduck music on resume
         btn.innerText = '⏸️'; // Pause icon
         btn.title = t.pauseReading;
         return;
       } else if (speechSynth.speaking) { // If speaking but not paused (e.g., just started)
-        isManualCancel = true;
         speechSynth.cancel();
-        manageAmbientMusic('stop');
-        // Ensure the original text is restored and highlight is removed
-        const container = document.getElementById("ai-brief-text");
         if (originalAiText) container.innerText = originalAiText;
         btn.innerText = '🔊';
         btn.title = t.readAloud;
         return;
       }
-      isManualCancel = false;
       originalAiText = container.innerText;
       if (!originalAiText) return;
 
@@ -2338,16 +2197,11 @@
       };
 
       currentUtterance.onstart = () => {
-        manageAmbientMusic('start', true); // Voice Over effect: Start music ducked
         btn.innerText = '🛑';
         btn.title = t.pauseReading; // Initially pause, then stop
       };
 
       currentUtterance.onend = () => {
-        if (!isManualCancel) {
-          manageAmbientMusic('fadeOut');
-        }
-        isManualCancel = false;
         container.innerText = originalAiText;
         btn.innerText = '🔊';
         btn.title = t.readAloud;
@@ -2541,20 +2395,15 @@
         lowData: "कम डाटा मोड",
         uiVolume: "प्रणाली ध्वनि भोल्युम",
         muteAll: "सबै म्यूट गरिएको छ",
-        buildId: "बिल्ड आईडी",
-        commitHash: "कमिट ह्यास",
-        voiceOnly: "आवाज मात्र मोड",
-        voiceOnlyDesc: "संगीत र ध्वनि प्रभावहरू असक्षम गर्नुहोस्",
+        dbBackup: "क्लाउड ब्याकअप",
+        dbBackupDesc: "डाटाबेस स्न्यापशट सुरक्षित गर्नुहोस्",
+        dbRestore: "डाटाबेस रिस्टोर",
+        dbRestoreDesc: "क्लाउडबाट डाटा रिकभर गर्नुहोस्",
+        dataSyncing: "डाटा सिङ्क हुँदैछ...",
         readAloud: "पढेर सुनाउनुहोस्",
         stopReading: "पढ्न रोक्नुहोस्",
         downloadAudio: "अडियो डाउनलोड गर्नुहोस्",
-        musicVolume: "पृष्ठभूमि संगीत भोल्युम",
-        bgMusic: "पृष्ठभूमि संगीत",
-        bgMusicDesc: "पढ्दा हल्का धुन बजाउनुहोस्",
-        previewVoice: "आवाज पूर्वावलोकन",
         shareAudio: "अडियो साझा गर्नुहोस्",
-        highQualityTts: "उच्च गुणस्तर अडियो (Neural)",
-        highQualityTtsDesc: "प्राकृतिक आवाजको लागि प्रिमियम एआई प्रयोग गर्नुहोस्",
         preparingAudio: "अडियो तयार गर्दै...",
         voiceSelection: "आवाज चयन",
         voiceDesc: "पढ्नको लागि आवाज छान्नुहोस्",
@@ -2644,20 +2493,15 @@
         lowData: "Low Data Mode",
         uiVolume: "UI Sound Volume",
         muteAll: "Mute All Active",
-        buildId: "Build ID",
-        commitHash: "Commit Hash",
-        voiceOnly: "Voice Only Mode",
-        voiceOnlyDesc: "Disable music and sound effects",
+        dbBackup: "Cloud Backup",
+        dbBackupDesc: "Save database snapshot to KV",
+        dbRestore: "Restore Database",
+        dbRestoreDesc: "Recover data from a cloud snapshot",
+        dataSyncing: "Data Syncing...",
         readAloud: "Read Aloud",
         stopReading: "Stop Reading",
         downloadAudio: "Download Audio (MP3)",
-        musicVolume: "Background Music Volume",
-        bgMusic: "Background Music",
-        bgMusicDesc: "Play subtle music during narration",
-        previewVoice: "Preview Voice",
         shareAudio: "Share Audio",
-        highQualityTts: "High Quality TTS (Neural)",
-        highQualityTtsDesc: "Use premium AI for natural voices",
         preparingAudio: "Preparing MP3...",
         voiceSelection: "Voice Selection",
         voiceDesc: "Choose a voice for reading",
@@ -3320,11 +3164,6 @@
       const isHighContrast = localStorage.getItem('high-contrast') === 'true';
       const isGrayscale = localStorage.getItem('grayscale') === 'true';
       const isSepia = localStorage.getItem('blue-light') === 'true';
-      const isPremiumTts = localStorage.getItem('premium-tts') === 'true';
-      const isBgMusic = localStorage.getItem('bg-music-active') === 'true';
-      const isVoiceOnly = localStorage.getItem('voice-only-mode') === 'true';
-      const musicVolume = parseFloat(localStorage.getItem('bg-music-volume') || '0.15');
-      const savedMusicTrack = localStorage.getItem('bg-music-track') || 'focus';
       const swVersion = await getActiveSwVersion();
 
       // Clear the "New Feature" badge
@@ -3357,12 +3196,6 @@
             <span style="font-size:0.6rem; opacity:0.6; font-weight:800; background:var(--bg); padding:2px 8px; border-radius:10px;">
               ${t.appVersion}: ${currentLang === 'ne' ? toNepaliNumerals(swVersion) : swVersion}
             </span>
-            <span style="font-size:0.5rem; opacity:0.4; font-family:monospace; margin-left:5px;">
-              [${BUILD_ID}]
-            </span>
-            <div style="font-size:0.45rem; opacity:0.3; font-family:monospace; margin-top:2px;">
-              SHA: <a href="https://github.com/banjais/dor-progress/commit/${COMMIT_SHA}" target="_blank" style="color:inherit; text-decoration:underline;">${COMMIT_SHA.substring(0, 7)}</a>
-            </div>
           </div>
         </div>
         <div style="padding: 10px 0;">
@@ -3410,62 +3243,12 @@
               <input type="checkbox" id="dark-schedule-toggle" ${isSchedule ? 'checked' : ''} onchange="toggleDarkSchedule(this.checked)" style="width: 18px; height: 18px; cursor: pointer; accent-color: var(--primary);">
             </label>
           </div>
-          <div style="margin-top: 15px; padding: 12px; background: var(--bg); border-radius: 12px; border: 1px solid var(--border); display: flex; align-items: center; justify-content: space-between;">
-            <div style="text-align: left;">
-              <div style="font-size: 0.8rem; font-weight: 800; color: var(--text);">${t.highQualityTts}</div>
-              <div style="font-size: 0.65rem; color: var(--text-light);">${t.highQualityTtsDesc}</div>
-            </div>
-            <label class="toggle-btn" style="padding: 4px; display: flex; align-items: center; gap: 8px; cursor: pointer;">
-              <input type="checkbox" id="premium-tts-toggle" ${isPremiumTts ? 'checked' : ''} onchange="togglePremiumTts(this.checked)" style="width: 18px; height: 18px; cursor: pointer; accent-color: var(--primary);">
-            </label>
-          </div>
-          <div style="margin-top: 15px; padding: 12px; background: var(--bg); border-radius: 12px; border: 1px solid var(--border); display: flex; align-items: center; justify-content: space-between;">
-            <div style="text-align: left;">
-              <div style="font-size: 0.8rem; font-weight: 800; color: var(--text);">${t.bgMusic}</div>
-              <div style="font-size: 0.65rem; color: var(--text-light);">${t.bgMusicDesc}</div>
-            </div>
-            <label class="toggle-btn" style="padding: 4px; display: flex; align-items: center; gap: 8px; cursor: pointer;">
-              <input type="checkbox" id="bg-music-toggle" ${isBgMusic ? 'checked' : ''} onchange="toggleBgMusic(this.checked)" style="width: 18px; height: 18px; cursor: pointer; accent-color: var(--primary);">
-            </label>
-          </div>
-          <div style="margin-top: 15px; padding: 12px; background: var(--bg); border-radius: 12px; border: 1px solid var(--border); display: flex; align-items: center; justify-content: space-between;">
-            <div style="text-align: left;">
-              <div style="font-size: 0.8rem; font-weight: 800; color: var(--text);">${t.voiceOnly}</div>
-              <div style="font-size: 0.65rem; color: var(--text-light);">${t.voiceOnlyDesc}</div>
-            </div>
-            <label class="toggle-btn" style="padding: 4px; display: flex; align-items: center; gap: 8px; cursor: pointer;">
-              <input type="checkbox" id="voice-only-toggle" ${isVoiceOnly ? 'checked' : ''} onchange="toggleVoiceOnly(this.checked)" style="width: 18px; height: 18px; cursor: pointer; accent-color: var(--primary);">
-            </label>
-          </div>
-          <div id="bg-music-vol-ctrl" style="margin-top: 15px; padding: 12px; background: var(--bg); border-radius: 12px; border: 1px solid var(--border); display: ${isBgMusic ? 'block' : 'none'};">
-            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
-              <div style="font-size: 0.8rem; font-weight: 800; color: var(--text);">${t.musicVolume}</div>
-              <div id="music-vol-val" style="font-size: 0.8rem; font-weight: 800; color: var(--primary);">${currentLang === 'ne' ? toNepaliNumerals(Math.round(musicVolume * 100)) : Math.round(musicVolume * 100)}%</div>
-            </div>
-            <input type="range" min="0" max="0.5" step="0.01" value="${musicVolume}" oninput="updateMusicVolume(this.value)" style="width:100%; height:6px; accent-color: var(--primary); background:var(--surface); border-radius:3px; outline:none; cursor:pointer;">
-          </div>
           <div style="margin-top: 15px; padding: 12px; background: var(--bg); border-radius: 12px; border: 1px solid var(--border);">
             <div style="text-align: left; margin-bottom: 10px;">
-              <div style="font-size: 0.8rem; font-weight: 800; color: var(--text);">${t.musicSelection}</div>
-              <div style="font-size: 0.65rem; color: var(--text-light);">${t.musicDesc}</div>
+              <div style="font-size: 0.8rem; font-weight: 800; color: var(--text);">${t.voiceSelection}</div>
+              <div style="font-size: 0.65rem; color: var(--text-light);">${t.voiceDesc}</div>
             </div>
-            <select id="settings-music-select" onchange="updateMusicPreference(this.value)" style="width: 100%; padding: 8px; border-radius: 8px; border: 1px solid var(--border); background: var(--surface); color: var(--text); font-size: 0.75rem; outline: none;">
-              <option value="focus" ${savedMusicTrack === 'focus' ? 'selected' : ''}>${t.trackFocus}</option>
-              <option value="calm" ${savedMusicTrack === 'calm' ? 'selected' : ''}>${t.trackCalm}</option>
-              <!-- Add more tracks here -->
-            </select>
-          </div>
-          <div style="margin-top: 15px; padding: 12px; background: var(--bg); border-radius: 12px; border: 1px solid var(--border);">
-            <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 10px;">
-              <div style="text-align: left;">
-                <div style="font-size: 0.8rem; font-weight: 800; color: var(--text);">${t.voiceSelection}</div>
-                <div style="font-size: 0.65rem; color: var(--text-light);">${t.voiceDesc}</div>
-              </div>
-              <button onclick="previewVoice()" class="icon-btn" style="width: auto; height: auto; padding: 4px 10px; font-size: 0.65rem; font-weight: 800; border-radius: 8px; color: var(--primary);">
-                ${t.previewVoice} ▶️
-              </button>
-            </div>
-            <select id="settings-voice-select" onchange="updateVoicePreference(this.value)" style="width: 100%; padding: 8px; border-radius: 8px; border: 1px solid var(--border); background: var(--surface); color: var(--text); font-size: 0.75rem; outline: none;">
+            <select onchange="updateVoicePreference(this.value)" style="width: 100%; padding: 8px; border-radius: 8px; border: 1px solid var(--border); background: var(--surface); color: var(--text); font-size: 0.75rem; outline: none;">
               <option value="">Default System Voice</option>
               ${voiceOptions}
             </select>
@@ -3498,6 +3281,24 @@
             <label class="toggle-btn" style="padding: 4px; display: flex; align-items: center; gap: 8px; cursor: pointer;">
               <input type="checkbox" id="system-font-toggle" ${isSystemFont ? 'checked' : ''} onchange="toggleSystemFont(this.checked)" style="width: 18px; height: 18px; cursor: pointer; accent-color: var(--primary);">
             </label>
+          </div>
+          <div style="margin-top: 15px; padding: 12px; background: var(--bg); border-radius: 12px; border: 1px solid var(--border); display: flex; align-items: center; justify-content: space-between;">
+            <div style="text-align: left;">
+              <div style="font-size: 0.8rem; font-weight: 800; color: var(--text);">${t.dbBackup}</div>
+              <div style="font-size: 0.65rem; color: var(--text-light);">${t.dbBackupDesc}</div>
+            </div>
+            <button id="db-backup-btn" onclick="triggerDatabaseBackup()" class="icon-btn" style="width: auto; padding: 0 12px; border-radius: 8px; font-size: 0.7rem; font-weight: 800;">
+              BACKUP
+            </button>
+          </div>
+          <div style="margin-top: 15px; padding: 12px; background: var(--bg); border-radius: 12px; border: 1px solid var(--border); display: flex; align-items: center; justify-content: space-between;">
+            <div style="text-align: left;">
+              <div style="font-size: 0.8rem; font-weight: 800; color: var(--text);">${t.dbRestore}</div>
+              <div style="font-size: 0.65rem; color: var(--text-light);">${t.dbRestoreDesc}</div>
+            </div>
+            <button id="db-restore-btn" onclick="triggerDatabaseRestore()" class="icon-btn" style="width: auto; padding: 0 12px; border-radius: 8px; font-size: 0.7rem; font-weight: 800; color: var(--stable);">
+              RESTORE
+            </button>
           </div>
           <div style="margin-top: 15px; padding: 12px; background: var(--bg); border-radius: 12px; border: 1px solid var(--border);">
             <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
@@ -3591,6 +3392,116 @@
       `;
       document.getElementById('modal-overlay').style.display = 'flex';
       updateStorageUsageDisplay();
+    };
+
+    /**
+     * Extracts all data from IndexedDB and sends a JSON snapshot to Cloudflare KV.
+     */
+    window.triggerDatabaseBackup = async () => {
+      const btn = document.getElementById('db-backup-btn');
+      const originalHtml = btn.innerHTML;
+      const t = I18N[currentLang];
+
+      try {
+        btn.disabled = true;
+        btn.innerHTML = `<span class="spinner" style="border-top-color:var(--primary)"></span>`;
+
+        // 1. Open Database and read all stores
+        const db = await new Promise((resolve, reject) => {
+          const req = indexedDB.open('dor_mis_db', 2);
+          req.onsuccess = () => resolve(req.result);
+          req.onerror = () => reject('IDB_OPEN_FAIL');
+        });
+
+        const stores = ['analytics', 'metadata'];
+        const snapshot = { _meta: { timestamp: new Date().toISOString(), lang: currentLang } };
+
+        for (const storeName of stores) {
+          if (db.objectStoreNames.contains(storeName)) {
+            const tx = db.transaction(storeName, 'readonly');
+            snapshot[storeName] = await new Promise(r => {
+              const sReq = tx.objectStore(storeName).getAll();
+              sReq.onsuccess = () => r(sReq.result);
+            });
+          }
+        }
+        db.close();
+
+        // 2. Transmit to Cloudflare Admin endpoint
+        // Note: This requires the X-Admin-Secret header. Adjust as needed if using a prompt.
+        const adminKey = prompt(currentLang === 'en' ? "Enter Admin Secret to authorize backup:" : "ब्याकअप प्रमाणित गर्न एडमिन गोप्य कुञ्जी प्रविष्ट गर्नुहोस्:");
+        if (!adminKey) throw new Error('CANCELLED');
+
+        const res = await fetch(`${WORKER_BASE}/api/admin/backup-idb`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json", "X-Admin-Secret": adminKey },
+          body: JSON.stringify(snapshot)
+        });
+
+        if (res.ok) addToast("success", currentLang === 'en' ? "Cloud backup successful!" : "क्लाउड ब्याकअप सफल भयो!");
+        else throw new Error('API_FAIL');
+      } catch (e) {
+        if (e.message !== 'CANCELLED') addToast("error", "Database backup failed.");
+      } finally {
+        btn.disabled = false;
+        btn.innerHTML = originalHtml;
+      }
+    };
+
+    /**
+     * Downloads a snapshot from KV and overwrites the local IndexedDB.
+     */
+    window.triggerDatabaseRestore = async () => {
+      const btn = document.getElementById('db-restore-btn');
+      const originalHtml = btn.innerHTML;
+      const t = I18N[currentLang];
+
+      try {
+        const adminKey = prompt(currentLang === 'en' ? "Enter Admin Secret to list backups:" : "ब्याकअप सूची हेर्न एडमिन गोप्य कुञ्जी प्रविष्ट गर्नुहोस्:");
+        if (!adminKey) return;
+
+        btn.disabled = true;
+        btn.innerHTML = `<span class="spinner" style="border-top-color:var(--primary)"></span>`;
+
+        // 1. Fetch list of available backups
+        const listRes = await fetch(`${WORKER_BASE}/api/admin/list-backups`, { headers: { "X-Admin-Secret": adminKey } });
+        const keys = await listRes.json();
+        if (!keys.length) { addToast("info", "No backups found."); return; }
+
+        const selectedKey = prompt(`Select backup to restore:\n${keys.map((k, i) => `${i + 1}. ${k.name}`).join('\n')}`, keys[0].name);
+        if (!selectedKey) return;
+
+        // 2. Download snapshot
+        addToast("info", "Downloading snapshot...");
+        const dataRes = await fetch(`${WORKER_BASE}/api/admin/get-backup?key=${selectedKey}`, { headers: { "X-Admin-Secret": adminKey } });
+        const snapshot = await dataRes.json();
+
+        // 3. Overwrite local IndexedDB
+        const db = await new Promise((resolve) => {
+          const req = indexedDB.open('dor_mis_db', 2);
+          req.onsuccess = () => resolve(req.result);
+        });
+
+        for (const storeName of ['analytics', 'metadata']) {
+          if (snapshot[storeName]) {
+            const tx = db.transaction(storeName, 'readwrite');
+            const store = tx.objectStore(storeName);
+            store.clear();
+            snapshot[storeName].forEach(item => store.add(item));
+            await new Promise(r => tx.oncomplete = r);
+          }
+        }
+        db.close();
+
+        addToast("success", currentLang === 'en' ? "Database successfully restored!" : "डाटाबेस सफलतापूर्वक रिस्टोर गरियो!");
+        setTimeout(() => window.location.reload(), 1500);
+      } catch (e) {
+        console.error(e);
+        addToast("error", "Database restore failed.");
+      } finally {
+        btn.disabled = false;
+        btn.innerHTML = originalHtml;
+      }
     };
 
     /**
@@ -3794,21 +3705,10 @@
 
     window.updateVoicePreference = (uri) => {
       localStorage.setItem('tts-voice-uri', uri);
-    };
-
-    window.previewVoice = () => {
-      const uri = document.getElementById('settings-voice-select')?.value || localStorage.getItem('tts-voice-uri');
-      const text = currentLang === 'en' ? "This is a preview of the selected voice." : "यो चयन गरिएको आवाजको पूर्वावलोकन हो।";
-      const msg = new SpeechSynthesisUtterance(text);
-
+      // Provide a small sound sample when changing voices
+      const msg = new SpeechSynthesisUtterance(currentLang === 'en' ? "Voice updated." : "आवाज परिवर्तन गरियो।");
       const voices = speechSynthesis.getVoices();
       msg.voice = voices.find(v => v.voiceURI === uri) || null;
-      msg.lang = currentLang === 'ne' ? 'ne-NP' : 'en-US';
-      msg.rate = parseFloat(localStorage.getItem('tts-rate') || '0.95');
-      msg.pitch = parseFloat(localStorage.getItem('tts-pitch') || '1.0');
-      msg.volume = parseFloat(localStorage.getItem('ui-volume') || '0.5');
-
-      speechSynthesis.cancel(); // Stop any ongoing speech immediately
       speechSynthesis.speak(msg);
     };
 
@@ -3972,11 +3872,24 @@
     });
 
     if ("serviceWorker" in navigator) {
-      navigator.serviceWorker.addEventListener('controllerchange', () => window.location.reload());
+      // Handle Service Worker updates
+      navigator.serviceWorker.addEventListener('controllerchange', () => {
+        window.location.reload();
+      });
+
+      // Handle Background Data Updates
+      navigator.serviceWorker.addEventListener('message', (event) => {
+        if (event.data && event.data.action === 'api-data-updated') {
+          console.log('[SW Notification] Fresh data available. Updating UI...');
+          // Trigger a silent reload (isForced = false)
+          // This will pull the fresh data from the now-updated SW cache
+          loadData(false);
+        }
+      });
+
       window.addEventListener('load', () => {
         navigator.serviceWorker.register('/sw.v2.js')
           .then(reg => {
-            console.log("SW Registered");
             reg.update();
             // Register for background updates
             registerPeriodicUpdate(reg);

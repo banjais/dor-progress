@@ -18,8 +18,8 @@
         "noEmit": true
     },
     "include": [
-        "src/**/*.ts",
-        "tests/**/*.ts"
+        "index.ts",
+        "security.test.ts"
     ],
     "exclude": [
         "node_modules",

@@ -1,5 +1,8 @@
-const VERSION = '2.2.2';
+const VERSION = '2.2.5';
 const CHANGELOG = {
+  '2.2.5': ['Added automated UI refresh when background data revalidation completes'],
+  '2.2.4': ['Implemented Stale-While-Revalidate (SWR) for API data with background refresh'],
+  '2.2.3': ['Added cryptographic integrity verification for cached API data'],
   '2.2.2': ['Implemented smooth Fade Out for background music when narration ends'],
   '2.2.1': ['Added smooth Fade transitions for music ducking', 'Implemented "Voice Only" accessibility mode'],
   '2.2.0': ['Implemented Background Music volume control', 'Added "Voice Over" ducking effect for narration'],
@@ -44,10 +47,6 @@ const ASSETS_TO_CACHE = [
   // Add more ambient tracks here
   '/manifest.json',
   OFFLINE_URL,
-  '/fonts/noto-sans-devanagari.woff2',
-  '/fonts/roboto.woff2',
-  'https://fonts.googleapis.com/css2?family=Noto+Sans+Devanagari:wght@400;700&display=swap',
-  'https://fonts.googleapis.com/css2?family=Roboto:wght@400;700&display=swap'
 ];
 
 /**
@@ -80,6 +79,29 @@ async function trimCache(cacheName, maxItems) {
   if (keys.length > maxItems) {
     await cache.delete(keys[0]);
     await trimCache(cacheName, maxItems);
+  }
+}
+
+/**
+ * Verifies the integrity of cached data using SHA-256.
+ * Prevents serving tampered or corrupted cached responses.
+ * @param {Response} response 
+ * @returns {Promise<boolean>}
+ */
+async function verifyIntegrity(response) {
+  const contentHash = response.headers.get('X-Content-SHA256');
+  if (!contentHash) return true; // Legacy support for items without hashes
+
+  try {
+    const clone = response.clone();
+    const buffer = await clone.arrayBuffer();
+    const hashBuffer = await crypto.subtle.digest('SHA-256', buffer);
+    const hashArray = Array.from(new Uint8Array(hashBuffer));
+    const actualHash = hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+    return actualHash === contentHash;
+  } catch (err) {
+    console.error('[SW Security] Integrity validation failed:', err);
+    return false;
   }
 }
 
@@ -118,6 +140,7 @@ self.addEventListener('fetch', (event) => {
   if (event.request.method !== 'GET') return;
 
   const url = event.request.url;
+  const isApiRequest = url.startsWith(API_BASE);
 
   // 1. CSS - Cache-First (Prioritize instant UI rendering)
   if (url.endsWith('.css') || url.includes('fonts.googleapis.com/css')) {
@@ -166,71 +189,66 @@ self.addEventListener('fetch', (event) => {
     return;
   }
 
-  event.respondWith(
-    fetch(event.request)
-      .then((response) => {
-        const isApiRequest = url.startsWith(API_BASE);
+  // 4. API & Data - Stale-While-Revalidate (SWR)
+  if (isApiRequest) {
+    event.respondWith(
+      caches.open(DATA_CACHE_NAME).then(async (cache) => {
+        const cachedResponse = await cache.match(event.request);
 
-        // Handle Server Failures (5xx): Try cache fallback instead of raw error
-        if (isApiRequest && !response.ok && response.status >= 500) {
-          return caches.match(event.request).then(cached => {
-            if (cached) {
-              const headers = new Headers(cached.headers);
-              headers.set('X-From-Cache', 'true');
-              headers.set('X-Cache-Fallback-Reason', 'server-error');
-              return new Response(cached.body, { ...cached, headers });
+        // The revalidation logic: Fetch from network and update cache
+        const fetchPromise = fetch(event.request).then(async (networkResponse) => {
+          if (networkResponse.ok) {
+            // Security check: Only cache if the new data is valid
+            if (await verifyIntegrity(networkResponse.clone())) {
+              await cache.put(event.request, networkResponse.clone());
+
+              // Notify frontend that fresh data is now available in the cache
+              notifyClients({
+                action: 'api-data-updated',
+                url: event.request.url
+              });
             }
-            return response;
-          });
-        }
+          }
+          return networkResponse;
+        }).catch(err => {
+          console.warn('[SW SWR] Background refresh failed:', err);
+          return null; // Don't crash if refresh fails
+        });
 
-        const isSameOrigin = url.startsWith(self.location.origin);
-        if (response.ok && (isSameOrigin || isApiRequest)) {
-          const copy = response.clone();
-          caches.open(DATA_CACHE_NAME).then(cache => {
-            cache.put(event.request, copy);
-            trimCache(DATA_CACHE_NAME, MAX_DATA_ITEMS);
-          });
-        }
-        return response;
-      })
-      .catch(() => {
-        // If fetch fails (offline), try the cache
-        return caches.match(event.request).then((cachedResponse) => {
-          if (cachedResponse) {
+        // Security & Speed Balance: Use cache if it exists and is fresh enough
+        if (cachedResponse && await verifyIntegrity(cachedResponse)) {
+          const dateHeader = cachedResponse.headers.get('date');
+          const age = dateHeader ? Date.now() - new Date(dateHeader).getTime() : 0;
+          const isTooStale = age > (24 * 60 * 60 * 1000); // 24 Hours
+
+          if (!isTooStale) {
+            // Serve stale data immediately, update in background
+            event.waitUntil(fetchPromise);
             const headers = new Headers(cachedResponse.headers);
             headers.set('X-From-Cache', 'true');
-            headers.set('X-Cache-Fallback-Reason', 'network-offline');
-            return new Response(cachedResponse.body, {
-              status: cachedResponse.status,
-              statusText: cachedResponse.statusText,
-              headers
-            });
+            headers.set('X-Is-Stale', 'true');
+            return new Response(cachedResponse.body, { ...cachedResponse, headers });
           }
+        }
 
-          // If API data is missing and we're offline, return a structured JSON error
-          const isApiRequest = event.request.url.startsWith(API_BASE);
-          if (isApiRequest) {
-            // If the user navigates directly to an API URL in the browser, show the HTML offline page
-            if (event.request.mode === 'navigate') {
-              return caches.match(OFFLINE_URL);
-            }
-
-            // For standard JSON API fetches, return a structured error
-            return new Response(JSON.stringify({
-              error: 'Connection Unstable',
-              message: 'Department of Roads servers are unreachable and no local cache was found.',
-              timestamp: new Date().toISOString()
-            }), {
-              status: 503,
-              headers: { 'Content-Type': 'application/json' }
-            });
-          }
-
-          // If it's a navigation request and not in cache, show offline page
-          if (event.request.mode === 'navigate') return caches.match(OFFLINE_URL);
-        });
+        // If no cache or too stale, wait for the network
+        return fetchPromise || new Response(JSON.stringify({
+          error: 'Offline',
+          message: 'Data is too old or unavailable.'
+        }), { status: 503, headers: { 'Content-Type': 'application/json' } });
       })
+    );
+    return;
+  }
+
+  // 5. Default Navigation/Asset Fallback
+  event.respondWith(
+    fetch(event.request).catch(() => {
+      if (event.request.mode === 'navigate') {
+        return caches.match(OFFLINE_URL);
+      }
+      return caches.match(event.request);
+    })
   );
 });
 
@@ -245,6 +263,12 @@ async function processAnalyticsQueue() {
 
   let success = false;
   const db = await openDatabase();
+  if (!db) {
+    // Database was wiped due to corruption; nothing to sync this cycle.
+    await notifyClients({ action: 'bg-sync-end', success: 'repaired', failureCount: ++syncFailures });
+    return;
+  }
+
   const tx = db.transaction('analytics', 'readonly');
   const store = tx.objectStore('analytics');
   const events = await new Promise(resolve => {
@@ -299,7 +323,23 @@ function openDatabase() {
         db.createObjectStore('metadata');
       }
     };
-    request.onsuccess = (e) => resolve(e.target.result);
+    request.onsuccess = (e) => {
+      const db = e.target.result;
+      // Final integrity check: if stores are missing despite version match, it is corrupt.
+      if (!db.objectStoreNames.contains('analytics') || !db.objectStoreNames.contains('metadata')) {
+        console.warn('[SW DB] Integrity failure. Wiping for repair.');
+        db.close();
+        indexedDB.deleteDatabase('dor_mis_db');
+        resolve(null);
+      } else {
+        resolve(db);
+      }
+    };
+    request.onerror = () => {
+      console.error('[SW DB] Fatal connection error. Wiping database.');
+      indexedDB.deleteDatabase('dor_mis_db');
+      resolve(null);
+    };
   });
 }
 

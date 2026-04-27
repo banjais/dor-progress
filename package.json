@@ -3,20 +3,24 @@
   "version": "1.0.0",
   "type": "module",
   "dependencies": {
-    "pdf-lib": "^1.17.1",
-    "js-tiktoken": "^1.0.17"
+    "js-tiktoken": "^1.0.17",
+    "pdf-lib": "^1.17.1"
   },
   "devDependencies": {
     "@cloudflare/workers-types": "^4.20260426.1",
     "@types/node": "^20.12.7",
     "jose": "^6.2.2",
     "nodemon": "^3.1.0",
+    "typescript": "^6.0.3",
     "vitest": "^1.5.0"
   },
   "scripts": {
     "dev": "wrangler dev",
     "types:watch": "nodemon --watch wrangler.toml --exec 'npx wrangler types'",
     "test": "vitest run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "lint": "tsc --noEmit",
+    "security-check": "npm audit && ./verify-no-secrets.sh",
+    "deploy": "wrangler deploy && firebase deploy --only hosting"
   }
 }
