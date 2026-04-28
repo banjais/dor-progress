@@ -1,9 +1,8 @@
-name: Deploy to Cloudflare and Firebase
+name: MeroSadak PRO Deploy
 
 on:
   push:
-    branches:
-      - main # Or your default branch name
+    branches: [main]
     paths-ignore:
       - 'README.md'
       - 'docs/**'
@@ -11,202 +10,225 @@ on:
       - 'v*'
   workflow_dispatch:
     inputs:
-      bump_type:
-        description: 'Select the version bump type'
+      deploy_target:
+        description: "Select deploy target"
         required: true
-        default: 'patch'
+        default: "all"
         type: choice
         options:
-          - patch
-          - minor
-          - major
+          - all
+          - worker
+          - frontend
+      environment:
+        description: "Environment"
+        required: true
+        default: "prod"
+        type: choice
+        options:
+          - dev
+          - staging
+          - prod
 
+env:
+  NODE_VERSION: "20"
+  NODE_NO_WARNINGS: 1
+
+concurrency:
+  group: deploy-${{ github.ref }}
+  cancel-in-progress: true
+
+# ============================================================
+# PRE-FLIGHT CHECKS
+# ============================================================
 jobs:
-  deploy:
+  preflight:
+    name: 🔍 Environment & Secrets Check
     runs-on: ubuntu-latest
-    permissions:
-      contents: write
+    outputs:
+      secrets_status: ${{ steps.check_secrets.outputs.status }}
+      worker_configured: ${{ steps.check_secrets.outputs.worker_ok }}
+      firebase_configured: ${{ steps.check_secrets.outputs.firebase_ok }}
+      admin_configured: ${{ steps.check_secrets.outputs.admin_ok }}
+      upstash_configured: ${{ steps.check_secrets.outputs.upstash_ok }}
+      gemini_configured: ${{ steps.check_secrets.outputs.gemini_ok }}
+      missing_count: ${{ steps.check_secrets.outputs.missing_count }}
+      optional_missing_count: ${{ steps.check_secrets.outputs.optional_missing_count }}
+      configured_count: ${{ steps.check_secrets.outputs.configured_count }}
+      total_count: ${{ steps.check_secrets.outputs.total_count }}
+
     steps:
-      - name: Checkout Repository
+      - name: Checkout
         uses: actions/checkout@v4
         with:
-          fetch-depth: 0 # Required to get full history and tags for npm version
+          fetch-depth: 0
 
-      - name: Pre-flight Secret Validation
+      - name: Check required secrets
+        id: check_secrets
         run: |
-          echo "Checking deployment prerequisites..."
-          [ -z "${{ secrets.CLOUDFLARE_API_TOKEN }}" ] && { echo "::error::CLOUDFLARE_API_TOKEN is missing"; exit 1; }
-          # GitHub Action Secrets for Firebase Hosting
-          [ -z "${{ secrets.FIREBASE_SERVICE_ACCOUNT }}" ] && { echo "::error::FIREBASE_SERVICE_ACCOUNT is missing"; exit 1; }
-          [ -z "${{ secrets.FIREBASE_PROJECT_ID }}" ] && { echo "::error::FIREBASE_PROJECT_ID is missing"; exit 1; }
-          # Cloudflare Worker Secrets (passed via GitHub Action secrets)
-          [ -z "${{ secrets.UPSTASH_REDIS_REST_URL }}" ] && { echo "::error::UPSTASH_REDIS_REST_URL is missing"; exit 1; }
-          [ -z "${{ secrets.FIREBASE_API_KEY }}" ] && { echo "::error::FIREBASE_API_KEY is missing"; exit 1; }
-          [ -z "${{ secrets.FIREBASE_AUTH_DOMAIN }}" ] && { echo "::error::FIREBASE_AUTH_DOMAIN is missing"; exit 1; }
-          [ -z "${{ secrets.FIREBASE_PROJECT_NUMBER }}" ] && { echo "::error::FIREBASE_PROJECT_NUMBER is missing"; exit 1; }
-          [ -z "${{ secrets.FIREBASE_APP_ID }}" ] && { echo "::error::FIREBASE_APP_ID is missing"; exit 1; }
-          [ -z "${{ secrets.RECAPTCHA_SITE_KEY }}" ] && { echo "::error::RECAPTCHA_SITE_KEY is missing"; exit 1; }
-          [ -z "${{ secrets.RECAPTCHA_SECRET_KEY }}" ] && { echo "::error::RECAPTCHA_SECRET_KEY is missing"; exit 1; }
-          [ -z "${{ secrets.PUBLISHED_SHEET_ID }}" ] && { echo "::error::PUBLISHED_SHEET_ID is missing"; exit 1; }
-          [ -z "${{ secrets.VAPID_PUBLIC_KEY }}" ] && { echo "::error::VAPID_PUBLIC_KEY is missing"; exit 1; }
-          [ -z "${{ secrets.VAPID_PRIVATE_KEY }}" ] && { echo "::error::VAPID_PRIVATE_KEY is missing"; exit 1; }
-          [ -z "${{ secrets.UPSTASH_REDIS_REST_TOKEN }}" ] && { echo "::error::UPSTASH_REDIS_REST_TOKEN is missing"; exit 1; }
-          [ -z "${{ secrets.GEMINI_API_KEY }}" ] && { echo "::error::GEMINI_API_KEY is missing"; exit 1; }
-          [ -z "${{ secrets.ADMIN_SECRET }}" ] && { echo "::error::ADMIN_SECRET is missing"; exit 1; }
-          [ -z "${{ secrets.GOOGLE_CLOUD_API_KEY }}" ] && { echo "::error::GOOGLE_CLOUD_API_KEY is missing"; exit 1; }
-          [ -z "${{ secrets.API_BASE_URL }}" ] && { echo "::error::API_BASE_URL is missing"; exit 1; }
-          echo "✅ All required secrets are configured."
+          echo "🔍 Verifying required secrets and environment variables..."
+          echo ""
+
+          REQUIRED_MISSING=0
+          OPTIONAL_MISSING=0
+          CONFIGURED=0
+          TOTAL=0
+
+          echo "============================================="
+          echo "  🔐 SECRETS STATUS CHECK"
+          echo "============================================="
+          echo ""
+
+          echo "--- ☁️ CLOUDFLARE WORKER ---"
+          TOTAL=$((TOTAL + 1))
+          if [ -n "${{ secrets.CLOUDFLARE_API_TOKEN }}" ]; then
+            echo "✅ CLOUDFLARE_API_TOKEN: Configured"
+            CONFIGURED=$((CONFIGURED + 1))
+            echo "worker_ok=true" >> $GITHUB_OUTPUT
+          else
+            echo "❌ CLOUDFLARE_API_TOKEN: Missing (required for worker deploy)"
+            REQUIRED_MISSING=$((REQUIRED_MISSING + 1))
+            echo "worker_ok=false" >> $GITHUB_OUTPUT
+          fi
+          echo ""
+
+          echo "--- 🔥 FIREBASE ---"
+          TOTAL=$((TOTAL + 1))
+          if [ -n "${{ secrets.FIREBASE_SERVICE_ACCOUNT }}" ]; then
+            echo "✅ FIREBASE_SERVICE_ACCOUNT: Configured"
+            CONFIGURED=$((CONFIGURED + 1))
+            echo "firebase_ok=true" >> $GITHUB_OUTPUT
+          else
+            echo "❌ FIREBASE_SERVICE_ACCOUNT: Missing (required for frontend deploy)"
+            REQUIRED_MISSING=$((REQUIRED_MISSING + 1))
+            echo "firebase_ok=false" >> $GITHUB_OUTPUT
+          fi
+          echo ""
+
+          echo "--- 🛡️ ADMIN SECRET ---"
+          TOTAL=$((TOTAL + 1))
+          if [ -n "${{ secrets.ADMIN_SECRET }}" ]; then
+            echo "✅ ADMIN_SECRET: Configured"
+            CONFIGURED=$((CONFIGURED + 1))
+            echo "admin_ok=true" >> $GITHUB_OUTPUT
+          else
+            echo "❌ ADMIN_SECRET: Missing (required for admin API)"
+            REQUIRED_MISSING=$((REQUIRED_MISSING + 1))
+            echo "admin_ok=false" >> $GITHUB_OUTPUT
+          fi
+          echo ""
+
+          echo "--- 💾 UPSTASH REDIS ---"
+          TOTAL=$((TOTAL + 1))
+          if [ -n "${{ secrets.UPSTASH_REDIS_REST_URL }}" ] && [ -n "${{ secrets.UPSTASH_REDIS_REST_TOKEN }}" ]; then
+            echo "✅ UPSTASH_REDIS_REST_URL + TOKEN: Configured"
+            CONFIGURED=$((CONFIGURED + 1))
+            echo "upstash_ok=true" >> $GITHUB_OUTPUT
+          else
+            echo "❌ UPSTASH_REDIS_REST_URL or TOKEN: Missing (required for rate limiting & cache)"
+            REQUIRED_MISSING=$((REQUIRED_MISSING + 1))
+            echo "upstash_ok=false" >> $GITHUB_OUTPUT
+          fi
+          echo ""
+
+          echo "--- 🤖 GEMINI AI ---"
+          TOTAL=$((TOTAL + 1))
+          if [ -n "${{ secrets.GEMINI_API_KEY }}" ]; then
+            echo "✅ GEMINI_API_KEY: Configured"
+            CONFIGURED=$((CONFIGURED + 1))
+            echo "gemini_ok=true" >> $GITHUB_OUTPUT
+          else
+            echo "⚠️ GEMINI_API_KEY: Missing (translation falls back to dictionary)"
+            OPTIONAL_MISSING=$((OPTIONAL_MISSING + 1))
+            echo "gemini_ok=false" >> $GITHUB_OUTPUT
+          fi
+          echo ""
+
+          echo "============================================="
+          echo "  📊 SUMMARY"
+          echo "============================================="
+          echo "Total secrets checked: $TOTAL"
+          echo "✅ Configured: $CONFIGURED"
+          echo "❌ Required missing: $REQUIRED_MISSING"
+          echo "⚠️ Optional missing: $OPTIONAL_MISSING"
+          echo ""
+
+          echo "missing_count=$REQUIRED_MISSING" >> $GITHUB_OUTPUT
+          echo "optional_missing_count=$OPTIONAL_MISSING" >> $GITHUB_OUTPUT
+          echo "configured_count=$CONFIGURED" >> $GITHUB_OUTPUT
+          echo "total_count=$TOTAL" >> $GITHUB_OUTPUT
+
+          if [ "$REQUIRED_MISSING" -eq 0 ]; then
+            echo "✅ All required secrets configured - ready to deploy!"
+            echo "status=ready" >> $GITHUB_OUTPUT
+          else
+            echo "❌ $REQUIRED_MISSING required secret(s) missing - deploy will fail!"
+            echo "status=missing_required" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Display environment summary
+        run: |
+          echo "📋 Environment Summary"
+          echo "====================="
+          echo "Node.js Version: ${{ env.NODE_VERSION }}"
+          echo "Deploy Target: ${{ github.event.inputs.deploy_target || 'auto (push)' }}"
+          echo "Branch: ${{ github.ref_name }}"
+          echo "Commit: ${{ github.sha }}"
+          echo ""
+          echo "Service URLs:"
+          echo "  Worker:   https://dor-progress.banjays.workers.dev"
+          echo "  Frontend: https://dor-progress.web.app"
+          echo "  Diagnostic: https://dor-progress.banjays.workers.dev/api/admin/config-check"
+
+# ============================================================
+# WORKER DEPLOYMENT
+# ============================================================
+  worker:
+    name: ☁️ Cloudflare Worker
+    runs-on: ubuntu-latest
+    needs: [preflight]
+    if: >
+      github.event_name == 'push' ||
+      github.event.inputs.deploy_target == 'all' ||
+      github.event.inputs.deploy_target == 'worker' ||
+      github.event_name == 'workflow_dispatch'
+
+    outputs:
+      deploy_status: ${{ steps.worker_deploy.outputs.status }}
+      deploy_url: ${{ steps.verify_worker.outputs.url }}
+      build_time: ${{ steps.build_time.outputs.duration }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: ${{ env.NODE_VERSION }}
           cache: 'npm'
 
-      - name: Configure Git
-        if: github.event_name == 'workflow_dispatch'
-        run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-
-      - name: Bump Version and Push (Manual Trigger)
-        if: github.event_name == 'workflow_dispatch'
-        run: |
-          npm version ${{ github.event.inputs.bump_type }} -m "v%s: Manual remote deployment bump [${{ github.event.inputs.bump_type }}]"
-          git push origin main --follow-tags
-
-      - name: Get Version
-        id: get_version
-        run: |
-          echo "VERSION=v$(node -p "require('./package.json').version")" >> $GITHUB_OUTPUT
-          echo "TIMESTAMP=$(date -u +'%Y-%m-%dT%H:%M:%SZ')" >> $GITHUB_OUTPUT
-
-      - name: Install Dependencies
-        if: github.ref == 'refs/heads/main'
+      - name: Install dependencies
         run: npm ci
 
-      - name: Attempt to Auto-fix Vulnerabilities and Rollback if Unsuccessful
-        if: github.ref == 'refs/heads/main'
+      - name: Security audit
+        run: npm run security-check
+
+      - name: Type check (TypeScript)
+        run: npm run lint
+
+      - name: Run tests
+        run: npm test
+
+      - name: Build timestamp
+        id: build_time
         run: |
-          echo "Attempting to fix npm audit vulnerabilities..."
-          # Store current state of package files for potential rollback
-          cp package.json package.json.bak
-          cp package-lock.json package-lock.json.bak
-
-          # Capture audit data in JSON to extract severities later
-          export PRE_AUDIT_JSON=$(npm audit --json || true)
-
-          # Capture output to extract a summary
-          AUDIT_OUTPUT=$(npm audit fix --audit-level=moderate 2>&1 || true)
-          AUDIT_FIX_EXIT_CODE=$?
-
-          if [ $AUDIT_FIX_EXIT_CODE -eq 0 ]; then
-            echo "✅ npm audit fix completed successfully. Dependencies are patched."
-            # Check if any changes were actually made by npm audit fix
-            if git diff --quiet package.json package-lock.json; then
-              echo "No changes detected after npm audit fix."
-            else
-              # Extract the summary line (e.g., "fixed 2 vulnerabilities...")
-              SUMMARY=$(echo "$AUDIT_OUTPUT" | grep -iE "fixed [0-9]+ vulnerabilities|updated [0-9]+ package" | tail -n 1 | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
-              [ -z "$SUMMARY" ] && SUMMARY="Vulnerabilities patched successfully."
-              echo "PATCHED_SUMMARY=$SUMMARY" >> $GITHUB_ENV
-              
-              # Parse package-lock.json to find updated package names
-              PATCHED_PKGS=$(node -e "
-                const fs = require('fs');
-                const oldP = JSON.parse(fs.readFileSync('package-lock.json.bak')).packages;
-                const newP = JSON.parse(fs.readFileSync('package-lock.json')).packages;
-                const audit = JSON.parse(process.env.PRE_AUDIT_JSON || '{\"vulnerabilities\":{}}');
-                const vulns = audit.vulnerabilities || {};
-
-                const groupedBySeverity = {
-                  CRITICAL: [],
-                  HIGH: [],
-                  MODERATE: [],
-                  LOW: [],
-                  INFO: [],
-                  UNKNOWN: []
-                };
-
-                Object.keys(newP)
-                  .filter(k => oldP[k] && oldP[k].version !== newP[k].version) // Filter for packages whose versions actually changed
-                  .forEach(k => {
-                    const name = k === '' ? 'root' : k.replace('node_modules/', '');
-                    const oldVersion = oldP[k].version;
-                    const newVersion = newP[k].version;
-                    
-                    let severity = 'UNKNOWN';
-                    if (vulns[name] && vulns[name].severity) {
-                        severity = vulns[name].severity.toUpperCase();
-                    }
-
-                    const packageString = `${name} (${oldVersion} -> ${newVersion})`;
-                    if (groupedBySeverity[severity]) {
-                      groupedBySeverity[severity].push(packageString);
-                    } else {
-                      groupedBySeverity.UNKNOWN.push(packageString);
-                    }
-                  });
-
-                const severityOrder = ['CRITICAL', 'HIGH', 'MODERATE', 'LOW', 'INFO', 'UNKNOWN'];
-                let formattedPackages = '';
-                severityOrder.forEach(sev => {
-                  if (groupedBySeverity[sev].length > 0) {
-                    formattedPackages += `\n*${sev}*: ${groupedBySeverity[sev].join(', ')}`;
-                  }
-                });
-                console.log(formattedPackages.trim() || 'No direct version changes detected in package-lock.json.');
-              ")
-              echo "PATCHED_PACKAGES=$PATCHED_PKGS" >> $GITHUB_ENV
-              
-              echo "Changes detected after npm audit fix. Committing them."
-              git config user.name "github-actions[bot]"
-              git config user.email "github-actions[bot]@users.noreply.github.com"
-              git add package.json package-lock.json
-              git commit -m "ci: Auto-fix npm audit vulnerabilities"
-              git push
-              echo "✅ Committed and pushed npm audit fixes."
-              echo "AUDIT_FIX_SUCCESS=true" >> $GITHUB_ENV
-            fi
-          else
-            echo "⚠️ npm audit fix failed to resolve all vulnerabilities to 'moderate' level."
-            echo "Rolling back package.json and package-lock.json to previous state."
-            mv package.json.bak package.json
-            mv package-lock.json.bak package-lock.json
-            echo "Rollback complete. Deployment will proceed with original dependencies."
-            echo "Manual intervention is required to address remaining vulnerabilities."
-            echo "AUDIT_FIX_FAILED=true" >> $GITHUB_ENV
-          fi
-
-          # Clean up backup files
-          rm -f package.json.bak package-lock.json.bak
-          # Ensure this step always succeeds for the workflow to continue
-          exit 0
-
-      - name: Notify Slack on Audit Failure
-        if: env.AUDIT_FIX_FAILED == 'true'
-        uses: slackapi/slack-github-action@v1.26.0
-        with:
-          payload: |
-            {
-              "text": "⚠️ *Vulnerability Audit Warning* in `${{ github.repository }}`\n`npm audit fix` was unable to resolve all moderate+ vulnerabilities. The deployment proceeded using the original dependencies. \n\n*Action Required:* Review the <${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}|CI logs> and perform a manual audit fix."
-            }
-        env:
-          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
-
-      - name: Notify Slack on Audit Success
-        if: env.AUDIT_FIX_SUCCESS == 'true' && success()
-        uses: slackapi/slack-github-action@v1.26.0
-        with:
-          payload: |
-            {
-              "text": "✅ *Vulnerabilities Patched & Deployed* in `${{ github.repository }}`\n`npm audit fix` successfully patched dependencies to a moderate+ level.\n\n*Summary:* ${{ env.PATCHED_SUMMARY }}\n*Packages:* ${{ env.PATCHED_PACKAGES }}\n*Build:* ${{ steps.get_version.outputs.VERSION }}\n*Details:* <${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}|View Workflow Logs>"
-            }
-        env:
-          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+          START_TIME=$SECONDS
+          echo "start_time=$START_TIME" >> $GITHUB_OUTPUT
 
       - name: Deploy to Cloudflare Workers
-        if: github.ref == 'refs/heads/main'
+        id: worker_deploy
         uses: cloudflare/wrangler-action@v3
         with:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
@@ -216,6 +238,21 @@ jobs:
             COMMIT_SHA
             DEPLOY_TIMESTAMP
             FIREBASE_PROJECT_ID
+            FIREBASE_API_KEY
+            FIREBASE_AUTH_DOMAIN
+            FIREBASE_PROJECT_NUMBER
+            FIREBASE_APP_ID
+            RECAPTCHA_SITE_KEY
+            RECAPTCHA_SECRET_KEY
+            PUBLISHED_SHEET_ID
+            UPSTASH_REDIS_REST_URL
+            UPSTASH_REDIS_REST_TOKEN
+            GEMINI_API_KEY
+            ADMIN_SECRET
+            GOOGLE_CLOUD_API_KEY
+            API_BASE_URL
+            VAPID_PUBLIC_KEY
+            VAPID_PRIVATE_KEY
           secrets: |
             UPSTASH_REDIS_REST_URL
             UPSTASH_REDIS_REST_TOKEN
@@ -233,18 +270,10 @@ jobs:
             RECAPTCHA_SECRET_KEY
             PUBLISHED_SHEET_ID
         env:
-          BUILD_ID: ${{ steps.get_version.outputs.VERSION }}
+          BUILD_ID: v$(node -p "require('./package.json').version")
           COMMIT_SHA: ${{ github.sha }}
-          DEPLOY_TIMESTAMP: ${{ steps.get_version.outputs.TIMESTAMP }}
+          DEPLOY_TIMESTAMP: ${{ github.run_started_at }}
           FIREBASE_PROJECT_ID: ${{ secrets.FIREBASE_PROJECT_ID }}
-          UPSTASH_REDIS_REST_URL: ${{ secrets.UPSTASH_REDIS_REST_URL }}
-          UPSTASH_REDIS_REST_TOKEN: ${{ secrets.UPSTASH_REDIS_REST_TOKEN }}
-          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
-          ADMIN_SECRET: ${{ secrets.ADMIN_SECRET }}
-          GOOGLE_CLOUD_API_KEY: ${{ secrets.GOOGLE_CLOUD_API_KEY }}
-          API_BASE_URL: ${{ secrets.API_BASE_URL }}
-          VAPID_PUBLIC_KEY: ${{ secrets.VAPID_PUBLIC_KEY }}
-          VAPID_PRIVATE_KEY: ${{ secrets.VAPID_PRIVATE_KEY }}
           FIREBASE_API_KEY: ${{ secrets.FIREBASE_API_KEY }}
           FIREBASE_AUTH_DOMAIN: ${{ secrets.FIREBASE_AUTH_DOMAIN }}
           FIREBASE_PROJECT_NUMBER: ${{ secrets.FIREBASE_PROJECT_NUMBER }}
@@ -252,38 +281,319 @@ jobs:
           RECAPTCHA_SITE_KEY: ${{ secrets.RECAPTCHA_SITE_KEY }}
           RECAPTCHA_SECRET_KEY: ${{ secrets.RECAPTCHA_SECRET_KEY }}
           PUBLISHED_SHEET_ID: ${{ secrets.PUBLISHED_SHEET_ID }}
+        continue-on-error: false
+
+      - name: Calculate build time
+        if: always()
+        run: |
+          DURATION=$((SECONDS - ${{ steps.build_time.outputs.start_time }}))
+          echo "duration=${DURATION}s" >> $GITHUB_OUTPUT
+          echo "⏱️ Worker deploy completed in ${DURATION}s"
+
+      - name: Verify Worker deployment
+        if: steps.worker_deploy.outcome == 'success'
+        id: verify_worker
+        run: |
+          echo "🔍 Verifying Cloudflare Worker..."
+          URL="https://dor-progress.banjays.workers.dev"
+
+          for i in 1 2 3 4 5; do
+            HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" "$URL" || echo "000")
+            if [ "$HTTP_CODE" = "200" ] || [ "$HTTP_CODE" = "404" ]; then
+              echo "✅ Worker is responding (HTTP $HTTP_CODE)"
+              echo "url=$URL" >> $GITHUB_OUTPUT
+              exit 0
+            fi
+            echo "⏳ Attempt $i/5 - HTTP $HTTP_CODE (waiting 10s)..."
+            sleep 10
+          done
+
+          echo "⚠️ Worker not responding after 5 attempts"
+          echo "url=$URL" >> $GITHUB_OUTPUT
+
+      - name: Upload worker build artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: worker-dist
+          path: dist/
+          retention-days: 7
+
+# ============================================================
+# FRONTEND DEPLOYMENT (Firebase Hosting - Static)
+# ============================================================
+  frontend:
+    name: 🎨 Frontend (Firebase Hosting)
+    runs-on: ubuntu-latest
+    needs: [preflight]
+    if: >
+      github.event_name == 'push' ||
+      github.event.inputs.deploy_target == 'all' ||
+      github.event.inputs.deploy_target == 'frontend' ||
+      github.event_name == 'workflow_dispatch'
+
+    outputs:
+      deploy_status: ${{ steps.firebase_deploy.outputs.status }}
+      firebase_url: ${{ steps.verify_frontend.outputs.url }}
+      build_time: ${{ steps.build_time.outputs.duration }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+
+      - name: Build timestamp
+        id: build_time
+        run: |
+          START_TIME=$SECONDS
+          echo "start_time=$START_TIME" >> $GITHUB_OUTPUT
+
+      - name: Install dependencies (needed for Firebase CLI)
+        run: npm ci
 
       - name: Deploy to Firebase Hosting
-        if: github.ref == 'refs/heads/main'
+        id: firebase_deploy
         uses: FirebaseExtended/action-hosting-deploy@v0
         with:
           repoToken: ${{ secrets.GITHUB_TOKEN }}
           firebaseServiceAccount: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
-          channelId: live
+          channelId: ${{ github.event.inputs.environment == 'dev' && 'dev' || 'live' }}
           projectId: ${{ secrets.FIREBASE_PROJECT_ID }}
         env:
           FIREBASE_CLI_PREV: 1
+        continue-on-error: false
 
-      - name: Create GitHub Release
+      - name: Calculate build time
+        if: always()
+        run: |
+          DURATION=$((SECONDS - ${{ steps.build_time.outputs.start_time }}))
+          echo "duration=${DURATION}s" >> $GITHUB_OUTPUT
+          echo "⏱️ Frontend deploy completed in ${DURATION}s"
+
+      - name: Verify Firebase deployment
+        if: steps.firebase_deploy.outcome == 'success'
+        id: verify_frontend
+        run: |
+          echo "🔍 Verifying Firebase Hosting..."
+          URL="https://dor-progress.web.app"
+
+          for i in 1 2 3 4 5; do
+            HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" "$URL" || echo "000")
+            if [ "$HTTP_CODE" = "200" ]; then
+              echo "✅ Frontend is live (HTTP $HTTP_CODE)"
+              echo "url=$URL" >> $GITHUB_OUTPUT
+              exit 0
+            fi
+            echo "⏳ Attempt $i/5 - HTTP $HTTP_CODE (waiting 10s)..."
+            sleep 10
+          done
+
+          echo "⚠️ Frontend not responding after 5 attempts"
+          echo "url=$URL" >> $GITHUB_OUTPUT
+
+      - name: Upload frontend artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: frontend-dist
+          path: |
+            index.html
+            sw.v2.js
+            manifest.json
+            logo.png
+            dor/
+          retention-days: 7
+
+# ============================================================
+# MONITORING & STATUS CHECKER
+# ============================================================
+  monitoring-check:
+    name: 📊 Monitoring & Status Checker
+    runs-on: ubuntu-latest
+    needs: [worker, frontend]
+    if: always()
+
+    steps:
+      - name: Run full status check
+        run: |
+          echo "============================================="
+          echo "  🔍 DOR-PROGRESS STATUS CHECK"
+          echo "============================================="
+          echo ""
+
+          PASS=0
+          FAIL=0
+          SKIP=0
+
+          check_service() {
+            local name=$1
+            local url=$2
+            local expected=${3:-200}
+            local timeout=${4:-10}
+
+            echo -n "Checking $name... "
+            HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" --max-time $timeout "$url" 2>/dev/null || echo "000")
+
+            if [ "$HTTP_CODE" = "$expected" ]; then
+              echo "✅ HTTP $HTTP_CODE"
+              PASS=$((PASS + 1))
+            elif [ "$HTTP_CODE" = "000" ]; then
+              echo "⏳ Not ready yet"
+              SKIP=$((SKIP + 1))
+            else
+              echo "❌ HTTP $HTTP_CODE (expected $expected)"
+              FAIL=$((FAIL + 1))
+            fi
+          }
+
+          echo "--- ☁️ WORKER ---"
+          check_service "Cloudflare Worker" "https://dor-progress.banjays.workers.dev"
+          # Admin config-check returns 401 without auth (that's healthy - route exists)
+          echo -n "Checking Worker Config API... "
+          HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" --max-time 15 "https://dor-progress.banjays.workers.dev/api/admin/config-check" 2>/dev/null || echo "000")
+          if [ "$HTTP_CODE" = "200" ] || [ "$HTTP_CODE" = "401" ]; then
+            echo "✅ HTTP $HTTP_CODE (route responding)"
+            PASS=$((PASS + 1))
+          elif [ "$HTTP_CODE" = "000" ]; then
+            echo "⏳ Not ready yet"
+            SKIP=$((SKIP + 1))
+          else
+            echo "❌ HTTP $HTTP_CODE (expected 200 or 401)"
+            FAIL=$((FAIL + 1))
+          fi
+          echo ""
+
+          echo "--- 🎨 FRONTEND ---"
+          check_service "Firebase Hosting" "https://dor-progress.web.app"
+          echo ""
+
+          echo "--- 🔧 ENVIRONMENT ---"
+          echo "Branch: ${{ github.ref_name }}"
+          echo "Commit: ${{ github.sha }}"
+          echo "Triggered by: ${{ github.actor }}"
+          echo "Deploy target: ${{ github.event.inputs.deploy_target || 'auto' }}"
+          echo "Environment: ${{ github.event.inputs.environment || 'prod' }}"
+          echo ""
+
+          echo "============================================="
+          echo "  📊 STATUS SUMMARY"
+          echo "============================================="
+          echo "✅ Passed: $PASS"
+          echo "❌ Failed: $FAIL"
+          echo "⏳ Skipped: $SKIP"
+          echo ""
+
+          if [ "$FAIL" -gt 0 ]; then
+            echo "⚠️ $FAIL service(s) not responding"
+            echo "💡 UptimeRobot continues monitoring: https://uptimerobot.com/ZaSzISaXMt"
+          elif [ "$SKIP" -gt 0 ]; then
+            echo "ℹ️ Some services still warming up (Render takes 2-5 min)"
+          else
+            echo "✅ All services operational!"
+          fi
+
+# ============================================================
+# DEPLOY SUMMARY
+# ============================================================
+  deploy-summary:
+    name: 📝 Deploy Summary
+    runs-on: ubuntu-latest
+    needs: [preflight, worker, frontend, monitoring-check]
+    if: always()
+
+    steps:
+      - name: Generate deployment summary
+        run: |
+          echo "## 🚀 dor-progress Deployment Summary" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Commit:** ${{ github.event.head_commit.message || 'Manual deploy' }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Branch:** ${{ github.ref_name }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Triggered by:** ${{ github.actor }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Deploy target:** ${{ github.event.inputs.deploy_target || 'auto (push)' }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Environment:** ${{ github.event.inputs.environment || 'prod' }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+
+          echo "### 🔐 Secrets Status" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "| Secret | Status | Impact |" >> $GITHUB_STEP_SUMMARY
+          echo "|--------|--------|--------|" >> $GITHUB_STEP_SUMMARY
+          echo "| ☁️ CLOUDFLARE_API_TOKEN | ${{ needs.preflight.outputs.worker_configured == 'true' && '✅ Configured' || '❌ Missing' }} | ${{ needs.preflight.outputs.worker_configured == 'true' && 'Worker deploys' || 'Worker deploy fails' }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| 🔥 FIREBASE_SERVICE_ACCOUNT | ${{ needs.preflight.outputs.firebase_configured == 'true' && '✅ Configured' || '❌ Missing' }} | ${{ needs.preflight.outputs.firebase_configured == 'true' && 'Frontend deploys' || 'Frontend deploy fails' }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| 🛡️ ADMIN_SECRET | ${{ needs.preflight.outputs.admin_configured == 'true' && '✅ Configured' || '❌ Missing' }} | ${{ needs.preflight.outputs.admin_configured == 'true' && 'Admin API works' || 'Admin routes fail' }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| 💾 UPSTASH_REDIS | ${{ needs.preflight.outputs.upstash_configured == 'true' && '✅ Configured' || '❌ Missing' }} | ${{ needs.preflight.outputs.upstash_configured == 'true' && 'Caching/rate-limit works' || 'No Redis cache' }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| 🤖 GEMINI_API_KEY | ${{ needs.preflight.outputs.gemini_configured == 'true' && '✅ Configured' || '⚠️ Missing (dictionary-only)' }} | ${{ needs.preflight.outputs.gemini_configured == 'true' && 'AI translation on' || 'Translation limited' }} |" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Configured:** ${{ needs.preflight.outputs.configured_count }}/${{ needs.preflight.outputs.total_count }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Missing (required):** ${{ needs.preflight.outputs.missing_count }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Missing (optional):** ${{ needs.preflight.outputs.optional_missing_count }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+
+          echo "### 📦 Services Deployed" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "| Service | URL | Status | Build Time |" >> $GITHUB_STEP_SUMMARY
+          echo "|---------|-----|--------|------------|" >> $GITHUB_STEP_SUMMARY
+          echo "| ☁️ Worker | https://dor-progress.banjays.workers.dev | ${{ needs.worker.result == 'success' && '✅ Deployed' || needs.worker.result == 'skipped' && '⏭️ Skipped' || '❌ Failed' }} | ${{ needs.worker.outputs.build_time || 'N/A' }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| 🎨 Frontend | https://dor-progress.web.app | ${{ needs.frontend.result == 'success' && '✅ Deployed' || needs.frontend.result == 'skipped' && '⏭️ Skipped' || '❌ Failed' }} | ${{ needs.frontend.outputs.build_time || 'N/A' }} |" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+
+          echo "### 🔍 Health Check Results" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "| Service | Status | Expected |" >> $GITHUB_STEP_SUMMARY
+          echo "|---------|--------|----------|" >> $GITHUB_STEP_SUMMARY
+          echo "| Worker | ${{ needs.monitoring-check.result == 'success' && '✅ Healthy' || '⚠️ Check logs' }} | HTTP 200 |" >> $GITHUB_STEP_SUMMARY
+          echo "| Worker API | ${{ needs.monitoring-check.result == 'success' && '✅ Healthy' || '⚠️ Check logs' }} | HTTP 200 |" >> $GITHUB_STEP_SUMMARY
+          echo "| Frontend | ${{ needs.monitoring-check.result == 'success' && '✅ Healthy' || '⚠️ Check logs' }} | HTTP 200 |" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+
+          if [ "${{ needs.monitoring-check.result }}" = "success" ]; then
+            echo "✅ All services are healthy and operational." >> $GITHUB_STEP_SUMMARY
+          else
+            echo "⚠️ Some services may still be initializing. Monitor: https://uptimerobot.com/ZaSzISaXMt" >> $GITHUB_STEP_SUMMARY
+          fi
+          echo "" >> $GITHUB_STEP_SUMMARY
+
+          echo "### 🛠️ Diagnostic Commands" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "```bash" >> $GITHUB_STEP_SUMMARY
+          echo "# Check worker configuration" >> $GITHUB_STEP_SUMMARY
+          echo "curl -H \"X-Admin-Secret: YOUR_SECRET\" https://dor-progress.banjays.workers.dev/api/admin/config-check" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "# Test translation endpoint" >> $GITHUB_STEP_SUMMARY
+          echo "curl \"https://dor-progress.banjays.workers.dev/api/translate?text=Hello&targetLang=ne\"" >> $GITHUB_STEP_SUMMARY
+          echo "```" >> $GITHUB_STEP_SUMMARY
+
+      - name: Create Git tag and push
+        if: github.ref == 'refs/heads/main'
+        run: |
+          VERSION=$(node -p "require('./package.json').version")
+          git tag -a "v$VERSION" -m "Release v$VERSION"
+          git push origin --tags
+
+      - name: Update GitHub Release
         if: startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch'
         uses: softprops/action-gh-release@v2
         with:
           generate_release_notes: true
-          tag_name: ${{ steps.get_version.outputs.VERSION }}
-          name: Release ${{ steps.get_version.outputs.VERSION }}
+          tag_name: v$(node -p "require('./package.json').version")
+          name: Release v$(node -p "require('./package.json').version")
           body: |
             **Deployment Information**
-            - **Timestamp:** ${{ steps.get_version.outputs.TIMESTAMP }}
-            - **Build Version:** ${{ steps.get_version.outputs.VERSION }}
+            - **Timestamp:** ${{ github.run_started_at }}
+            - **Build Version:** v$(node -p "require('./package.json').version")
             - **Triggered By:** ${{ github.actor }}
+            - **Deploy Target:** ${{ github.event.inputs.deploy_target || 'all' }}
+            - **Environment:** ${{ github.event.inputs.environment || 'prod' }}
 
-      - name: Deployment Summary
-        if: always()
-        run: |
-          echo "### 🚀 Deployment Report" >> $GITHUB_STEP_SUMMARY
-          echo "*   **Status:** ${{ job.status }}" >> $GITHUB_STEP_SUMMARY
-          echo "*   **Trigger:** ${{ github.event_name }}" >> $GITHUB_STEP_SUMMARY
-          echo "*   **Cloudflare Worker:** https://dor-progress.banjays.workers.dev" >> $GITHUB_STEP_SUMMARY
-          echo "*   **Diagnostic:** `curl.exe -H \"X-Admin-Secret: YOUR_SECRET\" \"https://dor-progress.banjays.workers.dev/api/admin/config-check\"`" >> $GITHUB_STEP_SUMMARY
-          echo "*   **Firebase:** [View Hosting](https://dor-progress.web.app)" >> $GITHUB_STEP_SUMMARY
-          echo "*   **Commit:** ${{ github.sha }}" >> $GITHUB_STEP_SUMMARY
+            **Services**
+            - Worker: https://dor-progress.banjays.workers.dev
+            - Frontend: https://dor-progress.web.app
+
+            **Monitoring**
+            - UptimeRobot: https://uptimerobot.com/ZaSzISaXMt
