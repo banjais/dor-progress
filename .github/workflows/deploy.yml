@@ -119,14 +119,7 @@ jobs:
         env:
           ADMIN_SECRET: ${{ secrets.ADMIN_SECRET }}
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
-          UPSTASH_REDIS_REST_URL: ${{ secrets.UPSTASH_REDIS_REST_URL }}
-          UPSTASH_REDIS_REST_TOKEN: ${{ secrets.UPSTASH_REDIS_REST_TOKEN }}
-          GOOGLE_CLOUD_API_KEY: ${{ secrets.GOOGLE_CLLOUD_API_KEY }}
-          API_BASE_URL: ${{ secrets.API_BASE_URL }}
-        run: |
-          echo "ADMIN_SECRET length: ${#ADMIN_SECRET}"
-          echo "GEMINI_API_KEY prefix: ${GEMINI_API_KEY:0:4}"
-          npm test
+        run: npm test
 
       - name: Build Worker (compile TypeScript)
         run: npm run compile
