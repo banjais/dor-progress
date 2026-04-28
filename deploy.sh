@@ -48,7 +48,16 @@ npm run compile
 echo "🚀 Deploying to Cloudflare Workers..."
 npx wrangler deploy --outdir=dist
 
-# 8. Versioning
+# 8. Deploy to Firebase Hosting
+echo "🎨 Deploying to Firebase Hosting..."
+if command -v firebase >/dev/null 2>&1; then
+    firebase deploy --only hosting --project "$FIREBASE_PROJECT_ID" 2>/dev/null || firebase deploy --only hosting
+else
+    echo "⚠️  firebase-tools not installed. Install with: npm install -g firebase-tools"
+    echo "   Skipping Firebase deploy — run manually later."
+fi
+
+# 9. Versioning
 npm version "$BUMP" --no-git-tag-version
 VERSION=$(node -p "require('./package.json').version")
 
