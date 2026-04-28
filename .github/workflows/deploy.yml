@@ -94,7 +94,7 @@ jobs:
 
     outputs:
       status: ${{ steps.deploy.outputs.status }}
-      url: ${{ steps.verify.outputs.url }}
+      deployment_url: ${{ steps.verify.outputs.deployment_url }}
 
     env:
       # Expose required secrets to all steps (tests, lint, etc.)
@@ -203,12 +203,12 @@ jobs:
           for i in 1 2 3 4 5; do
             CODE=$(curl -s -o /dev/null -w "%{http_code}" https://dor-progress.banjays.workers.dev || echo 000)
             if [ "$CODE" = "200" ] || [ "$CODE" = "404" ]; then
-              echo "url=https://dor-progress.banjays.workers.dev" >> $GITHUB_OUTPUT
+              echo "deployment_url=https://dor-progress.banjays.workers.dev" >> $GITHUB_OUTPUT
               exit 0
             fi
             sleep 5
           done
-          echo "url=https://dor-progress.banjays.workers.dev" >> $GITHUB_OUTPUT
+          echo "deployment_url=https://dor-progress.banjays.workers.dev" >> $GITHUB_OUTPUT
 
   # ============================================================
   # FRONTEND DEPLOY
@@ -221,11 +221,11 @@ jobs:
       github.event_name == 'push' ||
       github.event.inputs.deploy_target == 'all' ||
       github.event.inputs.deploy_target == 'frontend' ||
-      github.event_name == 'workflow_dispatch'
+       github.event_name == 'workflow_dispatch'
 
     outputs:
       status: ${{ steps.firebase.outputs.status }}
-      url: ${{ steps.verify_firebase.outputs.url }}
+      deployment_url: ${{ steps.verify_firebase.outputs.deployment_url }}
 
     steps:
       - uses: actions/checkout@v4
@@ -255,12 +255,12 @@ jobs:
           for i in 1 2 3 4 5; do
             CODE=$(curl -s -o /dev/null -w "%{http_code}" https://dor-progress.web.app || echo 000)
             if [ "$CODE" = "200" ]; then
-              echo "url=https://dor-progress.web.app" >> $GITHUB_OUTPUT
+              echo "deployment_url=https://dor-progress.web.app" >> $GITHUB_OUTPUT
               exit 0
             fi
             sleep 5
           done
-          echo "url=https://dor-progress.web.app" >> $GITHUB_OUTPUT
+          echo "deployment_url=https://dor-progress.web.app" >> $GITHUB_OUTPUT
 
   # ============================================================
   # MONITORING CHECK
@@ -303,7 +303,7 @@ jobs:
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "| Service | Status | URL |" >> $GITHUB_STEP_SUMMARY
           echo "|---------|--------|-----|" >> $GITHUB_STEP_SUMMARY
-          echo "| Worker | ${{ needs.worker.result == 'success' && '✅' || '❌' }} | ${{ needs.worker.outputs.url }} |" >> $GITHUB_STEP_SUMMARY
-          echo "| Frontend | ${{ needs.frontend.result == 'success' && '✅' || '❌' }} | ${{ needs.frontend.outputs.url }} |" >> $GITHUB_STEP_SUMMARY
+           echo "| Worker | ${{ needs.worker.result == 'success' && '✅' || '❌' }} | ${{ needs.worker.outputs.deployment_url }} |" >> $GITHUB_STEP_SUMMARY
+           echo "| Frontend | ${{ needs.frontend.result == 'success' && '✅' || '❌' }} | ${{ needs.frontend.outputs.deployment_url }} |" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "🔗 Actions: https://github.com/${{ github.repository }}/actions" >> $GITHUB_STEP_SUMMARY
