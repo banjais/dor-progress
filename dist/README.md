@@ -1,1 +1,1 @@
-This folder contains the built output assets for the worker "dor-progress" generated at 2026-04-28T14:24:10.873Z.
+This folder contains the built output assets for the worker "dor-progress" generated at 2026-04-28T14:25:25.463Z.
