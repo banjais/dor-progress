@@ -128,17 +128,17 @@ jobs:
       - name: Install
         run: npm ci
 
-      - name: Build Worker
-        run: npm run build
-
       - name: Security audit
         run: npm run security-check
 
-      - name: Type check
+      - name: Type check (TypeScript)
         run: npm run lint
 
       - name: Run tests
         run: npm test
+
+      - name: Build Worker (compile TypeScript)
+        run: npm run compile
 
       - name: Deploy to Cloudflare (no-cache)
         id: deploy

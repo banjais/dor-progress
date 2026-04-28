@@ -17,6 +17,7 @@
   },
   "scripts": {
     "dev": "wrangler dev",
+    "compile": "tsc",
     "clean": "rm -rf dist .wrangler .firebase",
     "build": "sh deploy.sh",
     "types:watch": "nodemon --watch wrangler.toml --exec 'npx wrangler types'",
