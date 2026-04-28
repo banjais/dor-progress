@@ -45,19 +45,4 @@ git push origin main --follow-tags
 
 # 6. Real-time Monitoring
 echo "🚀 Deployment triggered for v$VERSION!"
-if command -v gh >/dev/null; then
-    gh run watch --exit-status
-else
-    REPO_PATH=$(git remote get-url origin | sed -E 's/.*github.com[:\/](.*)\.git/\1/')
-    ACTION_URL="https://github.com/$REPO_PATH/actions"
-    echo "⚠️ gh CLI not found. Opening browser to: $ACTION_URL"
-
-    if [[ "$OSTYPE" == "msys" || "$OSTYPE" == "cygwin" ]]; then
-        # Windows-specific opening via explorer
-        explorer "$ACTION_URL"
-    elif command -v open >/dev/null; then
-        open "$ACTION_URL"
-    elif command -v xdg-open >/dev/null; then
-        xdg-open "$ACTION_URL"
-    fi
-fi
+echo "📊 Monitor: https://github.com/$(basename "$(git remote get-url origin)" .git)/actions"
