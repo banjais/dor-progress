@@ -1,17 +1,61 @@
-name: Deploy DoR Progress Worker
+name: Deploy to Cloudflare and Firebase
 
 on:
   push:
     branches:
-      - main
+      - main # Or your default branch name
+    paths-ignore:
+      - 'README.md'
+      - 'docs/**'
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      bump_type:
+        description: 'Select the version bump type'
+        required: true
+        default: 'patch'
+        type: choice
+        options:
+          - patch
+          - minor
+          - major
 
 jobs:
   deploy:
     runs-on: ubuntu-latest
-    name: Deploy to Cloudflare Workers
+    permissions:
+      contents: write
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # Required to get full history and tags for npm version
+
+      - name: Pre-flight Secret Validation
+        run: |
+          echo "Checking deployment prerequisites..."
+          [ -z "${{ secrets.CLOUDFLARE_API_TOKEN }}" ] && { echo "::error::CLOUDFLARE_API_TOKEN is missing"; exit 1; }
+          # GitHub Action Secrets for Firebase Hosting
+          [ -z "${{ secrets.FIREBASE_SERVICE_ACCOUNT }}" ] && { echo "::error::FIREBASE_SERVICE_ACCOUNT is missing"; exit 1; }
+          [ -z "${{ secrets.FIREBASE_PROJECT_ID }}" ] && { echo "::error::FIREBASE_PROJECT_ID is missing"; exit 1; }
+          # Cloudflare Worker Secrets (passed via GitHub Action secrets)
+          [ -z "${{ secrets.UPSTASH_REDIS_REST_URL }}" ] && { echo "::error::UPSTASH_REDIS_REST_URL is missing"; exit 1; }
+          [ -z "${{ secrets.FIREBASE_API_KEY }}" ] && { echo "::error::FIREBASE_API_KEY is missing"; exit 1; }
+          [ -z "${{ secrets.FIREBASE_AUTH_DOMAIN }}" ] && { echo "::error::FIREBASE_AUTH_DOMAIN is missing"; exit 1; }
+          [ -z "${{ secrets.FIREBASE_PROJECT_NUMBER }}" ] && { echo "::error::FIREBASE_PROJECT_NUMBER is missing"; exit 1; }
+          [ -z "${{ secrets.FIREBASE_APP_ID }}" ] && { echo "::error::FIREBASE_APP_ID is missing"; exit 1; }
+          [ -z "${{ secrets.RECAPTCHA_SITE_KEY }}" ] && { echo "::error::RECAPTCHA_SITE_KEY is missing"; exit 1; }
+          [ -z "${{ secrets.RECAPTCHA_SECRET_KEY }}" ] && { echo "::error::RECAPTCHA_SECRET_KEY is missing"; exit 1; }
+          [ -z "${{ secrets.PUBLISHED_SHEET_ID }}" ] && { echo "::error::PUBLISHED_SHEET_ID is missing"; exit 1; }
+          [ -z "${{ secrets.VAPID_PUBLIC_KEY }}" ] && { echo "::error::VAPID_PUBLIC_KEY is missing"; exit 1; }
+          [ -z "${{ secrets.VAPID_PRIVATE_KEY }}" ] && { echo "::error::VAPID_PRIVATE_KEY is missing"; exit 1; }
+          [ -z "${{ secrets.UPSTASH_REDIS_REST_TOKEN }}" ] && { echo "::error::UPSTASH_REDIS_REST_TOKEN is missing"; exit 1; }
+          [ -z "${{ secrets.GEMINI_API_KEY }}" ] && { echo "::error::GEMINI_API_KEY is missing"; exit 1; }
+          [ -z "${{ secrets.ADMIN_SECRET }}" ] && { echo "::error::ADMIN_SECRET is missing"; exit 1; }
+          [ -z "${{ secrets.GOOGLE_CLOUD_API_KEY }}" ] && { echo "::error::GOOGLE_CLOUD_API_KEY is missing"; exit 1; }
+          [ -z "${{ secrets.API_BASE_URL }}" ] && { echo "::error::API_BASE_URL is missing"; exit 1; }
+          echo "✅ All required secrets are configured."
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
@@ -19,42 +63,227 @@ jobs:
           node-version: 20
           cache: 'npm'
 
-      - name: Install Dependencies
-        run: npm install
+      - name: Configure Git
+        if: github.event_name == 'workflow_dispatch'
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
 
-      - name: Sync Secrets to Cloudflare
-        shell: bash
+      - name: Bump Version and Push (Manual Trigger)
+        if: github.event_name == 'workflow_dispatch'
+        run: |
+          npm version ${{ github.event.inputs.bump_type }} -m "v%s: Manual remote deployment bump [${{ github.event.inputs.bump_type }}]"
+          git push origin main --follow-tags
+
+      - name: Get Version
+        id: get_version
+        run: |
+          echo "VERSION=v$(node -p "require('./package.json').version")" >> $GITHUB_OUTPUT
+          echo "TIMESTAMP=$(date -u +'%Y-%m-%dT%H:%M:%SZ')" >> $GITHUB_OUTPUT
+
+      - name: Install Dependencies
+        if: github.ref == 'refs/heads/main'
+        run: npm ci
+
+      - name: Attempt to Auto-fix Vulnerabilities and Rollback if Unsuccessful
+        if: github.ref == 'refs/heads/main'
+        run: |
+          echo "Attempting to fix npm audit vulnerabilities..."
+          # Store current state of package files for potential rollback
+          cp package.json package.json.bak
+          cp package-lock.json package-lock.json.bak
+
+          # Capture audit data in JSON to extract severities later
+          export PRE_AUDIT_JSON=$(npm audit --json || true)
+
+          # Capture output to extract a summary
+          AUDIT_OUTPUT=$(npm audit fix --audit-level=moderate 2>&1 || true)
+          AUDIT_FIX_EXIT_CODE=$?
+
+          if [ $AUDIT_FIX_EXIT_CODE -eq 0 ]; then
+            echo "✅ npm audit fix completed successfully. Dependencies are patched."
+            # Check if any changes were actually made by npm audit fix
+            if git diff --quiet package.json package-lock.json; then
+              echo "No changes detected after npm audit fix."
+            else
+              # Extract the summary line (e.g., "fixed 2 vulnerabilities...")
+              SUMMARY=$(echo "$AUDIT_OUTPUT" | grep -iE "fixed [0-9]+ vulnerabilities|updated [0-9]+ package" | tail -n 1 | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
+              [ -z "$SUMMARY" ] && SUMMARY="Vulnerabilities patched successfully."
+              echo "PATCHED_SUMMARY=$SUMMARY" >> $GITHUB_ENV
+              
+              # Parse package-lock.json to find updated package names
+              PATCHED_PKGS=$(node -e "
+                const fs = require('fs');
+                const oldP = JSON.parse(fs.readFileSync('package-lock.json.bak')).packages;
+                const newP = JSON.parse(fs.readFileSync('package-lock.json')).packages;
+                const audit = JSON.parse(process.env.PRE_AUDIT_JSON || '{\"vulnerabilities\":{}}');
+                const vulns = audit.vulnerabilities || {};
+
+                const groupedBySeverity = {
+                  CRITICAL: [],
+                  HIGH: [],
+                  MODERATE: [],
+                  LOW: [],
+                  INFO: [],
+                  UNKNOWN: []
+                };
+
+                Object.keys(newP)
+                  .filter(k => oldP[k] && oldP[k].version !== newP[k].version) // Filter for packages whose versions actually changed
+                  .forEach(k => {
+                    const name = k === '' ? 'root' : k.replace('node_modules/', '');
+                    const oldVersion = oldP[k].version;
+                    const newVersion = newP[k].version;
+                    
+                    let severity = 'UNKNOWN';
+                    if (vulns[name] && vulns[name].severity) {
+                        severity = vulns[name].severity.toUpperCase();
+                    }
+
+                    const packageString = `${name} (${oldVersion} -> ${newVersion})`;
+                    if (groupedBySeverity[severity]) {
+                      groupedBySeverity[severity].push(packageString);
+                    } else {
+                      groupedBySeverity.UNKNOWN.push(packageString);
+                    }
+                  });
+
+                const severityOrder = ['CRITICAL', 'HIGH', 'MODERATE', 'LOW', 'INFO', 'UNKNOWN'];
+                let formattedPackages = '';
+                severityOrder.forEach(sev => {
+                  if (groupedBySeverity[sev].length > 0) {
+                    formattedPackages += `\n*${sev}*: ${groupedBySeverity[sev].join(', ')}`;
+                  }
+                });
+                console.log(formattedPackages.trim() || 'No direct version changes detected in package-lock.json.');
+              ")
+              echo "PATCHED_PACKAGES=$PATCHED_PKGS" >> $GITHUB_ENV
+              
+              echo "Changes detected after npm audit fix. Committing them."
+              git config user.name "github-actions[bot]"
+              git config user.email "github-actions[bot]@users.noreply.github.com"
+              git add package.json package-lock.json
+              git commit -m "ci: Auto-fix npm audit vulnerabilities"
+              git push
+              echo "✅ Committed and pushed npm audit fixes."
+              echo "AUDIT_FIX_SUCCESS=true" >> $GITHUB_ENV
+            fi
+          else
+            echo "⚠️ npm audit fix failed to resolve all vulnerabilities to 'moderate' level."
+            echo "Rolling back package.json and package-lock.json to previous state."
+            mv package.json.bak package.json
+            mv package-lock.json.bak package-lock.json
+            echo "Rollback complete. Deployment will proceed with original dependencies."
+            echo "Manual intervention is required to address remaining vulnerabilities."
+            echo "AUDIT_FIX_FAILED=true" >> $GITHUB_ENV
+          fi
+
+          # Clean up backup files
+          rm -f package.json.bak package-lock.json.bak
+          # Ensure this step always succeeds for the workflow to continue
+          exit 0
+
+      - name: Notify Slack on Audit Failure
+        if: env.AUDIT_FIX_FAILED == 'true'
+        uses: slackapi/slack-github-action@v1.26.0
+        with:
+          payload: |
+            {
+              "text": "⚠️ *Vulnerability Audit Warning* in `${{ github.repository }}`\n`npm audit fix` was unable to resolve all moderate+ vulnerabilities. The deployment proceeded using the original dependencies. \n\n*Action Required:* Review the <${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}|CI logs> and perform a manual audit fix."
+            }
         env:
-          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          # List all secrets to be uploaded
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+
+      - name: Notify Slack on Audit Success
+        if: env.AUDIT_FIX_SUCCESS == 'true' && success()
+        uses: slackapi/slack-github-action@v1.26.0
+        with:
+          payload: |
+            {
+              "text": "✅ *Vulnerabilities Patched & Deployed* in `${{ github.repository }}`\n`npm audit fix` successfully patched dependencies to a moderate+ level.\n\n*Summary:* ${{ env.PATCHED_SUMMARY }}\n*Packages:* ${{ env.PATCHED_PACKAGES }}\n*Build:* ${{ steps.get_version.outputs.VERSION }}\n*Details:* <${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}|View Workflow Logs>"
+            }
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+
+      - name: Deploy to Cloudflare Workers
+        if: github.ref == 'refs/heads/main'
+        uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          command: deploy --outdir=dist
+          vars: |
+            BUILD_ID
+            COMMIT_SHA
+            DEPLOY_TIMESTAMP
+            FIREBASE_PROJECT_ID
+          secrets: |
+            UPSTASH_REDIS_REST_URL
+            UPSTASH_REDIS_REST_TOKEN
+            GEMINI_API_KEY
+            ADMIN_SECRET
+            GOOGLE_CLOUD_API_KEY
+            API_BASE_URL
+            VAPID_PUBLIC_KEY
+            VAPID_PRIVATE_KEY
+            FIREBASE_API_KEY
+            FIREBASE_AUTH_DOMAIN
+            FIREBASE_PROJECT_NUMBER
+            FIREBASE_APP_ID
+            RECAPTCHA_SITE_KEY
+            RECAPTCHA_SECRET_KEY
+            PUBLISHED_SHEET_ID
+        env:
+          BUILD_ID: ${{ steps.get_version.outputs.VERSION }}
+          COMMIT_SHA: ${{ github.sha }}
+          DEPLOY_TIMESTAMP: ${{ steps.get_version.outputs.TIMESTAMP }}
+          FIREBASE_PROJECT_ID: ${{ secrets.FIREBASE_PROJECT_ID }}
           UPSTASH_REDIS_REST_URL: ${{ secrets.UPSTASH_REDIS_REST_URL }}
           UPSTASH_REDIS_REST_TOKEN: ${{ secrets.UPSTASH_REDIS_REST_TOKEN }}
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          ADMIN_SECRET: ${{ secrets.ADMIN_SECRET }}
+          GOOGLE_CLOUD_API_KEY: ${{ secrets.GOOGLE_CLOUD_API_KEY }}
+          API_BASE_URL: ${{ secrets.API_BASE_URL }}
+          VAPID_PUBLIC_KEY: ${{ secrets.VAPID_PUBLIC_KEY }}
+          VAPID_PRIVATE_KEY: ${{ secrets.VAPID_PRIVATE_KEY }}
           FIREBASE_API_KEY: ${{ secrets.FIREBASE_API_KEY }}
           FIREBASE_AUTH_DOMAIN: ${{ secrets.FIREBASE_AUTH_DOMAIN }}
-          FIREBASE_PROJECT_ID: ${{ secrets.FIREBASE_PROJECT_ID }}
           FIREBASE_PROJECT_NUMBER: ${{ secrets.FIREBASE_PROJECT_NUMBER }}
           FIREBASE_APP_ID: ${{ secrets.FIREBASE_APP_ID }}
           RECAPTCHA_SITE_KEY: ${{ secrets.RECAPTCHA_SITE_KEY }}
           RECAPTCHA_SECRET_KEY: ${{ secrets.RECAPTCHA_SECRET_KEY }}
           PUBLISHED_SHEET_ID: ${{ secrets.PUBLISHED_SHEET_ID }}
-          VAPID_PUBLIC_KEY: ${{ secrets.VAPID_PUBLIC_KEY }}
-          VAPID_PRIVATE_KEY: ${{ secrets.VAPID_PRIVATE_KEY }}
-          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
-          GOOGLE_CLOUD_API_KEY: ${{ secrets.GOOGLE_CLOUD_API_KEY }}
-          ADMIN_SECRET: ${{ secrets.ADMIN_SECRET }}
-        run: |
-          for secret in UPSTASH_REDIS_REST_URL UPSTASH_REDIS_REST_TOKEN FIREBASE_API_KEY FIREBASE_AUTH_DOMAIN FIREBASE_PROJECT_ID FIREBASE_PROJECT_NUMBER FIREBASE_APP_ID RECAPTCHA_SITE_KEY RECAPTCHA_SECRET_KEY PUBLISHED_SHEET_ID VAPID_PUBLIC_KEY VAPID_PRIVATE_KEY GEMINI_API_KEY GOOGLE_CLOUD_API_KEY ADMIN_SECRET; do
-            echo "Pushing secret: $secret"
-            echo "${!secret}" | npx wrangler secret put "$secret"
-          done
 
-      - name: Deploy Worker
-        uses: cloudflare/wrangler-action@v3
+      - name: Deploy to Firebase Hosting
+        if: github.ref == 'refs/heads/main'
+        uses: FirebaseExtended/action-hosting-deploy@v0
         with:
-          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          repoToken: ${{ secrets.GITHUB_TOKEN }}
+          firebaseServiceAccount: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+          channelId: live
+          projectId: ${{ secrets.FIREBASE_PROJECT_ID }}
+        env:
+          FIREBASE_CLI_PREV: 1
 
-      - name: Post-Deployment Diagnostics
+      - name: Create GitHub Release
+        if: startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch'
+        uses: softprops/action-gh-release@v2
+        with:
+          generate_release_notes: true
+          tag_name: ${{ steps.get_version.outputs.VERSION }}
+          name: Release ${{ steps.get_version.outputs.VERSION }}
+          body: |
+            **Deployment Information**
+            - **Timestamp:** ${{ steps.get_version.outputs.TIMESTAMP }}
+            - **Build Version:** ${{ steps.get_version.outputs.VERSION }}
+            - **Triggered By:** ${{ github.actor }}
+
+      - name: Deployment Summary
+        if: always()
         run: |
-          echo "Waiting for propagation..."
-          sleep 5
-          curl -H "X-Admin-Secret: ${{ secrets.ADMIN_SECRET }}" "https://dor-progress.banjays.workers.dev/api/admin/config-check"
+          echo "### 🚀 Deployment Report" >> $GITHUB_STEP_SUMMARY
+          echo "*   **Status:** ${{ job.status }}" >> $GITHUB_STEP_SUMMARY
+          echo "*   **Trigger:** ${{ github.event_name }}" >> $GITHUB_STEP_SUMMARY
+          echo "*   **Cloudflare Worker:** https://dor-progress.banjays.workers.dev" >> $GITHUB_STEP_SUMMARY
+          echo "*   **Diagnostic:** `curl.exe -H \"X-Admin-Secret: YOUR_SECRET\" \"https://dor-progress.banjays.workers.dev/api/admin/config-check\"`" >> $GITHUB_STEP_SUMMARY
+          echo "*   **Firebase:** [View Hosting](https://dor-progress.web.app)" >> $GITHUB_STEP_SUMMARY
+          echo "*   **Commit:** ${{ github.sha }}" >> $GITHUB_STEP_SUMMARY

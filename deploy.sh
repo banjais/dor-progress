@@ -1,0 +1,66 @@
+#!/usr/bin/env bash
+set -e # Exit immediately if a command exits with a non-zero status
+
+# 1. Branch Safety Check
+CURRENT_BRANCH=$(git branch --show-current)
+if [ "$CURRENT_BRANCH" != "main" ]; then
+    echo "❌ Error: You must be on the main branch to deploy (current: $CURRENT_BRANCH)."
+    exit 1
+fi
+
+# 2. Argument Handling & Validation
+BUMP="${1:-patch}"
+case $BUMP in
+    patch|minor|major) ;;
+    *) echo "❌ Error: Invalid bump type. Use patch, minor, or major."; exit 1 ;;
+esac
+
+# Load local secrets for testing if they exist (.dev.vars is the Wrangler standard)
+if [ -f .dev.vars ]; then
+    echo "ℹ️ Loading local secrets from .dev.vars for validation..."
+    while IFS= read -r line || [ -n "$line" ]; do
+        if [[ "$line" =~ ^[A-Za-z_][A-Za-z0-9_]*= ]]; then # Only export lines that look like KEY=VALUE
+            export "$line"
+        fi
+    done < .dev.vars
+fi
+
+# 3. Validation Gates
+npm run security-check
+npm run lint
+npm run test
+
+# 4. Versioning
+npm version "$BUMP" --no-git-tag-version
+VERSION=$(node -p "require('./package.json').version")
+
+MSG="${2:-}"
+if [ -z "$MSG" ]; then
+    echo -n "Enter commit message: "
+    read -r MSG
+fi
+
+# 5. Git Sync
+git add .
+git commit -m "v$VERSION: ${MSG:-Manual deploy update}"
+git tag -a "v$VERSION" -m "Release v$VERSION"
+git push origin main --follow-tags
+
+# 6. Real-time Monitoring
+echo "🚀 Deployment triggered for v$VERSION!"
+if command -v gh >/dev/null; then
+    gh run watch --exit-status
+else
+    REPO_PATH=$(git remote get-url origin | sed -E 's/.*github.com[:\/](.*)\.git/\1/')
+    ACTION_URL="https://github.com/$REPO_PATH/actions"
+    echo "⚠️ gh CLI not found. Opening browser to: $ACTION_URL"
+
+    if [[ "$OSTYPE" == "msys" || "$OSTYPE" == "cygwin" ]]; then
+        # Windows-specific opening via explorer
+        explorer "$ACTION_URL"
+    elif command -v open >/dev/null; then
+        open "$ACTION_URL"
+    elif command -v xdg-open >/dev/null; then
+        xdg-open "$ACTION_URL"
+    fi
+fi

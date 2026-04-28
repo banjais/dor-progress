@@ -16,9 +16,18 @@ interface Env {
     // Bindings and Vars from wrangler.toml
     TRANSLATION_KV: KVNamespace;
     RATE_LIMITER: DurableObjectNamespace;
-    UPSTASH_REDIS_REST_URL: string;
 
     // Secrets (Managed via 'npx wrangler secret put')
+    UPSTASH_REDIS_REST_URL: string;
+    UPSTASH_REDIS_REST_TOKEN: string;
+    GEMINI_API_KEY: string;
+    ADMIN_SECRET: string;
+    GOOGLE_CLOUD_API_KEY: string;
+    API_BASE_URL: string;
+    VAPID_PUBLIC_KEY: string;
+    VAPID_PRIVATE_KEY: string;
+
+    // Firebase-related secrets
     FIREBASE_API_KEY: string;
     FIREBASE_AUTH_DOMAIN: string;
     FIREBASE_PROJECT_ID: string;
@@ -27,15 +36,11 @@ interface Env {
     RECAPTCHA_SITE_KEY: string;
     RECAPTCHA_SECRET_KEY: string;
     PUBLISHED_SHEET_ID: string;
-    VAPID_PUBLIC_KEY: string;
-    VAPID_PRIVATE_KEY: string;
-    UPSTASH_REDIS_REST_TOKEN: string;
-    GEMINI_API_KEY: string;
-    ADMIN_SECRET: string;
-    GOOGLE_CLOUD_API_KEY: string;
-    API_BASE_URL: string;
+
+    // Build metadata (passed as vars)
     BUILD_ID: string;
     COMMIT_SHA: string;
+    DEPLOY_TIMESTAMP: string;
 }
 
 /**
@@ -143,21 +148,31 @@ export default {
 
         if (url.pathname.startsWith('/api/admin/')) {
             const adminSecret = request.headers.get("X-Admin-Secret");
-            if (!adminSecret || !secureCompare(adminSecret, env.ADMIN_SECRET)) {
+            if (!adminSecret || !env.ADMIN_SECRET || !secureCompare(adminSecret, env.ADMIN_SECRET)) {
                 return new Response("Unauthorized", { status: 401, headers: securityHeaders });
             }
             if (url.pathname === '/api/admin/config-check') {
                 const keys: (keyof Env)[] = [
+                    'TRANSLATION_KV', 'RATE_LIMITER', 'UPSTASH_REDIS_REST_URL', 'UPSTASH_REDIS_REST_TOKEN',
+                    'GEMINI_API_KEY', 'ADMIN_SECRET', 'GOOGLE_CLOUD_API_KEY', 'API_BASE_URL',
+                    'VAPID_PUBLIC_KEY', 'VAPID_PRIVATE_KEY',
                     'FIREBASE_API_KEY', 'FIREBASE_AUTH_DOMAIN', 'FIREBASE_PROJECT_ID',
                     'FIREBASE_PROJECT_NUMBER', 'FIREBASE_APP_ID', 'RECAPTCHA_SITE_KEY',
-                    'RECAPTCHA_SECRET_KEY', 'PUBLISHED_SHEET_ID', 'GEMINI_API_KEY',
-                    'UPSTASH_REDIS_REST_TOKEN', 'ADMIN_SECRET', 'API_BASE_URL', 'BUILD_ID', 'COMMIT_SHA'
+                    'RECAPTCHA_SECRET_KEY', 'PUBLISHED_SHEET_ID',
+                    'BUILD_ID', 'COMMIT_SHA', 'DEPLOY_TIMESTAMP'
                 ];
                 const results: Record<string, any> = {};
                 for (const k of keys) {
                     const v = env[k];
-                    const isSet = typeof v === 'string' && v.length > 0;
-                    results[k] = isSet ? { status: "LOADED", length: v.length, preview: `${v.substring(0, 4)}...${v.slice(-4)}` } : { status: "NOT_FOUND" };
+                    const isSet = v !== undefined && v !== null;
+                    if (isSet) {
+                        const isString = typeof v === 'string';
+                        results[k] = isString
+                            ? { status: "LOADED", length: v.length, preview: v.length > 8 ? `${v.substring(0, 4)}...${v.slice(-4)}` : "****" }
+                            : { status: "LOADED", type: typeof v };
+                    } else {
+                        results[k] = { status: "NOT_FOUND" };
+                    }
                 }
 
                 // 2. Live Infrastructure Health Check
@@ -188,7 +203,9 @@ export default {
                 return new Response(JSON.stringify({
                     metadata: {
                         build: env.BUILD_ID || "NOT_INJECTED",
-                        sha: (env.COMMIT_SHA || "NOT_INJECTED").substring(0, 7)
+                        sha: env.COMMIT_SHA ? env.COMMIT_SHA.substring(0, 7) : "NOT_INJECTED",
+                        deployed_at: env.DEPLOY_TIMESTAMP || "NOT_INJECTED",
+                        worker_host: url.hostname
                     },
                     environment: results,
                     connectivity: health,
