@@ -70,3 +70,12 @@ node_modules/
 
 # Wrangler local secrets
 .dev.vars
+
+# Firebase service account keys (never commit these!)
+*-firebase-adminsdk-*.json
+firebase-adminsdk-*.json
+firebase-service-account.json
+
+# Build scripts and generated assets
+generate-icons.js
+generated-icons/
