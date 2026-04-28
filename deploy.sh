@@ -34,15 +34,12 @@ npm run test
 npm version "$BUMP" --no-git-tag-version
 VERSION=$(node -p "require('./package.json').version")
 
-MSG="${2:-}"
-if [ -z "$MSG" ]; then
-    echo -n "Enter commit message: "
-    read -r MSG
-fi
+# Auto-generate commit message if not provided
+MSG="${2:-Deploy v$VERSION}"
 
 # 5. Git Sync
 git add .
-git commit -m "v$VERSION: ${MSG:-Manual deploy update}"
+git commit -m "v$VERSION: $MSG"
 git tag -a "v$VERSION" -m "Release v$VERSION"
 git push origin main --follow-tags
 
