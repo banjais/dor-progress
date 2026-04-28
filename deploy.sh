@@ -2,9 +2,10 @@
 set -e # Exit immediately if a command exits with a non-zero status
 
 # 1. Branch Safety Check
-CURRENT_BRANCH=$(git branch --show-current)
+CURRENT_BRANCH=$(git rev-parse --abbrev-ref HEAD 2>/dev/null || echo "UNKNOWN")
 if [ "$CURRENT_BRANCH" != "main" ]; then
     echo "❌ Error: You must be on the main branch to deploy (current: $CURRENT_BRANCH)."
+    echo "   Switch to main: git checkout main"
     exit 1
 fi
 
