@@ -15,7 +15,11 @@ case $BUMP in
     *) echo "❌ Error: Invalid bump type. Use patch, minor, or major."; exit 1 ;;
 esac
 
-# Load local secrets for testing if they exist (.dev.vars is the Wrangler standard)
+# 3. Clean build artifacts
+echo "🧹 Cleaning build artifacts..."
+rm -rf dist .wrangler .firebase
+
+# 4. Load local secrets for validation
 if [ -f .dev.vars ]; then
     echo "ℹ️ Loading local secrets from .dev.vars for validation..."
     while IFS= read -r line || [ -n "$line" ]; do
