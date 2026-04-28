@@ -15,14 +15,17 @@
         "forceConsistentCasingInFileNames": true,
         "strict": true,
         "skipLibCheck": true,
-        "noEmit": true
+        "noEmit": false,
+        "outDir": "dist",
+        "declaration": false,
+        "sourceMap": false
     },
     "include": [
-        "index.ts",
-        "security.test.ts"
+        "index.ts"
     ],
     "exclude": [
         "node_modules",
-        "dist"
+        "dist",
+        "security.test.ts"
     ]
 }
