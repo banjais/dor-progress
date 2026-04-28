@@ -134,6 +134,7 @@ jobs:
           BUILD_ID: v$(node -p "require('./package.json').version")
           COMMIT_SHA: ${{ github.sha }}
           DEPLOY_TIMESTAMP: ${{ github.run_started_at }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           FIREBASE_PROJECT_ID: ${{ secrets.FIREBASE_PROJECT_ID }}
           FIREBASE_API_KEY: ${{ secrets.FIREBASE_API_KEY }}
           FIREBASE_AUTH_DOMAIN: ${{ secrets.FIREBASE_AUTH_DOMAIN }}
