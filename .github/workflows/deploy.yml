@@ -265,6 +265,25 @@ jobs:
           node-version: ${{ env.NODE_VERSION }}
           cache: 'npm'
 
+      - name: Notify Slack on failure
+        if: failure()
+        uses: slackapi/slack-github-action@v1.26.0
+        with:
+          payload: |
+            {
+              "text": "❌ *Deployment Failed* for `${{ github.repository }}`",
+              "attachments": [{
+                "color": "#e01e5a",
+                "fields": [
+                  { "title": "Workflow", "value": "${{ github.workflow }}", "short": true },
+                  { "title": "Branch", "value": "`${{ github.ref_name }}`", "short": true },
+                  { "title": "Logs", "value": "<${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}|View Failure Logs>", "short": false }
+                ]
+              }]
+            }
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+
       - name: Build summary
         run: |
           echo "## 🚀 Deploy Summary" >> $GITHUB_STEP_SUMMARY
