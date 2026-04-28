@@ -6,9 +6,6 @@
 import { PDFDocument, rgb, StandardFonts } from 'pdf-lib';
 import { Tiktoken } from 'js-tiktoken/lite';
 
-// @ts-ignore - Imported as a binary asset via bundler
-import logoBytes from './logo.png';
-
 /**
  * Interface for environment bindings.
  */
