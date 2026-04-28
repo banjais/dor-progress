@@ -90,10 +90,7 @@ jobs:
     name: ☁️ Worker
     runs-on: ubuntu-latest
     outputs:
-      error_msg: ${{ steps.set_error.outputs.msg }}
-      status: ${{ steps.deploy.outputs.status }}
       deployment_url: ${{ steps.verify.outputs.deployment_url }}
-      timestamp: ${{ steps.get_version.outputs.TIMESTAMP }}
     needs: preflight
     if: >
       github.event_name == 'push' ||
@@ -112,6 +109,9 @@ jobs:
 
       - name: Get Version
         id: get_version
+        run: |
+          echo "VERSION=$(node -p "require('./package.json').version")" >> $GITHUB_OUTPUT
+          echo "TIMESTAMP=$(date -u +'%Y-%m-%dT%H:%M:%SZ')" >> $GITHUB_OUTPUT
         shell: bash
 
       - name: Build summary
