@@ -32,10 +32,14 @@ interface Env {
     FIREBASE_AUTH_DOMAIN: string;
     FIREBASE_PROJECT_ID: string;
     FIREBASE_PROJECT_NUMBER: string;
-    FIREBASE_APP_ID: string;
+    FIREBASE_APP_ID?: string;  // optional: used only for Firebase config object
     RECAPTCHA_SITE_KEY: string;
     RECAPTCHA_SECRET_KEY: string;
     PUBLISHED_SHEET_ID: string;
+
+    // Optional Firebase fields (future use)
+    FIREBASE_STORAGE_BUCKET?: string;
+    FIREBASE_MESSAGING_SENDER_ID?: string;
 
     // Build metadata (passed as vars)
     BUILD_ID: string;
@@ -83,14 +87,180 @@ const DICTIONARY: Record<string, Record<string, string>> = {
         "Drainage Work": "ढल निर्माण",
         "km": "कि.मि.",
         "m": "मिटर",
-        "Nos": "संख्या"
+        "Nos": "संख्या",
+        "Hello": "नमस्ते",
+        "Road": "सडक",
+        "Construction": "निर्माण",
+        "Traffic": "यातायात",
+        "Blocked": "अवरुद्ध",
+        "Open": "खुला",
+        "Closed": "बन्द"
     }
 };
 
+// Circuit breaker constants
 const FAIL_COUNT_KEY = "system:gemini_failure_count";
 const CIRCUIT_BREAKER_KEY = "system:circuit_open";
 const FAIL_THRESHOLD = 5;
 const COOL_OFF_SECONDS = 600; // 10 minutes
+
+/**
+ * Check if circuit breaker is open (Gemini repeatedly failing)
+ */
+async function isCircuitBreakerOpen(env: Env): Promise<boolean> {
+    const open = await env.TRANSLATION_KV.get(CIRCUIT_BREAKER_KEY);
+    if (open === "true") {
+        const failCountStr = await env.TRANSLATION_KV.get(FAIL_COUNT_KEY);
+        const failCount = failCountStr ? parseInt(failCountStr, 10) : 0;
+        if (failCount >= FAIL_THRESHOLD) {
+            return true; // Still open
+        }
+        // Reset if below threshold (e.g., after cooldown)
+        await env.TRANSLATION_KV.delete(CIRCUIT_BREAKER_KEY);
+        await env.TRANSLATION_KV.delete(FAIL_COUNT_KEY);
+    }
+    return false;
+}
+
+/**
+ * Record a Gemini failure and potentially trip circuit breaker
+ */
+async function recordGeminiFailure(env: Env): Promise<void> {
+    const currentStr = await env.TRANSLATION_KV.get(FAIL_COUNT_KEY) || "0";
+    const current = parseInt(currentStr, 10);
+    const next = current + 1;
+    await env.TRANSLATION_KV.put(FAIL_COUNT_KEY, next.toString(), { expirationTtl: COOL_OFF_SECONDS });
+    if (next >= FAIL_THRESHOLD) {
+        await env.TRANSLATION_KV.put(CIRCUIT_BREAKER_KEY, "true", { expirationTtl: COOL_OFF_SECONDS });
+    }
+}
+
+/**
+ * Cache key generator (hash-like to avoid huge keys)
+ */
+function makeCacheKey(text: string, targetLang: string): string {
+    const input = `${targetLang}:${text}`.toLowerCase().trim();
+    // Simple hash: djb2
+    let hash = 5381;
+    for (let i = 0; i < input.length; i++) {
+        hash = ((hash << 5) + hash) + input.charCodeAt(i); // hash * 33 + char
+        hash = hash & hash; // Keep as 32-bit
+    }
+    return `trans:${targetLang}:${hash.toString(16)}`;
+}
+
+/**
+ * Translate text using Gemini AI with dictionary fallback and caching
+ */
+export async function translateWithGemini(
+    text: string,
+    targetLang: string,
+    env: Env
+): Promise<{ translated: string; source: "dictionary" | "gemini" | "cache" | "fallback" | "circuit-breaker" }> {
+    // 1. Circuit breaker check
+    if (await isCircuitBreakerOpen(env)) {
+        return { translated: text, source: "circuit-breaker" };
+    }
+
+    // 2. Cache lookup
+    const cacheKey = makeCacheKey(text, targetLang);
+    const cached = await env.TRANSLATION_KV.get(cacheKey);
+    if (cached) {
+        return { translated: cached, source: "cache" };
+    }
+
+    // 3. Dictionary fallback (exact match)
+    const dict = DICTIONARY[targetLang as keyof typeof DICTIONARY];
+    if (dict) {
+        const exact = dict[text];
+        if (exact) {
+            await env.TRANSLATION_KV.put(cacheKey, exact, { expirationTtl: 86400 * 30 }); // 30d
+            return { translated: exact, source: "dictionary" };
+        }
+        // Case-insensitive partial match for short phrases (≤5 words)
+        const words = text.split(/\s+/);
+        if (words.length <= 5) {
+            for (const [phrase, translation] of Object.entries(dict)) {
+                if (text.toLowerCase() === phrase.toLowerCase()) {
+                    await env.TRANSLATION_KV.put(cacheKey, translation, { expirationTtl: 86400 * 30 });
+                    return { translated: translation, source: "dictionary" };
+                }
+            }
+        }
+    }
+
+    // 4. Gemini AI translation (if key configured)
+    if (!env.GEMINI_API_KEY || env.GEMINI_API_KEY.trim().length === 0) {
+        // No Gemini configured — return original text
+        return { translated: text, source: "fallback" };
+    }
+
+    try {
+        // Construct prompt for translation
+        const prompt = `Translate the following English text to ${targetLang === 'ne' ? 'Nepali (Devanagari script)' : targetLang}. 
+Preserve numbers, units (km, m, Nos), proper nouns, and technical terms. 
+Return ONLY the translated text with no additional commentary.
+
+Text: "${text}"
+
+Translation:`;
+
+        const geminiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${env.GEMINI_API_KEY}`;
+        const response = await fetch(geminiUrl, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+                contents: [{
+                    parts: [{ text: prompt }],
+                    role: "user"
+                }],
+                generationConfig: {
+                    temperature: 0.2,
+                    maxOutputTokens: 512,
+                    topP: 0.95,
+                    topK: 40
+                },
+                safetySettings: [
+                    { category: "HARM_CATEGORY_HARASSMENT", threshold: "BLOCK_MEDIUM_AND_ABOVE" },
+                    { category: "HARM_CATEGORY_HATE_SPEECH", threshold: "BLOCK_MEDIUM_AND_ABOVE" },
+                    { category: "HARM_CATEGORY_SEXUALLY_EXPLICIT", threshold: "BLOCK_MEDIUM_AND_ABOVE" },
+                    { category: "HARM_CATEGORY_DANGEROUS_CONTENT", threshold: "BLOCK_MEDIUM_AND_ABOVE" }
+                ]
+            })
+        });
+
+        if (!response.ok) {
+            const errorBody = await response.text();
+            throw new Error(`Gemini API ${response.status}: ${errorBody}`);
+        }
+
+        const data = await response.json() as {
+            candidates?: Array<{
+                content?: {
+                    parts?: Array<{ text?: string }>
+                }
+            }>
+        };
+        const candidate = data.candidates?.[0];
+        if (!candidate?.content?.parts?.[0]?.text) {
+            throw new Error("Invalid Gemini response structure");
+        }
+
+        let translated = candidate.content.parts[0].text.trim();
+        // Remove surrounding quotes if present
+        translated = translated.replace(/^["']|["']$/g, "").trim();
+
+        // Cache successful translation for 7 days
+        await env.TRANSLATION_KV.put(cacheKey, translated, { expirationTtl: 86400 * 7 });
+
+        return { translated, source: "gemini" };
+    } catch (error) {
+        console.error("Gemini translation error:", error);
+        await recordGeminiFailure(env);
+        // Fallback: return original text
+        return { translated: text, source: "fallback" };
+    }
+}
 
 export default {
     async fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
@@ -212,10 +382,51 @@ export default {
                     timestamp: new Date().toISOString()
                 }), { headers: { ...securityHeaders, "Content-Type": "application/json" } });
             }
-            // ... (Other admin routes remain the same)
+            // Future admin routes (idempotency, cache-purge, etc.) go here
         }
 
-        // ... (AppCheck, reCAPTCHA, and Route handlers follow using Env interface)
+        // Public API: Translation endpoint
+        if (url.pathname === '/api/translate') {
+            const text = url.searchParams.get('text');
+            const targetLang = url.searchParams.get('targetLang') || 'ne';
+
+            if (!text) {
+                return new Response(JSON.stringify({ error: "Missing 'text' query parameter" }), {
+                    status: 400,
+                    headers: { ...securityHeaders, "Content-Type": "application/json" }
+                });
+            }
+
+            // Basic rate limiting for public endpoint (stricter)
+            const translateKey = `limit:translate:${clientIp}`;
+            const isRateLimited = await this.getRedisCache(translateKey, env);
+            if (isRateLimited) {
+                return new Response(JSON.stringify({ error: "Rate limit exceeded. Try again later." }), {
+                    status: 429,
+                    headers: { ...securityHeaders, "Content-Type": "application/json" }
+                });
+            }
+
+            // Perform translation
+            const result = await translateWithGemini(text, targetLang, env);
+
+            // Set rate limit cache (1 minute) — only if not circuit-broken
+            if (result.source !== 'circuit-breaker') {
+                await this.setRedisCache(translateKey, "active", env, 60);
+            }
+
+            return new Response(JSON.stringify({
+                original: text,
+                translated: result.translated,
+                targetLang,
+                source: result.source
+            }), {
+                status: 200,
+                headers: { ...securityHeaders, "Content-Type": "application/json" }
+            });
+        }
+
+        // Default fallback
         return new Response("DoR API Operational", { headers: securityHeaders });
     },
 
@@ -231,7 +442,9 @@ export default {
         if (!env.UPSTASH_REDIS_REST_URL) return "CONFIG_ERROR";
         const baseUrl = env.UPSTASH_REDIS_REST_URL.replace(/\/$/, "");
         const res = await fetch(`${baseUrl}/get/${key}`, { headers: { Authorization: `Bearer ${env.UPSTASH_REDIS_REST_TOKEN}` } });
-        return res.ok ? (await res.json() as any).result : null;
+        if (!res.ok) return null;
+        const data = await res.json() as { result?: string };
+        return data.result ?? null;
     },
 
     async setRedisCache(key: string, val: string, env: Env, ttl: number = 604800): Promise<void> {

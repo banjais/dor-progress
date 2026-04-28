@@ -1,6 +1,6 @@
 {
   "name": "dor-progress",
-  "version": "1.0.7",
+  "version": "1.0.8",
   "type": "module",
   "dependencies": {
     "js-tiktoken": "^1.0.17",
@@ -18,7 +18,7 @@
   "scripts": {
     "dev": "wrangler dev",
     "types:watch": "nodemon --watch wrangler.toml --exec 'npx wrangler types'",
-    "test": "vitest run",
+    "test": "bash -c 'if [ -f .dev.vars ]; then while IFS= read -r line || [ -n \"$line\" ]; do if [[ \"$line\" =~ ^[A-Za-z_][A-Za-z0-9_]*= ]]; then export \"$line\"; fi; done < .dev.vars; fi && vitest run'",
     "lint": "tsc --noEmit",
     "security-check": "npm audit --audit-level=high && ./verify-no-secrets.sh",
     "test:watch": "vitest",

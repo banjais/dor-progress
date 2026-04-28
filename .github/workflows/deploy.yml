@@ -48,6 +48,7 @@ jobs:
       secrets_status: ${{ steps.check_secrets.outputs.status }}
       worker_configured: ${{ steps.check_secrets.outputs.worker_ok }}
       firebase_configured: ${{ steps.check_secrets.outputs.firebase_ok }}
+      firebase_app_configured: ${{ steps.check_secrets.outputs.firebase_app_ok }}
       admin_configured: ${{ steps.check_secrets.outputs.admin_ok }}
       upstash_configured: ${{ steps.check_secrets.outputs.upstash_ok }}
       gemini_configured: ${{ steps.check_secrets.outputs.gemini_ok }}
@@ -98,9 +99,20 @@ jobs:
             CONFIGURED=$((CONFIGURED + 1))
             echo "firebase_ok=true" >> $GITHUB_OUTPUT
           else
-            echo "❌ FIREBASE_SERVICE_ACCOUNT: Missing (required for frontend deploy)"
+            echo "❌ FIREBASE_SERVICE_ACCOUNT: Missing"
             REQUIRED_MISSING=$((REQUIRED_MISSING + 1))
             echo "firebase_ok=false" >> $GITHUB_OUTPUT
+          fi
+
+          TOTAL=$((TOTAL + 1))
+          if [ -n "${{ secrets.FIREBASE_APP_ID }}" ]; then
+            echo "✅ FIREBASE_APP_ID: Configured"
+            CONFIGURED=$((CONFIGURED + 1))
+            echo "firebase_app_ok=true" >> $GITHUB_OUTPUT
+          else
+            echo "❌ FIREBASE_APP_ID: Missing"
+            REQUIRED_MISSING=$((REQUIRED_MISSING + 1))
+            echo "firebase_app_ok=false" >> $GITHUB_OUTPUT
           fi
           echo ""
 
@@ -521,6 +533,7 @@ jobs:
           echo "|--------|--------|--------|" >> $GITHUB_STEP_SUMMARY
           echo "| ☁️ CLOUDFLARE_API_TOKEN | ${{ needs.preflight.outputs.worker_configured == 'true' && '✅ Configured' || '❌ Missing' }} | ${{ needs.preflight.outputs.worker_configured == 'true' && 'Worker deploys' || 'Worker deploy fails' }} |" >> $GITHUB_STEP_SUMMARY
           echo "| 🔥 FIREBASE_SERVICE_ACCOUNT | ${{ needs.preflight.outputs.firebase_configured == 'true' && '✅ Configured' || '❌ Missing' }} | ${{ needs.preflight.outputs.firebase_configured == 'true' && 'Frontend deploys' || 'Frontend deploy fails' }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| 🆔 FIREBASE_APP_ID | ${{ needs.preflight.outputs.firebase_app_configured == 'true' && '✅ Configured' || '⚠️ Missing (optional)' }} | ${{ needs.preflight.outputs.firebase_app_configured == 'true' && 'Firebase SDK init' || 'SDK limited' }} |" >> $GITHUB_STEP_SUMMARY
           echo "| 🛡️ ADMIN_SECRET | ${{ needs.preflight.outputs.admin_configured == 'true' && '✅ Configured' || '❌ Missing' }} | ${{ needs.preflight.outputs.admin_configured == 'true' && 'Admin API works' || 'Admin routes fail' }} |" >> $GITHUB_STEP_SUMMARY
           echo "| 💾 UPSTASH_REDIS | ${{ needs.preflight.outputs.upstash_configured == 'true' && '✅ Configured' || '❌ Missing' }} | ${{ needs.preflight.outputs.upstash_configured == 'true' && 'Caching/rate-limit works' || 'No Redis cache' }} |" >> $GITHUB_STEP_SUMMARY
           echo "| 🤖 GEMINI_API_KEY | ${{ needs.preflight.outputs.gemini_configured == 'true' && '✅ Configured' || '⚠️ Missing (dictionary-only)' }} | ${{ needs.preflight.outputs.gemini_configured == 'true' && 'AI translation on' || 'Translation limited' }} |" >> $GITHUB_STEP_SUMMARY
