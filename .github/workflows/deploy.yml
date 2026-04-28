@@ -135,7 +135,11 @@ jobs:
         run: npm run lint
 
       - name: Run tests
-        run: npm test
+        run: |
+          echo "=== Environment Diagnostics ==="
+          echo "ADMIN_SECRET set: ${{ ADMIN_SECRET != '' }} (length: ${#ADMIN_SECRET})"
+          echo "GEMINI_API_KEY set: ${{ GEMINI_API_KEY != '' }} (prefix: ${GEMINI_API_KEY:0:4})"
+          npm test
 
       - name: Build Worker (compile TypeScript)
         run: npm run compile
