@@ -265,6 +265,42 @@ jobs:
           node-version: ${{ env.NODE_VERSION }}
           cache: 'npm'
 
+      - name: Extract Version
+        id: version
+        run: echo "VAL=$(node -p "require('./package.json').version")" >> $GITHUB_OUTPUT
+
+      - name: Calculate Run Time
+        id: calc_time
+        run: |
+          START_TIME="${{ github.run_started_at }}"
+          START_TS=$(date -d "$START_TIME" +%s)
+          NOW_TS=$(date +%s)
+          DIFF=$((NOW_TS - START_TS))
+          echo "DURATION=$((DIFF / 60))m $((DIFF % 60))s" >> $GITHUB_OUTPUT
+        shell: bash
+
+      - name: Notify Slack on success
+        if: success()
+        uses: slackapi/slack-github-action@v1.26.0
+        with:
+          payload: |
+            {
+              "text": "✅ *Deployment Successful* for `${{ github.repository }}`",
+              "attachments": [{
+                "color": "#2eb886",
+                "fields": [
+                  { "title": "Version", "value": "v${{ steps.version.outputs.VAL }}", "short": true },
+                  { "title": "Branch", "value": "`${{ github.ref_name }}`", "short": true },
+                  { "title": "Duration", "value": "${{ steps.calc_time.outputs.DURATION }}", "short": true },
+                  { "title": "Worker", "value": "https://dor-progress.banjays.workers.dev", "short": false },
+                  { "title": "Frontend", "value": "https://dor-progress.web.app", "short": false },
+                  { "title": "Logs", "value": "<${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}|View Deployment Logs>", "short": false }
+                ]
+              }]
+            }
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+
       - name: Notify Slack on failure
         if: failure()
         uses: slackapi/slack-github-action@v1.26.0
@@ -277,6 +313,7 @@ jobs:
                 "fields": [
                   { "title": "Workflow", "value": "${{ github.workflow }}", "short": true },
                   { "title": "Branch", "value": "`${{ github.ref_name }}`", "short": true },
+                  { "title": "Duration", "value": "${{ steps.calc_time.outputs.DURATION }}", "short": true },
                   { "title": "Logs", "value": "<${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}|View Failure Logs>", "short": false }
                 ]
               }]
