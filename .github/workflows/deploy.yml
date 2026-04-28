@@ -4,6 +4,7 @@ on:
   push:
     branches: [main]
     tags: ['v*']
+
   workflow_dispatch:
     inputs:
       deploy_target:
@@ -11,7 +12,7 @@ on:
         required: true
         default: "all"
         type: choice
-        options: [all, worker, frontend]
+        options: [all, worker]
       environment:
         description: "Environment"
         required: true
@@ -28,131 +29,85 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  # ============================================================
-  # PRE-FLIGHT CHECKS
-  # ============================================================
+
+# ============================================================
+# PRE-FLIGHT CHECKS
+# ============================================================
   preflight:
     name: 🔍 Secrets Check
     runs-on: ubuntu-latest
-    outputs:
-      secrets_status: ${{ steps.check.outputs.status }}
-      worker_configured: ${{ steps.check.outputs.worker_ok }}
-      firebase_configured: ${{ steps.check.outputs.firebase_ok }}
-      admin_configured: ${{ steps.check.outputs.admin_ok }}
-      upstash_configured: ${{ steps.check.outputs.upstash_ok }}
-      gemini_configured: ${{ steps.check.outputs.gemini_ok }}
-      missing: ${{ steps.check.outputs.missing }}
-      configured: ${{ steps.check.outputs.configured }}
-      total: ${{ steps.check.outputs.total }}
 
     steps:
       - uses: actions/checkout@v4
-        with: { fetch-depth: 0 }
 
       - name: Check Secrets
         id: check
         run: |
-          MISSING=0; CONFIGURED=0; TOTAL=0
+          MISSING=0
 
-          check_secret() {
-            local name="$1"
-            local value="$2"
-            local out_key="$3"
-            TOTAL=$((TOTAL+1))
-            if [ -n "$value" ]; then
-              echo "✅ $name"
-              CONFIGURED=$((CONFIGURED+1))
-              [ -n "$out_key" ] && echo "$out_key=true" >> $GITHUB_OUTPUT
-            else
-              echo "❌ $name"
+          check() {
+            if [ -z "$2" ]; then
+              echo "❌ $1"
               MISSING=$((MISSING+1))
-              [ -n "$out_key" ] && echo "$out_key=false" >> $GITHUB_OUTPUT
+            else
+              echo "✅ $1"
             fi
           }
 
-          check_secret "CLOUDFLARE_API_TOKEN" "${{ secrets.CLOUDFLARE_API_TOKEN }}" "worker_ok"
-          check_secret "FIREBASE_SERVICE_ACCOUNT" "${{ secrets.FIREBASE_SERVICE_ACCOUNT }}" "firebase_ok"
-          check_secret "ADMIN_SECRET" "${{ secrets.ADMIN_SECRET }}" "admin_ok"
-          check_secret "UPSTASH_REDIS_REST_URL" "${{ secrets.UPSTASH_REDIS_REST_URL }}" "upstash_ok"
-           check_secret "UPSTASH_REDIS_REST_TOKEN" "${{ secrets.UPSTASH_REDIS_REST_TOKEN }}" ""
-           check_secret "FIREBASE_PROJECT_ID" "${{ secrets.FIREBASE_PROJECT_ID }}" ""
+          check "CLOUDFLARE_API_TOKEN" "${{ secrets.CLOUDFLARE_API_TOKEN }}"
+          check "UPSTASH_REDIS_REST_URL" "${{ secrets.UPSTASH_REDIS_REST_URL }}"
+          check "UPSTASH_REDIS_REST_TOKEN" "${{ secrets.UPSTASH_REDIS_REST_TOKEN }}"
+          check "GEMINI_API_KEY" "${{ secrets.GEMINI_API_KEY }}"
+          check "ADMIN_SECRET" "${{ secrets.ADMIN_SECRET }}"
 
-          echo "status=$([ $MISSING -eq 0 ] && echo ready || echo missing)" >> $GITHUB_OUTPUT
-          echo "missing=$MISSING" >> $GITHUB_OUTPUT
-          echo "configured=$CONFIGURED" >> $GITHUB_OUTPUT
-          echo "total=$TOTAL" >> $GITHUB_OUTPUT
+          if [ $MISSING -gt 0 ]; then
+            echo "❌ Missing secrets: $MISSING"
+            exit 1
+          fi
 
-  # ============================================================
-  # WORKER DEPLOY
-  # ============================================================
+# ============================================================
+# WORKER DEPLOY
+# ============================================================
   worker:
-    name: ☁️ Worker
+    name: ☁️ Worker Deploy
     runs-on: ubuntu-latest
-    outputs:
-      deployment_url: ${{ steps.verify.outputs.deployment_url }}
     needs: preflight
-    if: >
-      github.event_name == 'push' ||
-      github.event.inputs.deploy_target == 'all' ||
-      github.event.inputs.deploy_target == 'worker' ||
-      github.event_name == 'workflow_dispatch'
 
     steps:
       - uses: actions/checkout@v4
-        with: { fetch-depth: 0 }
 
       - uses: actions/setup-node@v4
         with:
           node-version: ${{ env.NODE_VERSION }}
-          cache: 'npm'
+          cache: npm
 
-      - name: Get Version
-        id: get_version
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build (if exists)
+        run: npm run build --if-present
+
+      - name: Install Wrangler
+        run: npm install -g wrangler
+
+      - name: Deploy Worker
+        run: wrangler deploy
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          UPSTASH_REDIS_REST_URL: ${{ secrets.UPSTASH_REDIS_REST_URL }}
+          UPSTASH_REDIS_REST_TOKEN: ${{ secrets.UPSTASH_REDIS_REST_TOKEN }}
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          ADMIN_SECRET: ${{ secrets.ADMIN_SECRET }}
+
+      - name: Health Check
         run: |
-          echo "VERSION=$(node -p "require('./package.json').version")" >> $GITHUB_OUTPUT
-          echo "TIMESTAMP=$(date -u +'%Y-%m-%dT%H:%M:%SZ')" >> $GITHUB_OUTPUT
-        shell: bash
-
-      - name: Cleanup old artifacts
-        if: always()
-        uses: actions/github-script@v7
-        with:
-          script: |
-            const artifacts = await github.paginate(github.rest.actions.listArtifactsForRepo, {
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-            });
-            
-            const now = new Date();
-            const thirtyDaysAgo = new Date(now.setDate(now.getDate() - 30));
-
-            const artifactsToDelete = [];
-            const successfulOrCancelledArtifacts = [];
-
-            for (const artifact of artifacts.filter(a => a.name.endsWith('-dist'))) {
-              const createdAt = new Date(artifact.created_at);
-              const conclusion = artifact.workflow_run.conclusion;
-
-              if (['success', 'skipped', 'cancelled'].includes(conclusion)) {
-                successfulOrCancelledArtifacts.push(artifact);
-              } else if (conclusion === 'failure' && createdAt < thirtyDaysAgo) {
-                artifactsToDelete.push(artifact); // Failed and older than 30 days
-              }
-            }
-
-            // Sort successful/cancelled artifacts and keep only the 10 most recent
-            successfulOrCancelledArtifacts.sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
-            artifactsToDelete.push(...successfulOrCancelledArtifacts.slice(10));
-            
-            // Ensure no duplicates if an artifact somehow ended up in both lists (unlikely with this logic)
-            const toDelete = Array.from(new Set(artifactsToDelete.map(a => a.id)))
-                               .map(id => artifactsToDelete.find(a => a.id === id));
-            
-            for (const artifact of toDelete) {
-              console.log(`Deleting old artifact: ${artifact.name} (ID: ${artifact.id})`);
-              await github.rest.actions.deleteArtifact({
-                owner: context.repo.owner,
-                repo: context.repo.repo,
-                artifact_id: artifact.id,
-              });
-            }
+          for i in 1 2 3 4 5; do
+            CODE=$(curl -s -o /dev/null -w "%{http_code}" https://dor-progress.banjays.workers.dev)
+            if [ "$CODE" = "200" ]; then
+              echo "✅ Worker healthy"
+              exit 0
+            fi
+            sleep 5
+          done
+          echo "❌ Health check failed"
+          exit 1
