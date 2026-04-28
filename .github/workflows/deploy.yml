@@ -54,10 +54,11 @@ jobs:
         run: |
           MISSING=0; CONFIGURED=0; TOTAL=0
 
-          check() {
-            local name="$1"; local ok="$2"
+          check_secret() {
+            local name="$1"
+            local value="$2"
             TOTAL=$((TOTAL+1))
-            if [ "$ok" = "1" ]; then
+            if [ -n "$value" ]; then
               echo "✅ $name"
               CONFIGURED=$((CONFIGURED+1))
             else
@@ -66,13 +67,13 @@ jobs:
             fi
           }
 
-          check "CLOUDFLARE_API_TOKEN"   $([ -n "${{ secrets.CLOUDFLARE_API_TOKEN }}" ] && echo 1 || echo 0)
-          check "FIREBASE_SERVICE_ACCOUNT" $([ -n "${{ secrets.FIREBASE_SERVICE_ACCOUNT }}" ] && echo 1 || echo 0)
-          check "ADMIN_SECRET"           $([ -n "${{ secrets.ADMIN_SECRET }}" ] && echo 1 || echo 0)
-          check "UPSTASH_REDIS_REST_URL" $([ -n "${{ secrets.UPSTASH_REDIS_REST_URL }}" ] && echo 1 || echo 0)
-          check "UPSTASH_REDIS_REST_TOKEN" $([ -n "${{ secrets.UPSTASH_REDIS_REST_TOKEN }}" ] && echo 1 || echo 0)
-          check "GEMINI_API_KEY"         $([ -n "${{ secrets.GEMINI_API_KEY }}" ] && echo 1 || echo 0)
-          check "FIREBASE_APP_ID"        $([ -n "${{ secrets.FIREBASE_APP_ID }}" ] && echo 1 || echo 0)
+          check_secret "CLOUDFLARE_API_TOKEN" "${{ secrets.CLOUDFLARE_API_TOKEN }}"
+          check_secret "FIREBASE_SERVICE_ACCOUNT" "${{ secrets.FIREBASE_SERVICE_ACCOUNT }}"
+          check_secret "ADMIN_SECRET" "${{ secrets.ADMIN_SECRET }}"
+          check_secret "UPSTASH_REDIS_REST_URL" "${{ secrets.UPSTASH_REDIS_REST_URL }}"
+          check_secret "UPSTASH_REDIS_REST_TOKEN" "${{ secrets.UPSTASH_REDIS_REST_TOKEN }}"
+          check_secret "GEMINI_API_KEY" "${{ secrets.GEMINI_API_KEY }}"
+          check_secret "FIREBASE_APP_ID" "${{ secrets.FIREBASE_APP_ID }}"
 
           echo "status=$([ $MISSING -eq 0 ] && echo ready || echo missing)" >> $GITHUB_OUTPUT
           echo "missing=$MISSING" >> $GITHUB_OUTPUT
