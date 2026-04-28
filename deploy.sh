@@ -53,12 +53,12 @@ npm version "$BUMP" --no-git-tag-version
 VERSION=$(node -p "require('./package.json').version")
 
 # 9. Commit message
-MSG="${2:-Deploy v$VERSION}"
+MSG="${2:-Manual deployment update}"
 
 # 10. Git Sync
-echo "📤 Pushing to GitHub..."
+echo "📤 Pushing v${VERSION} to GitHub..."
 git add .
-git commit -m "v${VERSION}: $MSG"
+git commit -m "v${VERSION}: ${MSG}"
 git tag -a "v${VERSION}" -m "Release v${VERSION}"
 git push origin main --follow-tags
 
@@ -66,4 +66,5 @@ git push origin main --follow-tags
 echo ""
 echo "✅ Deploy complete!"
 echo "   Version: v${VERSION}"
-echo "   📊 Actions: https://github.com/$(basename "$(git remote get-url origin)" .git)/actions"
+REPO_PATH=$(git remote get-url origin | sed -E 's/.*github.com[:\/](.*)\.git/\1/')
+echo "   📊 Actions: https://github.com/${REPO_PATH}/actions"

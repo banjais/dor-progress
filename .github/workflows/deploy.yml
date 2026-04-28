@@ -106,6 +106,11 @@ jobs:
           node-version: ${{ env.NODE_VERSION }}
           cache: 'npm'
 
+      - name: Get Version
+        id: get_version
+        shell: bash
+        run: echo "VERSION=$(node -p "require('./package.json').version")" >> $GITHUB_OUTPUT
+
       - name: Install
         run: npm ci
 
@@ -131,7 +136,7 @@ jobs:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           command: deploy --no-cache
         env:
-          BUILD_ID: v$(node -p "require('./package.json').version")
+          BUILD_ID: v${{ steps.get_version.outputs.VERSION }}
           COMMIT_SHA: ${{ github.sha }}
           DEPLOY_TIMESTAMP: ${{ github.run_started_at }}
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
@@ -250,9 +255,12 @@ jobs:
     if: always()
 
     steps:
+      - uses: actions/checkout@v4
+
       - name: Build summary
         run: |
           echo "## 🚀 Deploy Summary" >> $GITHUB_STEP_SUMMARY
+          VERSION=$(node -p "require('./package.json').version")
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "- **Commit:** ${{ github.sha }}" >> $GITHUB_STEP_SUMMARY
           echo "- **Target:** ${{ github.event.inputs.deploy_target || 'all' }}" >> $GITHUB_STEP_SUMMARY
