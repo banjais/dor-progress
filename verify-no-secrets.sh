@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 
 # Verify that .dev.vars is not tracked by Git
 if git ls-files --error-unmatch .dev.vars > /dev/null 2>&1; then
