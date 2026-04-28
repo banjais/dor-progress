@@ -279,8 +279,11 @@ export default {
             });
         }
 
+        // Normalize path (remove trailing slashes) for consistent routing
+        const normalizedPath = url.pathname.replace(/\/+$/, '');
+
         const isKillSwitchActive = await env.TRANSLATION_KV.get("system:global_kill_switch") === "true";
-        if (isKillSwitchActive && !url.pathname.startsWith('/api/admin/')) {
+        if (isKillSwitchActive && !normalizedPath.startsWith('/api/admin/')) {
             return new Response(JSON.stringify({ error: "Service Temporarily Unavailable: Global maintenance mode active." }), {
                 status: 503,
                 headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" }
@@ -289,7 +292,7 @@ export default {
 
         let force = url.searchParams.get('force') === "true";
         let isForceThrottled = false;
-        if (force && !url.pathname.startsWith('/api/admin/')) {
+        if (force && !normalizedPath.startsWith('/api/admin/')) {
             const forceLimitKey = `limit:force_rate:${clientIp}`;
             const isThrottled = await this.getRedisCache(forceLimitKey, env);
             if (isThrottled) {
@@ -300,7 +303,7 @@ export default {
             }
         }
 
-        const isLimited = !url.pathname.startsWith('/api/admin/') && await this.checkRateLimit(clientIp, env);
+        const isLimited = !normalizedPath.startsWith('/api/admin/') && await this.checkRateLimit(clientIp, env);
         if (isLimited) {
             return new Response(JSON.stringify({ error: "Too Many Requests: Rate limit exceeded." }), {
                 status: 429,
@@ -316,12 +319,12 @@ export default {
             "Access-Control-Allow-Origin": origin
         };
 
-        if (url.pathname.startsWith('/api/admin/')) {
+        if (normalizedPath.startsWith('/api/admin/')) {
             const adminSecret = request.headers.get("X-Admin-Secret");
             if (!adminSecret || !env.ADMIN_SECRET || !secureCompare(adminSecret, env.ADMIN_SECRET)) {
                 return new Response("Unauthorized", { status: 401, headers: securityHeaders });
             }
-            if (url.pathname === '/api/admin/config-check') {
+            if (normalizedPath === '/api/admin/config-check') {
                 const keys: (keyof Env)[] = [
                     'TRANSLATION_KV', 'RATE_LIMITER', 'UPSTASH_REDIS_REST_URL', 'UPSTASH_REDIS_REST_TOKEN',
                     'GEMINI_API_KEY', 'ADMIN_SECRET', 'GOOGLE_CLOUD_API_KEY', 'API_BASE_URL',
@@ -385,8 +388,11 @@ export default {
             // Future admin routes (idempotency, cache-purge, etc.) go here
         }
 
+        // Normalize path (remove trailing slashes)
+        const path = url.pathname.replace(/\/+$/, '');
+
         // Public API: Translation endpoint
-        if (url.pathname === '/api/translate') {
+        if (normalizedPath === '/api/translate') {
             const text = url.searchParams.get('text');
             const targetLang = url.searchParams.get('targetLang') || 'ne';
 
