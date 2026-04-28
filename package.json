@@ -1,6 +1,6 @@
 {
   "name": "dor-progress",
-  "version": "1.0.38",
+  "version": "1.0.39",
   "type": "module",
   "dependencies": {
     "js-tiktoken": "^1.0.17",
@@ -18,6 +18,7 @@
   "scripts": {
     "dev": "wrangler dev",
     "compile": "tsc",
+    "deploy": "sh deploy.sh",
     "clean": "rm -rf dist .wrangler .firebase",
     "build": "sh deploy.sh",
     "types:watch": "nodemon --watch wrangler.toml --exec 'npx wrangler types'",

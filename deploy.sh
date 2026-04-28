@@ -48,23 +48,23 @@ npm run compile
 # Deployment is handled by GitHub Actions to provide centralized logs and status.
 echo "📦 Local validation complete. Pushing to GitHub for deployment..."
 
-# 9. Versioning
+# 7. Versioning
 npm version "$BUMP" --no-git-tag-version
 VERSION=$(node -p "require('./package.json').version")
 
-# 9. Commit message
+# 8. Commit message
 MSG="${2:-Manual deployment update}"
 
-# 10. Git Sync
-echo "📤 Pushing v${VERSION} to GitHub..."
+# 9. Git Sync
+echo "📤 Pushing v${VERSION} and tags to GitHub..."
 git add .
 git commit -m "v${VERSION}: ${MSG}"
 git tag -a "v${VERSION}" -m "Release v${VERSION}"
 git push origin main --follow-tags
 
-# 11. Done
+# 10. Done
 echo ""
 echo "✅ Deploy complete!"
 echo "   Version: v${VERSION}"
-REPO_PATH=$(git remote get-url origin | sed -E 's/.*github.com[:\/](.*)\.git/\1/')
+REPO_PATH=$(git remote get-url origin | sed -E 's/.*github.com[:\/](.*)(\.git)?/\1/')
 echo "   📊 Actions: https://github.com/${REPO_PATH}/actions"

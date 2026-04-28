@@ -205,6 +205,14 @@ export default {
                 },
             });
         }
+        const securityHeaders = {
+            "Content-Security-Policy": "default-src 'self'; script-src 'self' https://www.gstatic.com https://www.google.com https://unpkg.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; img-src 'self' data: https://dor.gov.np https://dor-progress.web.app https://api.qrserver.com; connect-src 'self' https://dor-progress.banjays.workers.dev https://docs.google.com https://generativelanguage.googleapis.com https://firebaseappcheck.googleapis.com blob:; media-src 'self' blob:; frame-ancestors *;",
+            "X-Content-Type-Options": "nosniff",
+            "Referrer-Policy": "strict-origin-when-cross-origin",
+            "Permissions-Policy": "geolocation=(), microphone=(), camera=()",
+            "Access-Control-Allow-Origin": origin,
+            "X-Served-By": "Cloudflare-Worker"
+        };
         // Normalize path (remove trailing slashes) for consistent routing
         const normalizedPath = url.pathname.replace(/\/+$/, '');
         // Diagnostic: log the incoming path (remove after testing)
@@ -233,17 +241,9 @@ export default {
         if (isLimited) {
             return new Response(JSON.stringify({ error: "Too Many Requests: Rate limit exceeded." }), {
                 status: 429,
-                headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" }
+                headers: { ...securityHeaders, "Content-Type": "application/json" }
             });
         }
-        const securityHeaders = {
-            "Content-Security-Policy": "default-src 'self'; script-src 'self' https://www.gstatic.com https://www.google.com https://unpkg.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; img-src 'self' data: https://dor.gov.np https://dor-progress.web.app https://api.qrserver.com; connect-src 'self' https://dor-progress.banjays.workers.dev https://docs.google.com https://generativelanguage.googleapis.com https://firebaseappcheck.googleapis.com blob:; media-src 'self' blob:; frame-ancestors *;",
-            "X-Content-Type-Options": "nosniff",
-            "Referrer-Policy": "strict-origin-when-cross-origin",
-            "Permissions-Policy": "geolocation=(), microphone=(), camera=()",
-            "Access-Control-Allow-Origin": origin,
-            "X-Served-By": "Cloudflare-Worker"
-        };
         if (normalizedPath.startsWith('/api/admin/')) {
             const adminSecret = request.headers.get("X-Admin-Secret");
             if (!adminSecret || !env.ADMIN_SECRET || !secureCompare(adminSecret, env.ADMIN_SECRET)) {
