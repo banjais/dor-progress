@@ -36,11 +36,11 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       secrets_status: ${{ steps.check.outputs.status }}
-      worker_ok: ${{ steps.check.outputs.worker_ok }}
-      firebase_ok: ${{ steps.check.outputs.firebase_ok }}
-      admin_ok: ${{ steps.check.outputs.admin_ok }}
-      upstash_ok: ${{ steps.check.outputs.upstash_ok }}
-      gemini_ok: ${{ steps.check.outputs.gemini_ok }}
+      worker_configured: ${{ steps.check.outputs.worker_ok }}
+      firebase_configured: ${{ steps.check.outputs.firebase_ok }}
+      admin_configured: ${{ steps.check.outputs.admin_ok }}
+      upstash_configured: ${{ steps.check.outputs.upstash_ok }}
+      gemini_configured: ${{ steps.check.outputs.gemini_ok }}
       missing: ${{ steps.check.outputs.missing }}
       configured: ${{ steps.check.outputs.configured }}
       total: ${{ steps.check.outputs.total }}
@@ -57,23 +57,26 @@ jobs:
           check_secret() {
             local name="$1"
             local value="$2"
+            local out_key="$3"
             TOTAL=$((TOTAL+1))
             if [ -n "$value" ]; then
               echo "✅ $name"
               CONFIGURED=$((CONFIGURED+1))
+              [ -n "$out_key" ] && echo "$out_key=true" >> $GITHUB_OUTPUT
             else
               echo "❌ $name"
               MISSING=$((MISSING+1))
+              [ -n "$out_key" ] && echo "$out_key=false" >> $GITHUB_OUTPUT
             fi
           }
 
-          check_secret "CLOUDFLARE_API_TOKEN" "${{ secrets.CLOUDFLARE_API_TOKEN }}"
-          check_secret "FIREBASE_SERVICE_ACCOUNT" "${{ secrets.FIREBASE_SERVICE_ACCOUNT }}"
-          check_secret "ADMIN_SECRET" "${{ secrets.ADMIN_SECRET }}"
-          check_secret "UPSTASH_REDIS_REST_URL" "${{ secrets.UPSTASH_REDIS_REST_URL }}"
-          check_secret "UPSTASH_REDIS_REST_TOKEN" "${{ secrets.UPSTASH_REDIS_REST_TOKEN }}"
-          check_secret "GEMINI_API_KEY" "${{ secrets.GEMINI_API_KEY }}"
-          check_secret "FIREBASE_APP_ID" "${{ secrets.FIREBASE_APP_ID }}"
+          check_secret "CLOUDFLARE_API_TOKEN" "${{ secrets.CLOUDFLARE_API_TOKEN }}" "worker_ok"
+          check_secret "FIREBASE_SERVICE_ACCOUNT" "${{ secrets.FIREBASE_SERVICE_ACCOUNT }}" "firebase_ok"
+          check_secret "ADMIN_SECRET" "${{ secrets.ADMIN_SECRET }}" "admin_ok"
+          check_secret "UPSTASH_REDIS_REST_URL" "${{ secrets.UPSTASH_REDIS_REST_URL }}" "upstash_ok"
+          check_secret "UPSTASH_REDIS_REST_TOKEN" "${{ secrets.UPSTASH_REDIS_REST_TOKEN }}" ""
+          check_secret "GEMINI_API_KEY" "${{ secrets.GEMINI_API_KEY }}" "gemini_ok"
+          check_secret "FIREBASE_APP_ID" "${{ secrets.FIREBASE_APP_ID }}" ""
 
           echo "status=$([ $MISSING -eq 0 ] && echo ready || echo missing)" >> $GITHUB_OUTPUT
           echo "missing=$MISSING" >> $GITHUB_OUTPUT
@@ -273,7 +276,7 @@ jobs:
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "| Service | Status | URL |" >> $GITHUB_STEP_SUMMARY
           echo "|---------|--------|-----|" >> $GITHUB_STEP_SUMMARY
-           echo "| Worker | ${{ needs.worker.result == 'success' && '✅' || '❌' }} | ${{ needs.worker.outputs.deployment_url }} |" >> $GITHUB_STEP_SUMMARY
-           echo "| Frontend | ${{ needs.frontend.result == 'success' && '✅' || '❌' }} | ${{ needs.frontend.outputs.deployment_url }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Worker | ${{ needs.worker.result == 'success' && '✅' || '❌' }} | ${{ needs.worker.outputs.deployment_url }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Frontend | ${{ needs.frontend.result == 'success' && '✅' || '❌' }} | ${{ needs.frontend.outputs.deployment_url }} |" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "🔗 Actions: https://github.com/${{ github.repository }}/actions" >> $GITHUB_STEP_SUMMARY
