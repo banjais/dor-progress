@@ -282,6 +282,9 @@ export default {
         // Normalize path (remove trailing slashes) for consistent routing
         const normalizedPath = url.pathname.replace(/\/+$/, '');
 
+        // Diagnostic: log the incoming path (remove after testing)
+        // console.log(`[dor-progress] path="${url.pathname}" normalized="${normalizedPath}"`);
+
         const isKillSwitchActive = await env.TRANSLATION_KV.get("system:global_kill_switch") === "true";
         if (isKillSwitchActive && !normalizedPath.startsWith('/api/admin/')) {
             return new Response(JSON.stringify({ error: "Service Temporarily Unavailable: Global maintenance mode active." }), {
