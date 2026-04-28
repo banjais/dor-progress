@@ -19,20 +19,7 @@ interface Env {
     UPSTASH_REDIS_REST_TOKEN: string;
     GEMINI_API_KEY: string;
     ADMIN_SECRET: string;
-    GOOGLE_CLOUD_API_KEY: string;
-    API_BASE_URL: string;
-    VAPID_PUBLIC_KEY: string;
-    VAPID_PRIVATE_KEY: string;
-
-    // Firebase-related secrets
-    FIREBASE_API_KEY: string;
-    FIREBASE_AUTH_DOMAIN: string;
     FIREBASE_PROJECT_ID: string;
-    FIREBASE_PROJECT_NUMBER: string;
-    FIREBASE_APP_ID?: string;  // optional: used only for Firebase config object
-    RECAPTCHA_SITE_KEY: string;
-    RECAPTCHA_SECRET_KEY: string;
-    PUBLISHED_SHEET_ID: string;
 
     // Optional Firebase fields (future use)
     FIREBASE_STORAGE_BUCKET?: string;
@@ -328,11 +315,7 @@ export default {
             if (normalizedPath === '/api/admin/config-check') {
                 const keys: (keyof Env)[] = [
                     'TRANSLATION_KV', 'RATE_LIMITER', 'UPSTASH_REDIS_REST_URL', 'UPSTASH_REDIS_REST_TOKEN',
-                    'GEMINI_API_KEY', 'ADMIN_SECRET', 'GOOGLE_CLOUD_API_KEY', 'API_BASE_URL',
-                    'VAPID_PUBLIC_KEY', 'VAPID_PRIVATE_KEY',
-                    'FIREBASE_API_KEY', 'FIREBASE_AUTH_DOMAIN', 'FIREBASE_PROJECT_ID',
-                    'FIREBASE_PROJECT_NUMBER', 'FIREBASE_APP_ID', 'RECAPTCHA_SITE_KEY',
-                    'RECAPTCHA_SECRET_KEY', 'PUBLISHED_SHEET_ID',
+                    'GEMINI_API_KEY', 'ADMIN_SECRET', 'FIREBASE_PROJECT_ID',
                     'BUILD_ID', 'COMMIT_SHA', 'DEPLOY_TIMESTAMP'
                 ];
                 const results: Record<string, any> = {};
@@ -379,7 +362,8 @@ export default {
                         build: env.BUILD_ID || "NOT_INJECTED",
                         sha: env.COMMIT_SHA ? env.COMMIT_SHA.substring(0, 7) : "NOT_INJECTED",
                         deployed_at: env.DEPLOY_TIMESTAMP || "NOT_INJECTED",
-                        worker_host: url.hostname
+                        worker_host: url.hostname,
+                        app_check_expected_iss: `https://firebaseappcheck.googleapis.com/${env.FIREBASE_PROJECT_ID || 'MISSING'}`
                     },
                     environment: results,
                     connectivity: health,
@@ -463,11 +447,11 @@ export default {
 // ... (Logic functions like translateWithGemini, applyBrandingToPdf follow)
 
 async function verifyAppCheckToken(token: string | null, env: Env): Promise<boolean> {
-    if (!token || !env.FIREBASE_PROJECT_NUMBER || token.split('.').length !== 3) return false;
+    if (!token || !env.FIREBASE_PROJECT_ID || token.split('.').length !== 3) return false;
     try {
         const parts = token.split('.');
         const payload = JSON.parse(atob(parts[1].replace(/-/g, '+').replace(/_/g, '/')));
-        return payload.exp > Date.now() / 1000 && payload.iss === `https://firebaseappcheck.googleapis.com/${env.FIREBASE_PROJECT_NUMBER}`;
+        return payload.exp > Date.now() / 1000 && payload.iss === `https://firebaseappcheck.googleapis.com/${env.FIREBASE_PROJECT_ID}`;
     } catch { return false; }
 }
 

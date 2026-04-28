@@ -76,7 +76,7 @@ jobs:
           check_secret "UPSTASH_REDIS_REST_URL" "${{ secrets.UPSTASH_REDIS_REST_URL }}" "upstash_ok"
           check_secret "UPSTASH_REDIS_REST_TOKEN" "${{ secrets.UPSTASH_REDIS_REST_TOKEN }}" ""
           check_secret "GEMINI_API_KEY" "${{ secrets.GEMINI_API_KEY }}" "gemini_ok"
-          check_secret "FIREBASE_APP_ID" "${{ secrets.FIREBASE_APP_ID }}" ""
+          check_secret "FIREBASE_PROJECT_ID" "${{ secrets.FIREBASE_PROJECT_ID }}" "firebase_ok"
 
           echo "status=$([ $MISSING -eq 0 ] && echo ready || echo missing)" >> $GITHUB_OUTPUT
           echo "missing=$MISSING" >> $GITHUB_OUTPUT
@@ -89,16 +89,17 @@ jobs:
   worker:
     name: ☁️ Worker
     runs-on: ubuntu-latest
+    outputs:
+      error_msg: ${{ steps.set_error.outputs.msg }}
+      status: ${{ steps.deploy.outputs.status }}
+      deployment_url: ${{ steps.verify.outputs.deployment_url }}
+      timestamp: ${{ steps.get_version.outputs.TIMESTAMP }}
     needs: preflight
     if: >
       github.event_name == 'push' ||
       github.event.inputs.deploy_target == 'all' ||
       github.event.inputs.deploy_target == 'worker' ||
       github.event_name == 'workflow_dispatch'
-
-    outputs:
-      status: ${{ steps.deploy.outputs.status }}
-      deployment_url: ${{ steps.verify.outputs.deployment_url }}
 
     steps:
       - uses: actions/checkout@v4
@@ -117,15 +118,19 @@ jobs:
           echo "TIMESTAMP=$(date -u +'%Y-%m-%dT%H:%M:%SZ')" >> $GITHUB_OUTPUT
 
       - name: Install
+        id: install
         run: npm ci
 
       - name: Security audit
+        id: audit
         run: npm run security-check
 
       - name: Type check (TypeScript)
+        id: lint
         run: npm run lint
 
       - name: Run tests
+        id: test
         env:
           ADMIN_SECRET: ${{ secrets.ADMIN_SECRET }}
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
@@ -154,7 +159,6 @@ jobs:
             API_BASE_URL
             FIREBASE_API_KEY
             FIREBASE_AUTH_DOMAIN
-            FIREBASE_PROJECT_NUMBER
             FIREBASE_APP_ID
             RECAPTCHA_SITE_KEY
             RECAPTCHA_SECRET_KEY
@@ -181,8 +185,8 @@ jobs:
         continue-on-error: false
 
       - name: Verify worker
-        id: verify
         if: steps.deploy.outcome == 'success'
+        id: verify
         run: |
           for i in 1 2 3 4 5; do
             CODE=$(curl -s -o /dev/null -w "%{http_code}" https://dor-progress.banjays.workers.dev || echo 000)
@@ -193,6 +197,16 @@ jobs:
             sleep 5
           done
           echo "deployment_url=https://dor-progress.banjays.workers.dev" >> $GITHUB_OUTPUT
+
+      - name: Set Error Output
+        if: failure()
+        id: set_error
+        run: |
+          if [[ "${{ steps.install.outcome }}" == "failure" ]]; then echo "msg=Dependency installation (npm ci) failed." >> $GITHUB_OUTPUT;
+          elif [[ "${{ steps.test.outcome }}" == "failure" ]]; then echo "msg=Unit tests failed." >> $GITHUB_OUTPUT;
+          elif [[ "${{ steps.lint.outcome }}" == "failure" ]]; then echo "msg=Type checking (lint) failed." >> $GITHUB_OUTPUT;
+          elif [[ "${{ steps.deploy.outcome }}" == "failure" ]]; then echo "msg=Cloudflare Wrangler deployment failed." >> $GITHUB_OUTPUT;
+          else echo "msg=Worker build or validation failed." >> $GITHUB_OUTPUT; fi
 
   # ============================================================
   # FRONTEND DEPLOY
@@ -208,6 +222,7 @@ jobs:
        github.event_name == 'workflow_dispatch'
 
     outputs:
+      error_msg: ${{ steps.set_error_fe.outputs.msg }}
       status: ${{ steps.firebase.outputs.status }}
       deployment_url: ${{ steps.verify_firebase.outputs.deployment_url }}
 
@@ -246,6 +261,13 @@ jobs:
           done
           echo "deployment_url=https://dor-progress.web.app" >> $GITHUB_OUTPUT
 
+      - name: Set Error Output (FE)
+        if: failure()
+        id: set_error_fe
+        run: |
+          if [[ "${{ steps.firebase.outcome }}" == "failure" ]]; then echo "msg=Firebase Hosting deployment failed." >> $GITHUB_OUTPUT;
+          else echo "msg=Frontend build or verification failed." >> $GITHUB_OUTPUT; fi
+
   # ============================================================
   # MONITORING CHECK
   # ============================================================
@@ -275,6 +297,12 @@ jobs:
     runs-on: ubuntu-latest
     needs: [preflight, worker, frontend, monitoring]
     if: always()
+    env:
+      SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+      RUN_STARTED_AT: ${{ github.run_started_at }}
+    permissions:
+      contents: write
+      actions: write
 
     steps:
       - uses: actions/checkout@v4
@@ -291,14 +319,14 @@ jobs:
       - name: Calculate Run Time
         id: calc_time
         run: |
-          START_TS=$(date -d "${{ github.run_started_at }}" +%s)
+          START_TS=$(date -d "$RUN_STARTED_AT" +%s)
           NOW_TS=$(date +%s)
           DIFF=$((NOW_TS - START_TS))
           echo "DURATION=$((DIFF / 60))m $((DIFF % 60))s" >> $GITHUB_OUTPUT
         shell: bash
 
       - name: Notify Slack on success
-        if: success()
+        if: github.ref == 'refs/heads/main' && success()
         uses: slackapi/slack-github-action@v1.26.0
         with:
           payload: |
@@ -316,11 +344,9 @@ jobs:
                 ]
               }]
             }
-        env:
-          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
 
       - name: Notify Slack on failure
-        if: failure()
+        if: github.ref == 'refs/heads/main' && failure()
         uses: slackapi/slack-github-action@v1.26.0
         with:
           payload: |
@@ -332,13 +358,12 @@ jobs:
                   { "title": "Workflow", "value": "${{ github.workflow }}", "short": true },
                   { "title": "Branch", "value": "`${{ github.ref_name }}`", "short": true },
                   { "title": "Duration", "value": "${{ steps.calc_time.outputs.DURATION }}", "short": true },
-                  { "title": "Logs", "value": "<${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}|View Failure Logs>", "short": false }
+                  { "title": "Worker Error", "value": "${{ needs.worker.outputs.error_msg || 'None' }}", "short": false },
+                  { "title": "Frontend Error", "value": "${{ needs.frontend.outputs.error_msg || 'None' }}", "short": false },
+                  { "title": "Action Logs", "value": "<${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}|View Detailed Logs>", "short": false }
                 ]
               }]
             }
-        env:
-          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
-
       - name: Build summary
         run: |
           echo "## 🚀 Deploy Summary" >> $GITHUB_STEP_SUMMARY
@@ -354,3 +379,47 @@ jobs:
           echo "| Frontend | ${{ needs.frontend.result == 'success' && '✅' || '❌' }} | ${{ needs.frontend.outputs.deployment_url }} |" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "🔗 Actions: https://github.com/${{ github.repository }}/actions" >> $GITHUB_STEP_SUMMARY
+
+      - name: Cleanup old artifacts
+        if: always()
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const artifacts = await github.paginate(github.rest.actions.listArtifactsForRepo, {
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+            });
+            
+            const now = new Date();
+            const thirtyDaysAgo = new Date(now.setDate(now.getDate() - 30));
+
+            const artifactsToDelete = [];
+            const successfulOrCancelledArtifacts = [];
+
+            for (const artifact of artifacts.filter(a => a.name.endsWith('-dist'))) {
+              const createdAt = new Date(artifact.created_at);
+              const conclusion = artifact.workflow_run.conclusion;
+
+              if (['success', 'skipped', 'cancelled'].includes(conclusion)) {
+                successfulOrCancelledArtifacts.push(artifact);
+              } else if (conclusion === 'failure' && createdAt < thirtyDaysAgo) {
+                artifactsToDelete.push(artifact); // Failed and older than 30 days
+              }
+            }
+
+            // Sort successful/cancelled artifacts and keep only the 10 most recent
+            successfulOrCancelledArtifacts.sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
+            artifactsToDelete.push(...successfulOrCancelledArtifacts.slice(10));
+            
+            // Ensure no duplicates if an artifact somehow ended up in both lists (unlikely with this logic)
+            const toDelete = Array.from(new Set(artifactsToDelete.map(a => a.id)))
+                               .map(id => artifactsToDelete.find(a => a.id === id));
+            
+            for (const artifact of toDelete) {
+              console.log(`Deleting old artifact: ${artifact.name} (ID: ${artifact.id})`);
+              await github.rest.actions.deleteArtifact({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                artifact_id: artifact.id,
+              });
+            }
