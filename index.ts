@@ -319,7 +319,8 @@ export default {
             "X-Content-Type-Options": "nosniff",
             "Referrer-Policy": "strict-origin-when-cross-origin",
             "Permissions-Policy": "geolocation=(), microphone=(), camera=()",
-            "Access-Control-Allow-Origin": origin
+            "Access-Control-Allow-Origin": origin,
+            "X-Served-By": "Cloudflare-Worker"
         };
 
         if (normalizedPath.startsWith('/api/admin/')) {
@@ -390,9 +391,6 @@ export default {
             }
             // Future admin routes (idempotency, cache-purge, etc.) go here
         }
-
-        // Normalize path (remove trailing slashes)
-        const path = url.pathname.replace(/\/+$/, '');
 
         // Public API: Translation endpoint
         if (normalizedPath === '/api/translate') {

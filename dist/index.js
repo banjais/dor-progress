@@ -1,8 +1,436 @@
-var w=Object.defineProperty;var T=(s,t)=>w(s,"name",{value:t,configurable:!0});var y={ne:{"On Track":"\u091F\u094D\u0930\u094D\u092F\u093E\u0915\u092E\u093E",Delayed:"\u0922\u093F\u0932\u093E\u0907","In Progress":"\u0938\u091E\u094D\u091A\u093E\u0932\u0928\u092E\u093E",Critical:"\u0917\u092E\u094D\u092D\u0940\u0930","Asphalt Paving":"\u0915\u093E\u0932\u094B\u092A\u0924\u094D\u0930\u0947","Drainage Work":"\u0922\u0932 \u0928\u093F\u0930\u094D\u092E\u093E\u0923",km:"\u0915\u093F.\u092E\u093F.",m:"\u092E\u093F\u091F\u0930",Nos:"\u0938\u0902\u0916\u094D\u092F\u093E",Hello:"\u0928\u092E\u0938\u094D\u0924\u0947",Road:"\u0938\u0921\u0915",Construction:"\u0928\u093F\u0930\u094D\u092E\u093E\u0923",Traffic:"\u092F\u093E\u0924\u093E\u092F\u093E\u0924",Blocked:"\u0905\u0935\u0930\u0941\u0926\u094D\u0927",Open:"\u0916\u0941\u0932\u093E",Closed:"\u092C\u0928\u094D\u0926"}},h="system:gemini_failure_count",f="system:circuit_open",N=5,O=600;async function P(s){if(await s.TRANSLATION_KV.get(f)==="true"){let r=await s.TRANSLATION_KV.get(h);if((r?parseInt(r,10):0)>=N)return!0;await s.TRANSLATION_KV.delete(f),await s.TRANSLATION_KV.delete(h)}return!1}T(P,"isCircuitBreakerOpen");async function L(s){let t=await s.TRANSLATION_KV.get(h)||"0",e=parseInt(t,10)+1;await s.TRANSLATION_KV.put(h,e.toString(),{expirationTtl:O}),e>=N&&await s.TRANSLATION_KV.put(f,"true",{expirationTtl:O})}T(L,"recordGeminiFailure");function B(s,t){let r=`${t}:${s}`.toLowerCase().trim(),e=5381;for(let n=0;n<r.length;n++)e=(e<<5)+e+r.charCodeAt(n),e=e&e;return`trans:${t}:${e.toString(16)}`}T(B,"makeCacheKey");async function K(s,t,r){if(await P(r))return{translated:s,source:"circuit-breaker"};let e=B(s,t),n=await r.TRANSLATION_KV.get(e);if(n)return{translated:n,source:"cache"};let i=y[t];if(i){let a=i[s];if(a)return await r.TRANSLATION_KV.put(e,a,{expirationTtl:86400*30}),{translated:a,source:"dictionary"};if(s.split(/\s+/).length<=5){for(let[E,g]of Object.entries(i))if(s.toLowerCase()===E.toLowerCase())return await r.TRANSLATION_KV.put(e,g,{expirationTtl:86400*30}),{translated:g,source:"dictionary"}}}if(!r.GEMINI_API_KEY||r.GEMINI_API_KEY.trim().length===0)return{translated:s,source:"fallback"};try{let a=`Translate the following English text to ${t==="ne"?"Nepali (Devanagari script)":t}. 
+/**
+ * Cloudflare Worker for DoR Progress Report
+ * Features: Per-value translation, English key retention, and KV Caching.
+ */
+/**
+ * Official Branding Constants from dor.gov.np
+ */
+const BRANDING = {
+    primary: "#8D1B1B", // DoR Crimson Red
+    secondary: "#003893", // DoR Navy Blue
+    accent: "#FFD700", // Gold accent
+    success: "#2E7D32", // High contrast green
+    warning: "#ED6C02", // High contrast orange
+    error: "#D32F2F", // High contrast red
+    background: "#F4F7F9", // Soft, eye-appealing cool gray (not pure white)
+    surface: "#FFFFFF", // Card/Paper color
+    textPrimary: "#1A1A1A", // Deep Charcoal for maximum sharpness
+    textSecondary: "#455A64", // Muted Blue-Gray for secondary info
+};
+const BRANDING_DARK = {
+    primary: "#B71C1C", // Darker Crimson Red for contrast
+    secondary: "#1A237E", // Darker Navy Blue
+    accent: "#FFEB3B", // Brighter Gold for contrast
+    success: "#66BB6A", // Brighter Green
+    warning: "#FFB300", // Brighter Orange
+    error: "#EF5350", // Brighter Red
+    background: "#121212", // Very dark gray for background
+    surface: "#1E1E1E", // Slightly lighter dark gray for cards
+    textPrimary: "#E0E0E0", // Light gray for primary text
+    textSecondary: "#A0A0A0", // Muted light gray for secondary info
+};
+// Static dictionary for common road department terms to minimize Gemini usage
+const DICTIONARY = {
+    ne: {
+        "On Track": "ट्र्याकमा",
+        "Delayed": "ढिलाइ",
+        "In Progress": "सञ्चालनमा",
+        "Critical": "गम्भीर",
+        "Asphalt Paving": "कालोपत्रे",
+        "Drainage Work": "ढल निर्माण",
+        "km": "कि.मि.",
+        "m": "मिटर",
+        "Nos": "संख्या",
+        "Hello": "नमस्ते",
+        "Road": "सडक",
+        "Construction": "निर्माण",
+        "Traffic": "यातायात",
+        "Blocked": "अवरुद्ध",
+        "Open": "खुला",
+        "Closed": "बन्द"
+    }
+};
+// Circuit breaker constants
+const FAIL_COUNT_KEY = "system:gemini_failure_count";
+const CIRCUIT_BREAKER_KEY = "system:circuit_open";
+const FAIL_THRESHOLD = 5;
+const COOL_OFF_SECONDS = 600; // 10 minutes
+/**
+ * Check if circuit breaker is open (Gemini repeatedly failing)
+ */
+async function isCircuitBreakerOpen(env) {
+    const open = await env.TRANSLATION_KV.get(CIRCUIT_BREAKER_KEY);
+    if (open === "true") {
+        const failCountStr = await env.TRANSLATION_KV.get(FAIL_COUNT_KEY);
+        const failCount = failCountStr ? parseInt(failCountStr, 10) : 0;
+        if (failCount >= FAIL_THRESHOLD) {
+            return true; // Still open
+        }
+        // Reset if below threshold (e.g., after cooldown)
+        await env.TRANSLATION_KV.delete(CIRCUIT_BREAKER_KEY);
+        await env.TRANSLATION_KV.delete(FAIL_COUNT_KEY);
+    }
+    return false;
+}
+/**
+ * Record a Gemini failure and potentially trip circuit breaker
+ */
+async function recordGeminiFailure(env) {
+    const currentStr = await env.TRANSLATION_KV.get(FAIL_COUNT_KEY) || "0";
+    const current = parseInt(currentStr, 10);
+    const next = current + 1;
+    await env.TRANSLATION_KV.put(FAIL_COUNT_KEY, next.toString(), { expirationTtl: COOL_OFF_SECONDS });
+    if (next >= FAIL_THRESHOLD) {
+        await env.TRANSLATION_KV.put(CIRCUIT_BREAKER_KEY, "true", { expirationTtl: COOL_OFF_SECONDS });
+    }
+}
+/**
+ * Cache key generator (hash-like to avoid huge keys)
+ */
+function makeCacheKey(text, targetLang) {
+    const input = `${targetLang}:${text}`.toLowerCase().trim();
+    // Simple hash: djb2
+    let hash = 5381;
+    for (let i = 0; i < input.length; i++) {
+        hash = ((hash << 5) + hash) + input.charCodeAt(i); // hash * 33 + char
+        hash = hash & hash; // Keep as 32-bit
+    }
+    return `trans:${targetLang}:${hash.toString(16)}`;
+}
+/**
+ * Translate text using Gemini AI with dictionary fallback and caching
+ */
+export async function translateWithGemini(text, targetLang, env) {
+    // 1. Circuit breaker check
+    if (await isCircuitBreakerOpen(env)) {
+        return { translated: text, source: "circuit-breaker" };
+    }
+    // 2. Cache lookup
+    const cacheKey = makeCacheKey(text, targetLang);
+    const cached = await env.TRANSLATION_KV.get(cacheKey);
+    if (cached) {
+        return { translated: cached, source: "cache" };
+    }
+    // 3. Dictionary fallback (exact match)
+    const dict = DICTIONARY[targetLang];
+    if (dict) {
+        const exact = dict[text];
+        if (exact) {
+            await env.TRANSLATION_KV.put(cacheKey, exact, { expirationTtl: 86400 * 30 }); // 30d
+            return { translated: exact, source: "dictionary" };
+        }
+        // Case-insensitive partial match for short phrases (≤5 words)
+        const words = text.split(/\s+/);
+        if (words.length <= 5) {
+            for (const [phrase, translation] of Object.entries(dict)) {
+                if (text.toLowerCase() === phrase.toLowerCase()) {
+                    await env.TRANSLATION_KV.put(cacheKey, translation, { expirationTtl: 86400 * 30 });
+                    return { translated: translation, source: "dictionary" };
+                }
+            }
+        }
+    }
+    // 4. Gemini AI translation (if key configured)
+    if (!env.GEMINI_API_KEY || env.GEMINI_API_KEY.trim().length === 0) {
+        // No Gemini configured — return original text
+        return { translated: text, source: "fallback" };
+    }
+    try {
+        // Construct prompt for translation
+        const prompt = `Translate the following English text to ${targetLang === 'ne' ? 'Nepali (Devanagari script)' : targetLang}. 
 Preserve numbers, units (km, m, Nos), proper nouns, and technical terms. 
 Return ONLY the translated text with no additional commentary.
 
-Text: "${s}"
+Text: "${text}"
 
-Translation:`,I=`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${r.GEMINI_API_KEY}`,E=await fetch(I,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({contents:[{parts:[{text:a}],role:"user"}],generationConfig:{temperature:.2,maxOutputTokens:512,topP:.95,topK:40},safetySettings:[{category:"HARM_CATEGORY_HARASSMENT",threshold:"BLOCK_MEDIUM_AND_ABOVE"},{category:"HARM_CATEGORY_HATE_SPEECH",threshold:"BLOCK_MEDIUM_AND_ABOVE"},{category:"HARM_CATEGORY_SEXUALLY_EXPLICIT",threshold:"BLOCK_MEDIUM_AND_ABOVE"},{category:"HARM_CATEGORY_DANGEROUS_CONTENT",threshold:"BLOCK_MEDIUM_AND_ABOVE"}]})});if(!E.ok){let m=await E.text();throw new Error(`Gemini API ${E.status}: ${m}`)}let S=(await E.json()).candidates?.[0];if(!S?.content?.parts?.[0]?.text)throw new Error("Invalid Gemini response structure");let c=S.content.parts[0].text.trim();return c=c.replace(/^["']|["']$/g,"").trim(),await r.TRANSLATION_KV.put(e,c,{expirationTtl:86400*7}),{translated:c,source:"gemini"}}catch(a){return console.error("Gemini translation error:",a),await L(r),{translated:s,source:"fallback"}}}T(K,"translateWithGemini");var b={async fetch(s,t,r){let e=new URL(s.url),n=s.headers.get("cf-connecting-ip")||"127.0.0.1",i=s.headers.get("Origin")||"*";if(s.method==="OPTIONS")return new Response(null,{headers:{"Access-Control-Allow-Origin":i,"Access-Control-Allow-Methods":"GET, POST, PUT, DELETE, OPTIONS","Access-Control-Allow-Headers":"Content-Type, X-Firebase-AppCheck, X-Admin-Secret, X-Low-Data","Access-Control-Max-Age":"86400"}});let a=e.pathname.replace(/\/+$/,"");if(await t.TRANSLATION_KV.get("system:global_kill_switch")==="true"&&!a.startsWith("/api/admin/"))return new Response(JSON.stringify({error:"Service Temporarily Unavailable: Global maintenance mode active."}),{status:503,headers:{"Content-Type":"application/json","Access-Control-Allow-Origin":"*"}});let E=e.searchParams.get("force")==="true",g=!1;if(E&&!a.startsWith("/api/admin/")){let A=`limit:force_rate:${n}`;await this.getRedisCache(A,t)?(E=!1,g=!0):await this.setRedisCache(A,"active",t,120)}if(!a.startsWith("/api/admin/")&&await this.checkRateLimit(n,t))return new Response(JSON.stringify({error:"Too Many Requests: Rate limit exceeded."}),{status:429,headers:{"Content-Type":"application/json","Access-Control-Allow-Origin":"*"}});let c={"Content-Security-Policy":"default-src 'self'; script-src 'self' https://www.gstatic.com https://www.google.com https://unpkg.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; img-src 'self' data: https://dor.gov.np https://dor-progress.web.app https://api.qrserver.com; connect-src 'self' https://dor-progress.banjays.workers.dev https://docs.google.com https://generativelanguage.googleapis.com https://firebaseappcheck.googleapis.com blob:; media-src 'self' blob:; frame-ancestors *;","X-Content-Type-Options":"nosniff","Referrer-Policy":"strict-origin-when-cross-origin","Permissions-Policy":"geolocation=(), microphone=(), camera=()","Access-Control-Allow-Origin":i};if(a.startsWith("/api/admin/")){let A=s.headers.get("X-Admin-Secret");if(!A||!t.ADMIN_SECRET||!M(A,t.ADMIN_SECRET))return new Response("Unauthorized",{status:401,headers:c});if(a==="/api/admin/config-check"){let u=["TRANSLATION_KV","RATE_LIMITER","UPSTASH_REDIS_REST_URL","UPSTASH_REDIS_REST_TOKEN","GEMINI_API_KEY","ADMIN_SECRET","GOOGLE_CLOUD_API_KEY","API_BASE_URL","VAPID_PUBLIC_KEY","VAPID_PRIVATE_KEY","FIREBASE_API_KEY","FIREBASE_AUTH_DOMAIN","FIREBASE_PROJECT_ID","FIREBASE_PROJECT_NUMBER","FIREBASE_APP_ID","RECAPTCHA_SITE_KEY","RECAPTCHA_SECRET_KEY","PUBLISHED_SHEET_ID","BUILD_ID","COMMIT_SHA","DEPLOY_TIMESTAMP"],p={};for(let l of u){let _=t[l];if(_!=null){let D=typeof _=="string";p[l]=D?{status:"LOADED",length:_.length,preview:_.length>8?`${_.substring(0,4)}...${_.slice(-4)}`:"****"}:{status:"LOADED",type:typeof _}}else p[l]={status:"NOT_FOUND"}}let o={status:"OPERATIONAL"};try{await t.TRANSLATION_KV.put("system:health_ping",Date.now().toString(),{expirationTtl:60}),o.kv="CONNECTED"}catch{o.kv="FAILED",o.status="DEGRADED"}try{let l=t.RATE_LIMITER.idFromName("health_probe"),d=await t.RATE_LIMITER.get(l).fetch(new Request("https://rate.limit/health_check"));o.internalDb=d.ok?"HEALTHY":"CORRUPT",d.ok||(o.status="DEGRADED")}catch{o.internalDb="UNREACHABLE",o.status="DEGRADED"}let R=await this.getRedisCache("system:health_ping",t);o.redis=R!=="CONFIG_ERROR"&&R!==null?"CONNECTED":"DISCONNECTED";try{let l=await fetch("https://translate.google.com/translate_tts?q=ping&tl=en&client=tw-ob");o.ttsProxy=l.ok?"CONNECTED":"THROTTLED"}catch{o.ttsProxy="UNREACHABLE"}return new Response(JSON.stringify({metadata:{build:t.BUILD_ID||"NOT_INJECTED",sha:t.COMMIT_SHA?t.COMMIT_SHA.substring(0,7):"NOT_INJECTED",deployed_at:t.DEPLOY_TIMESTAMP||"NOT_INJECTED",worker_host:e.hostname},environment:p,connectivity:o,timestamp:new Date().toISOString()}),{headers:{...c,"Content-Type":"application/json"}})}}let m=e.pathname.replace(/\/+$/,"");if(a==="/api/translate"){let A=e.searchParams.get("text"),u=e.searchParams.get("targetLang")||"ne";if(!A)return new Response(JSON.stringify({error:"Missing 'text' query parameter"}),{status:400,headers:{...c,"Content-Type":"application/json"}});let p=`limit:translate:${n}`;if(await this.getRedisCache(p,t))return new Response(JSON.stringify({error:"Rate limit exceeded. Try again later."}),{status:429,headers:{...c,"Content-Type":"application/json"}});let R=await K(A,u,t);return R.source!=="circuit-breaker"&&await this.setRedisCache(p,"active",t,60),new Response(JSON.stringify({original:A,translated:R.translated,targetLang:u,source:R.source}),{status:200,headers:{...c,"Content-Type":"application/json"}})}return new Response("DoR API Operational",{headers:c})},async checkRateLimit(s,t){if(!t.RATE_LIMITER)return!1;let r=t.RATE_LIMITER.idFromName(s);return(await t.RATE_LIMITER.get(r).fetch(new Request("https://rate.limit/"))).status===429},async getRedisCache(s,t){if(!t.UPSTASH_REDIS_REST_URL)return"CONFIG_ERROR";let r=t.UPSTASH_REDIS_REST_URL.replace(/\/$/,""),e=await fetch(`${r}/get/${s}`,{headers:{Authorization:`Bearer ${t.UPSTASH_REDIS_REST_TOKEN}`}});return e.ok?(await e.json()).result??null:null},async setRedisCache(s,t,r,e=604800){if(!r.UPSTASH_REDIS_REST_URL)return;let n=r.UPSTASH_REDIS_REST_URL.replace(/\/$/,""),i=["SET",s,t,"EX",e];await fetch(`${n}`,{method:"POST",headers:{Authorization:`Bearer ${r.UPSTASH_REDIS_REST_TOKEN}`},body:JSON.stringify(i)})}};function M(s,t){if(s.length!==t.length)return!1;let r=0;for(let e=0;e<s.length;e++)r|=s.charCodeAt(e)^t.charCodeAt(e);return r===0}T(M,"secureCompare");var C=class{constructor(t){this.state=t}static{T(this,"RateLimiter")}async fetch(t){if(new URL(t.url).pathname==="/health_check")try{await this.state.storage.put("integrity_ping",Date.now());let i=await this.state.storage.get("integrity_ping");return new Response(i?"OK":"FAIL")}catch{return new Response("FAIL",{status:500})}let e=await this.state.storage.get("ts")||[],n=Date.now();return e=e.filter(i=>n-i<6e4),e.length>=100?new Response("Throttled",{status:429}):(e.push(n),await this.state.storage.put("ts",e),new Response("OK"))}};export{C as RateLimiter,b as default,K as translateWithGemini};
-//# sourceMappingURL=index.js.map
+Translation:`;
+        const geminiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${env.GEMINI_API_KEY}`;
+        const response = await fetch(geminiUrl, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+                contents: [{
+                        parts: [{ text: prompt }],
+                        role: "user"
+                    }],
+                generationConfig: {
+                    temperature: 0.2,
+                    maxOutputTokens: 512,
+                    topP: 0.95,
+                    topK: 40
+                },
+                safetySettings: [
+                    { category: "HARM_CATEGORY_HARASSMENT", threshold: "BLOCK_MEDIUM_AND_ABOVE" },
+                    { category: "HARM_CATEGORY_HATE_SPEECH", threshold: "BLOCK_MEDIUM_AND_ABOVE" },
+                    { category: "HARM_CATEGORY_SEXUALLY_EXPLICIT", threshold: "BLOCK_MEDIUM_AND_ABOVE" },
+                    { category: "HARM_CATEGORY_DANGEROUS_CONTENT", threshold: "BLOCK_MEDIUM_AND_ABOVE" }
+                ]
+            })
+        });
+        if (!response.ok) {
+            const errorBody = await response.text();
+            throw new Error(`Gemini API ${response.status}: ${errorBody}`);
+        }
+        const data = await response.json();
+        const candidate = data.candidates?.[0];
+        if (!candidate?.content?.parts?.[0]?.text) {
+            throw new Error("Invalid Gemini response structure");
+        }
+        let translated = candidate.content.parts[0].text.trim();
+        // Remove surrounding quotes if present
+        translated = translated.replace(/^["']|["']$/g, "").trim();
+        // Cache successful translation for 7 days
+        await env.TRANSLATION_KV.put(cacheKey, translated, { expirationTtl: 86400 * 7 });
+        return { translated, source: "gemini" };
+    }
+    catch (error) {
+        console.error("Gemini translation error:", error);
+        await recordGeminiFailure(env);
+        // Fallback: return original text
+        return { translated: text, source: "fallback" };
+    }
+}
+export default {
+    async fetch(request, env, ctx) {
+        const url = new URL(request.url);
+        const clientIp = request.headers.get("cf-connecting-ip") || "127.0.0.1";
+        const origin = request.headers.get("Origin") || "*";
+        if (request.method === "OPTIONS") {
+            return new Response(null, {
+                headers: {
+                    "Access-Control-Allow-Origin": origin,
+                    "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
+                    "Access-Control-Allow-Headers": "Content-Type, X-Firebase-AppCheck, X-Admin-Secret, X-Low-Data",
+                    "Access-Control-Max-Age": "86400",
+                },
+            });
+        }
+        // Normalize path (remove trailing slashes) for consistent routing
+        const normalizedPath = url.pathname.replace(/\/+$/, '');
+        // Diagnostic: log the incoming path (remove after testing)
+        // console.log(`[dor-progress] path="${url.pathname}" normalized="${normalizedPath}"`);
+        const isKillSwitchActive = await env.TRANSLATION_KV.get("system:global_kill_switch") === "true";
+        if (isKillSwitchActive && !normalizedPath.startsWith('/api/admin/')) {
+            return new Response(JSON.stringify({ error: "Service Temporarily Unavailable: Global maintenance mode active." }), {
+                status: 503,
+                headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" }
+            });
+        }
+        let force = url.searchParams.get('force') === "true";
+        let isForceThrottled = false;
+        if (force && !normalizedPath.startsWith('/api/admin/')) {
+            const forceLimitKey = `limit:force_rate:${clientIp}`;
+            const isThrottled = await this.getRedisCache(forceLimitKey, env);
+            if (isThrottled) {
+                force = false;
+                isForceThrottled = true;
+            }
+            else {
+                await this.setRedisCache(forceLimitKey, "active", env, 120);
+            }
+        }
+        const isLimited = !normalizedPath.startsWith('/api/admin/') && await this.checkRateLimit(clientIp, env);
+        if (isLimited) {
+            return new Response(JSON.stringify({ error: "Too Many Requests: Rate limit exceeded." }), {
+                status: 429,
+                headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" }
+            });
+        }
+        const securityHeaders = {
+            "Content-Security-Policy": "default-src 'self'; script-src 'self' https://www.gstatic.com https://www.google.com https://unpkg.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; img-src 'self' data: https://dor.gov.np https://dor-progress.web.app https://api.qrserver.com; connect-src 'self' https://dor-progress.banjays.workers.dev https://docs.google.com https://generativelanguage.googleapis.com https://firebaseappcheck.googleapis.com blob:; media-src 'self' blob:; frame-ancestors *;",
+            "X-Content-Type-Options": "nosniff",
+            "Referrer-Policy": "strict-origin-when-cross-origin",
+            "Permissions-Policy": "geolocation=(), microphone=(), camera=()",
+            "Access-Control-Allow-Origin": origin,
+            "X-Served-By": "Cloudflare-Worker"
+        };
+        if (normalizedPath.startsWith('/api/admin/')) {
+            const adminSecret = request.headers.get("X-Admin-Secret");
+            if (!adminSecret || !env.ADMIN_SECRET || !secureCompare(adminSecret, env.ADMIN_SECRET)) {
+                return new Response("Unauthorized", { status: 401, headers: securityHeaders });
+            }
+            if (normalizedPath === '/api/admin/config-check') {
+                const keys = [
+                    'TRANSLATION_KV', 'RATE_LIMITER', 'UPSTASH_REDIS_REST_URL', 'UPSTASH_REDIS_REST_TOKEN',
+                    'GEMINI_API_KEY', 'ADMIN_SECRET', 'GOOGLE_CLOUD_API_KEY', 'API_BASE_URL',
+                    'VAPID_PUBLIC_KEY', 'VAPID_PRIVATE_KEY',
+                    'FIREBASE_API_KEY', 'FIREBASE_AUTH_DOMAIN', 'FIREBASE_PROJECT_ID',
+                    'FIREBASE_PROJECT_NUMBER', 'FIREBASE_APP_ID', 'RECAPTCHA_SITE_KEY',
+                    'RECAPTCHA_SECRET_KEY', 'PUBLISHED_SHEET_ID',
+                    'BUILD_ID', 'COMMIT_SHA', 'DEPLOY_TIMESTAMP'
+                ];
+                const results = {};
+                for (const k of keys) {
+                    const v = env[k];
+                    const isSet = v !== undefined && v !== null;
+                    if (isSet) {
+                        const isString = typeof v === 'string';
+                        results[k] = isString
+                            ? { status: "LOADED", length: v.length, preview: v.length > 8 ? `${v.substring(0, 4)}...${v.slice(-4)}` : "****" }
+                            : { status: "LOADED", type: typeof v };
+                    }
+                    else {
+                        results[k] = { status: "NOT_FOUND" };
+                    }
+                }
+                // 2. Live Infrastructure Health Check
+                const health = { status: "OPERATIONAL" };
+                try {
+                    await env.TRANSLATION_KV.put("system:health_ping", Date.now().toString(), { expirationTtl: 60 });
+                    health.kv = "CONNECTED";
+                }
+                catch (e) {
+                    health.kv = "FAILED";
+                    health.status = "DEGRADED";
+                }
+                // 3. Durable Object Storage Integrity Check (Internal DB)
+                try {
+                    const id = env.RATE_LIMITER.idFromName("health_probe");
+                    const stub = env.RATE_LIMITER.get(id);
+                    const doRes = await stub.fetch(new Request("https://rate.limit/health_check"));
+                    health.internalDb = doRes.ok ? "HEALTHY" : "CORRUPT";
+                    if (!doRes.ok)
+                        health.status = "DEGRADED";
+                }
+                catch (e) {
+                    health.internalDb = "UNREACHABLE";
+                    health.status = "DEGRADED";
+                }
+                const redisTest = await this.getRedisCache("system:health_ping", env);
+                health.redis = redisTest !== "CONFIG_ERROR" && redisTest !== null ? "CONNECTED" : "DISCONNECTED";
+                // Free TTS Connectivity Probe
+                try {
+                    const ttsProbe = await fetch("https://translate.google.com/translate_tts?q=ping&tl=en&client=tw-ob");
+                    health.ttsProxy = ttsProbe.ok ? "CONNECTED" : "THROTTLED";
+                }
+                catch (e) {
+                    health.ttsProxy = "UNREACHABLE";
+                }
+                return new Response(JSON.stringify({
+                    metadata: {
+                        build: env.BUILD_ID || "NOT_INJECTED",
+                        sha: env.COMMIT_SHA ? env.COMMIT_SHA.substring(0, 7) : "NOT_INJECTED",
+                        deployed_at: env.DEPLOY_TIMESTAMP || "NOT_INJECTED",
+                        worker_host: url.hostname
+                    },
+                    environment: results,
+                    connectivity: health,
+                    timestamp: new Date().toISOString()
+                }), { headers: { ...securityHeaders, "Content-Type": "application/json" } });
+            }
+            // Future admin routes (idempotency, cache-purge, etc.) go here
+        }
+        // Public API: Translation endpoint
+        if (normalizedPath === '/api/translate') {
+            const text = url.searchParams.get('text');
+            const targetLang = url.searchParams.get('targetLang') || 'ne';
+            if (!text) {
+                return new Response(JSON.stringify({ error: "Missing 'text' query parameter" }), {
+                    status: 400,
+                    headers: { ...securityHeaders, "Content-Type": "application/json" }
+                });
+            }
+            // Basic rate limiting for public endpoint (stricter)
+            const translateKey = `limit:translate:${clientIp}`;
+            const isRateLimited = await this.getRedisCache(translateKey, env);
+            if (isRateLimited) {
+                return new Response(JSON.stringify({ error: "Rate limit exceeded. Try again later." }), {
+                    status: 429,
+                    headers: { ...securityHeaders, "Content-Type": "application/json" }
+                });
+            }
+            // Perform translation
+            const result = await translateWithGemini(text, targetLang, env);
+            // Set rate limit cache (1 minute) — only if not circuit-broken
+            if (result.source !== 'circuit-breaker') {
+                await this.setRedisCache(translateKey, "active", env, 60);
+            }
+            return new Response(JSON.stringify({
+                original: text,
+                translated: result.translated,
+                targetLang,
+                source: result.source
+            }), {
+                status: 200,
+                headers: { ...securityHeaders, "Content-Type": "application/json" }
+            });
+        }
+        // Default fallback
+        return new Response("DoR API Operational", { headers: securityHeaders });
+    },
+    async checkRateLimit(clientIp, env) {
+        if (!env.RATE_LIMITER)
+            return false;
+        const id = env.RATE_LIMITER.idFromName(clientIp);
+        const stub = env.RATE_LIMITER.get(id);
+        const res = await stub.fetch(new Request("https://rate.limit/"));
+        return res.status === 429;
+    },
+    async getRedisCache(key, env) {
+        if (!env.UPSTASH_REDIS_REST_URL)
+            return "CONFIG_ERROR";
+        const baseUrl = env.UPSTASH_REDIS_REST_URL.replace(/\/$/, "");
+        const res = await fetch(`${baseUrl}/get/${key}`, { headers: { Authorization: `Bearer ${env.UPSTASH_REDIS_REST_TOKEN}` } });
+        if (!res.ok)
+            return null;
+        const data = await res.json();
+        return data.result ?? null;
+    },
+    async setRedisCache(key, val, env, ttl = 604800) {
+        if (!env.UPSTASH_REDIS_REST_URL)
+            return;
+        const baseUrl = env.UPSTASH_REDIS_REST_URL.replace(/\/$/, "");
+        const cmd = ["SET", key, val, "EX", ttl];
+        await fetch(`${baseUrl}`, { method: "POST", headers: { Authorization: `Bearer ${env.UPSTASH_REDIS_REST_TOKEN}` }, body: JSON.stringify(cmd) });
+    },
+    // ... (Other helpers)
+};
+// ... (Logic functions like translateWithGemini, applyBrandingToPdf follow)
+async function verifyAppCheckToken(token, env) {
+    if (!token || !env.FIREBASE_PROJECT_NUMBER || token.split('.').length !== 3)
+        return false;
+    try {
+        const parts = token.split('.');
+        const payload = JSON.parse(atob(parts[1].replace(/-/g, '+').replace(/_/g, '/')));
+        return payload.exp > Date.now() / 1000 && payload.iss === `https://firebaseappcheck.googleapis.com/${env.FIREBASE_PROJECT_NUMBER}`;
+    }
+    catch {
+        return false;
+    }
+}
+function secureCompare(a, b) {
+    if (a.length !== b.length)
+        return false;
+    let r = 0;
+    for (let i = 0; i < a.length; i++)
+        r |= a.charCodeAt(i) ^ b.charCodeAt(i);
+    return r === 0;
+}
+export class RateLimiter {
+    state;
+    constructor(state) {
+        this.state = state;
+    }
+    async fetch(request) {
+        const url = new URL(request.url);
+        // Health Check Probe for Storage Integrity
+        if (url.pathname === '/health_check') {
+            try {
+                await this.state.storage.put("integrity_ping", Date.now());
+                const val = await this.state.storage.get("integrity_ping");
+                return new Response(val ? "OK" : "FAIL");
+            }
+            catch (e) {
+                return new Response("FAIL", { status: 500 });
+            }
+        }
+        let ts = await this.state.storage.get("ts") || [];
+        const now = Date.now();
+        ts = ts.filter(t => now - t < 60000);
+        if (ts.length >= 100)
+            return new Response("Throttled", { status: 429 });
+        ts.push(now);
+        await this.state.storage.put("ts", ts);
+        return new Response("OK");
+    }
+}

@@ -44,18 +44,9 @@ npm test
 echo "🏗️  Building Worker..."
 npm run compile
 
-# 7. Local Deploy to Cloudflare (shows logs in terminal)
-echo "🚀 Deploying to Cloudflare Workers..."
-npx wrangler deploy --outdir=dist
-
-# 8. Deploy to Firebase Hosting
-echo "🎨 Deploying to Firebase Hosting..."
-if command -v firebase >/dev/null 2>&1; then
-    firebase deploy --only hosting --project "$FIREBASE_PROJECT_ID" 2>/dev/null || firebase deploy --only hosting
-else
-    echo "⚠️  firebase-tools not installed. Install with: npm install -g firebase-tools"
-    echo "   Skipping Firebase deploy — run manually later."
-fi
+# Note: We no longer deploy from the local machine. 
+# Deployment is handled by GitHub Actions to provide centralized logs and status.
+echo "📦 Local validation complete. Pushing to GitHub for deployment..."
 
 # 9. Versioning
 npm version "$BUMP" --no-git-tag-version
