@@ -130,42 +130,6 @@ jobs:
         with:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           command: deploy --no-cache
-          vars: |
-            BUILD_ID
-            COMMIT_SHA
-            DEPLOY_TIMESTAMP
-            FIREBASE_PROJECT_ID
-            FIREBASE_API_KEY
-            FIREBASE_AUTH_DOMAIN
-            FIREBASE_PROJECT_NUMBER
-            FIREBASE_APP_ID
-            RECAPTCHA_SITE_KEY
-            RECAPTCHA_SECRET_KEY
-            PUBLISHED_SHEET_ID
-            UPSTASH_REDIS_REST_URL
-            UPSTASH_REDIS_REST_TOKEN
-            GEMINI_API_KEY
-            ADMIN_SECRET
-            GOOGLE_CLOUD_API_KEY
-            API_BASE_URL
-            VAPID_PUBLIC_KEY
-            VAPID_PRIVATE_KEY
-          secrets: |
-            UPSTASH_REDIS_REST_URL
-            UPSTASH_REDIS_REST_TOKEN
-            GEMINI_API_KEY
-            ADMIN_SECRET
-            GOOGLE_CLOUD_API_KEY
-            API_BASE_URL
-            VAPID_PUBLIC_KEY
-            VAPID_PRIVATE_KEY
-            FIREBASE_API_KEY
-            FIREBASE_AUTH_DOMAIN
-            FIREBASE_PROJECT_NUMBER
-            FIREBASE_APP_ID
-            RECAPTCHA_SITE_KEY
-            RECAPTCHA_SECRET_KEY
-            PUBLISHED_SHEET_ID
         env:
           BUILD_ID: v$(node -p "require('./package.json').version")
           COMMIT_SHA: ${{ github.sha }}
