@@ -112,7 +112,9 @@ jobs:
       - name: Get Version
         id: get_version
         shell: bash
-        run: echo "VERSION=$(node -p "require('./package.json').version")" >> $GITHUB_OUTPUT
+        run: |
+          echo "VERSION=$(node -p "require('./package.json').version")" >> $GITHUB_OUTPUT
+          echo "TIMESTAMP=$(date -u +'%Y-%m-%dT%H:%M:%SZ')" >> $GITHUB_OUTPUT
 
       - name: Install
         run: npm ci
@@ -139,10 +141,10 @@ jobs:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           command: deploy --outdir=dist --no-cache
           vars: |
-            BUILD_ID=v${{ steps.get_version.outputs.VERSION }}
-            COMMIT_SHA=${{ github.sha }}
-            DEPLOY_TIMESTAMP=${{ github.run_started_at }}
-            FIREBASE_PROJECT_ID=${{ secrets.FIREBASE_PROJECT_ID }}
+            BUILD_ID
+            COMMIT_SHA
+            DEPLOY_TIMESTAMP
+            FIREBASE_PROJECT_ID
           secrets: |
             UPSTASH_REDIS_REST_URL
             UPSTASH_REDIS_REST_TOKEN
@@ -289,8 +291,7 @@ jobs:
       - name: Calculate Run Time
         id: calc_time
         run: |
-          START_TIME="${{ github.run_started_at }}"
-          START_TS=$(date -d "$START_TIME" +%s)
+          START_TS=$(date -d "${{ github.run_started_at }}" +%s)
           NOW_TS=$(date +%s)
           DIFF=$((NOW_TS - START_TS))
           echo "DURATION=$((DIFF / 60))m $((DIFF % 60))s" >> $GITHUB_OUTPUT
