@@ -1,18 +1,20 @@
 {
   "hosting": {
-    "public": ".",
+    "public": "public",
     "ignore": [
       "firebase.json",
       ".firebaserc",
       "**/.*",
-      "**/node_modules/**",
-      "package.json",
-      "package-lock.json"
+      "**/node_modules/**"
     ],
     "rewrites": [
       {
         "source": "/api/**",
         "destination": "https://dor-progress.banjays.workers.dev"
+      },
+      {
+        "source": "**",
+        "destination": "/index.html"
       }
     ],
     "headers": [

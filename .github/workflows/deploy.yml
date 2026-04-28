@@ -403,12 +403,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: frontend-dist
-          path: |
-            index.html
-            sw.v2.js
-            manifest.json
-            logo.png
-            dor/
+          path: public/
           retention-days: 7
 
 # ============================================================

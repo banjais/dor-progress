@@ -1,6 +1,6 @@
 {
   "name": "dor-progress",
-  "version": "1.0.5",
+  "version": "1.0.6",
   "type": "module",
   "dependencies": {
     "js-tiktoken": "^1.0.17",
@@ -11,6 +11,7 @@
     "@types/node": "^20.12.7",
     "jose": "^6.2.2",
     "nodemon": "^3.1.0",
+    "sharp": "^0.34.5",
     "typescript": "^6.0.3",
     "vitest": "^3.0.5"
   },
