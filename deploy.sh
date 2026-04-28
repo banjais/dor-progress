@@ -24,30 +24,46 @@ rm -rf dist .wrangler .firebase
 if [ -f .dev.vars ]; then
     echo "ℹ️ Loading local secrets from .dev.vars for validation..."
     while IFS= read -r line || [ -n "$line" ]; do
-        if [[ "$line" =~ ^[A-Za-z_][A-Za-z0-9_]*= ]]; then # Only export lines that look like KEY=VALUE
+        if [[ "$line" =~ ^[A-Za-z_][A-Za-z0-9_]*= ]]; then
             export "$line"
         fi
     done < .dev.vars
 fi
 
-# 3. Validation Gates
+# 5. Validation Gates
+echo "🔒 Running security checks..."
 npm run security-check
-npm run lint
-npm run test
 
-# 4. Versioning
+echo "🔍 Running type checks..."
+npm run lint
+
+echo "🧪 Running tests..."
+npm test
+
+# 6. Build Worker (TypeScript → dist/)
+echo "🏗️  Building Worker..."
+npm run compile
+
+# 7. Local Deploy to Cloudflare (shows logs in terminal)
+echo "🚀 Deploying to Cloudflare Workers..."
+npx wrangler deploy --outdir=dist
+
+# 8. Versioning
 npm version "$BUMP" --no-git-tag-version
 VERSION=$(node -p "require('./package.json').version")
 
-# Auto-generate commit message if not provided
+# 9. Commit message
 MSG="${2:-Deploy v$VERSION}"
 
-# 5. Git Sync
+# 10. Git Sync
+echo "📤 Pushing to GitHub..."
 git add .
-git commit -m "v$VERSION: $MSG"
-git tag -a "v$VERSION" -m "Release v$VERSION"
+git commit -m "v${VERSION}: $MSG"
+git tag -a "v${VERSION}" -m "Release v${VERSION}"
 git push origin main --follow-tags
 
-# 6. Real-time Monitoring
-echo "🚀 Deployment triggered for v$VERSION!"
-echo "📊 Monitor: https://github.com/$(basename "$(git remote get-url origin)" .git)/actions"
+# 11. Done
+echo ""
+echo "✅ Deploy complete!"
+echo "   Version: v${VERSION}"
+echo "   📊 Actions: https://github.com/$(basename "$(git remote get-url origin)" .git)/actions"
