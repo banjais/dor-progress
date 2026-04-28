@@ -1,6 +1,6 @@
 {
   "name": "dor-progress",
-  "version": "1.0.12",
+  "version": "1.0.13",
   "type": "module",
   "dependencies": {
     "js-tiktoken": "^1.0.17",
@@ -23,5 +23,5 @@
     "lint": "tsc --noEmit",
     "security-check": "npm audit --audit-level=high && bash ./verify-no-secrets.sh",
     "test:watch": "vitest"
-  },
+  }
 }
