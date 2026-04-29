@@ -156,20 +156,24 @@ jobs:
         run: |
           echo "Build artifacts:"
           ls -la .build/
-          grep -q "${{ needs.preflight.outputs.api_base_url }}" .build/index.html && echo "✅ Injected API_BASE_URL"
-          # BUILD_ID contains commit SHA; verify it's present and non-empty
-          if grep -qE '__BUILD_ID__|BUILD_ID\s*=\s*["'\'']?$' .build/index.html; then
-            echo "❌ BUILD_ID placeholder not replaced"
+          # Check that API_BASE_URL placeholder was replaced (without exposing the actual URL)
+          if grep -q '__API_BASE_URL__' .build/index.html; then
+            echo "❌ API_BASE_URL placeholder still present"
             exit 1
-          else
-            echo "✅ Injected BUILD_ID (placeholder replaced)"
           fi
-          if grep -qE '__COMMIT_SHA__|COMMIT_SHA\s*=\s*["'\'']?$' .build/sw.v2.js; then
-            echo "❌ COMMIT_SHA placeholder not replaced"
+          echo "✅ Injected API_BASE_URL"
+          # Check BUILD_ID placeholder was replaced
+          if grep -q '__BUILD_ID__' .build/index.html; then
+            echo "❌ BUILD_ID placeholder still present"
             exit 1
-          else
-            echo "✅ Injected COMMIT_SHA (placeholder replaced)"
           fi
+          echo "✅ Injected BUILD_ID"
+          # Check COMMIT_SHA placeholder was replaced in service worker
+          if grep -q '__COMMIT_SHA__' .build/sw.v2.js; then
+            echo "❌ COMMIT_SHA placeholder still present"
+            exit 1
+          fi
+          echo "✅ Injected COMMIT_SHA"
 
   deploy-worker:
     name: ☁️ Deploy Cloudflare Worker
@@ -316,8 +320,8 @@ jobs:
           echo "### Services" >> $GITHUB_STEP_SUMMARY
           echo "| Service | URL | Status |" >> $GITHUB_STEP_SUMMARY
           echo "|---------|-----|--------|" >> $GITHUB_STEP_SUMMARY
-          echo "| ☁️ Cloudflare Worker | https://dor-progress.banjays.workers.dev | $STATUS_WORKER |" >> $GITHUB_STEP_SUMMARY
-          echo "| 🔥 Firebase Hosting | https://dor-progress.web.app | $STATUS_FIREBASE |" >> $GITHUB_STEP_SUMMARY
+          echo "| 🔥 Firebase Hosting (Frontend) | https://dor-progress.web.app | $STATUS_FIREBASE |" >> $GITHUB_STEP_SUMMARY
+          echo "| ☁️ Cloudflare Worker (API) | Internal – proxied via Firebase | $STATUS_WORKER |" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
 
           echo "### Build Info" >> $GITHUB_STEP_SUMMARY
