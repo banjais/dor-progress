@@ -157,7 +157,19 @@ jobs:
           echo "Build artifacts:"
           ls -la .build/
           grep -q "${{ needs.preflight.outputs.api_base_url }}" .build/index.html && echo "✅ Injected API_BASE_URL"
-          grep -q "${{ needs.preflight.outputs.version }}" .build/index.html && echo "✅ Injected BUILD_ID"
+          # BUILD_ID contains commit SHA; verify it's present and non-empty
+          if grep -qE '__BUILD_ID__|BUILD_ID\s*=\s*["'\'']?$' .build/index.html; then
+            echo "❌ BUILD_ID placeholder not replaced"
+            exit 1
+          else
+            echo "✅ Injected BUILD_ID (placeholder replaced)"
+          fi
+          if grep -qE '__COMMIT_SHA__|COMMIT_SHA\s*=\s*["'\'']?$' .build/sw.v2.js; then
+            echo "❌ COMMIT_SHA placeholder not replaced"
+            exit 1
+          else
+            echo "✅ Injected COMMIT_SHA (placeholder replaced)"
+          fi
 
   deploy-worker:
     name: ☁️ Deploy Cloudflare Worker
