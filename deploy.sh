@@ -18,7 +18,7 @@ esac
 
 # 3. Clean build artifacts
 echo "🧹 Cleaning build artifacts..."
-rm -rf dist .wrangler .firebase
+rm -rf dist .wrangler .firebase .build
 
 # 4. Load local secrets for validation
 if [ -f .dev.vars ]; then
@@ -40,13 +40,12 @@ npm run lint
 echo "🧪 Running tests..."
 npm test
 
-# 6. Build Worker (TypeScript → dist/)
-echo "🏗️  Building Worker..."
-npm run compile
+# 6. Full Build (compile + copy + inject + verify)
+echo "🏗️  Building project..."
+npm run build
 
-# Note: We no longer deploy from the local machine. 
-# Deployment is handled by GitHub Actions to provide centralized logs and status.
-echo "📦 Local validation complete. Pushing to GitHub for deployment..."
+# Note: Deployment is handled by GitHub Actions to provide centralized logs and status.
+echo "📦 Build complete. Pushing to GitHub for deployment..."
 
 # 7. Versioning
 npm version "$BUMP" --no-git-tag-version

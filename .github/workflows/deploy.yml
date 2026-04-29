@@ -58,7 +58,6 @@ jobs:
           REQUIRED=(CLOUDFLARE_API_TOKEN UPSTASH_REDIS_REST_URL UPSTASH_REDIS_REST_TOKEN GEMINI_API_KEY ADMIN_SECRET FIREBASE_TOKEN)
           MISSING=()
           for s in "${REQUIRED[@]}"; do
-            # Use GitHub Actions secret context via environment
             if [ -z "${!s}" ]; then
               MISSING+=("$s")
             fi
@@ -93,26 +92,18 @@ jobs:
           ADMIN_SECRET: ${{ secrets.ADMIN_SECRET }}
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
 
-      - name: 📊 Determine Version
+      - name: 📊 Version
         id: version
         run: |
-          CURRENT=$(node -p "require('./package.json').version")
-          IFS='.' read -r MAJOR MINOR PATCH <<< "$CURRENT"
-          BUMP="${{ github.event.inputs.bump-type || 'patch' }}"
-          case "$BUMP" in
-            major) MAJOR=$((MAJOR+1)); MINOR=0; PATCH=0 ;;
-            minor) MINOR=$((MINOR+1)); PATCH=0 ;;
-            patch) PATCH=$((PATCH+1)) ;;
-          esac
-          NEW="$MAJOR.$MINOR.$PATCH"
-          echo "version=$NEW" >> $GITHUB_OUTPUT
-          echo "New version: $NEW"
+          VERSION=$(node -p "require('./package.json').version")
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "Version: $VERSION"
 
       - name: 💬 Commit Message
         id: commit_msg
         run: |
           MSG="${{ github.event.inputs.commit-message }}"
-          [ -z "$MSG" ] && MSG="Deploy v${{ steps.version.outputs.version }} (${{ github.event.inputs.bump-type || 'patch' }})"
+          [ -z "$MSG" ] && MSG="Deploy v${{ steps.version.outputs.version }}"
           echo "msg=$MSG" >> $GITHUB_OUTPUT
 
       - name: 🔗 API Base URL
@@ -266,48 +257,13 @@ jobs:
             echo "⏳ Retry $i... $CODE"
             sleep 10
           done
-          echo "❌ Firebase failed"
-          exit 1
-
-  commit-tag:
-    name: 🏷️ Commit & Tag
-    runs-on: ubuntu-latest
-    needs: [preflight, deploy-worker, deploy-firebase]
-    if: ${{ needs.preflight.outputs.secrets_valid == 'true' && needs.deploy-worker.result == 'success' && needs.deploy-firebase.result == 'success' }}
-
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          token: ${{ secrets.GITHUB_TOKEN }}
-          fetch-depth: 0
-
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 20
-          cache: npm
-
-      - name: 📦 Install
-        run: npm ci
-
-      - name: 🔢 Bump Version
-        run: |
-          npm version ${{ github.event.inputs.bump-type || 'patch' }} --no-git-tag-version
-
-      - name: 💾 Commit & Tag
-        run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add package.json package-lock.json
-          git commit -m "chore: bump version to $(node -p "require('./package.json').version")"
-          git tag -a "v$(node -p "require('./package.json').version")" -m "Release v$(node -p "require('./package.json').version")"
-          git push origin main --follow-tags
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+           echo "❌ Firebase failed"
+           exit 1
 
   summary:
     name: 📋 Deployment Summary
     runs-on: ubuntu-latest
-    needs: [preflight, build, deploy-worker, deploy-firebase, commit-tag]
+    needs: [preflight, build, deploy-worker, deploy-firebase]
     if: always()
 
     steps:
@@ -315,7 +271,6 @@ jobs:
         run: |
           STATUS_WORKER="${{ needs.deploy-worker.result }}"
           STATUS_FIREBASE="${{ needs.deploy-firebase.result }}"
-          STATUS_COMMIT="${{ needs.commit-tag.result }}"
 
           echo "# 🚀 Deployment Summary" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
@@ -343,6 +298,6 @@ jobs:
           echo "" >> $GITHUB_STEP_SUMMARY
 
           echo "### Quick Links" >> $GITHUB_STEP_SUMMARY
-          echo "- [Worker Logs](https://console.cloudflare.com/workers-and-pages/overview)" >> $GITHUB_STEP_SUMMARY
+          echo "- [Worker Dashboard](https://console.cloudflare.com/workers-and-pages/overview)" >> $GITHUB_STEP_SUMMARY
           echo "- [Firebase Console](https://console.firebase.google.com/project/dor-progress/overview)" >> $GITHUB_STEP_SUMMARY
           echo "- [Workflow Run](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }})" >> $GITHUB_STEP_SUMMARY
