@@ -82,3 +82,5 @@ generated-icons/
 
 # Local build output
 .build/
+dist/
+.wrangler/
