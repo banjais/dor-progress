@@ -19,7 +19,7 @@ on:
       skip-tests:
         description: 'Skip tests?'
         required: false
-        default: 'false'
+        default: false
         type: boolean
 
 permissions:
@@ -34,6 +34,8 @@ jobs:
       version: ${{ steps.version.outputs.version }}
       commit_msg: ${{ steps.commit_msg.outputs.msg }}
       api_base_url: ${{ steps.api_url.outputs.url }}
+      secrets_valid: ${{ steps.validate-secrets.outputs.secrets_valid }}
+      missing_list: ${{ steps.validate-secrets.outputs.missing_list }}
 
     steps:
       - uses: actions/checkout@v4
@@ -54,15 +56,21 @@ jobs:
         run: |
           echo "🔍 Checking required secrets..."
           REQUIRED=(CLOUDFLARE_API_TOKEN UPSTASH_REDIS_REST_URL UPSTASH_REDIS_REST_TOKEN GEMINI_API_KEY ADMIN_SECRET FIREBASE_TOKEN)
+          MISSING=()
           for s in "${REQUIRED[@]}"; do
             if [ -z "${!s}" ]; then
-              echo "❌ Missing: $s"
-              echo "missing=true" >> $GITHUB_OUTPUT
-              exit 1
+              MISSING+=("$s")
             fi
           done
+          if [ ${#MISSING[@]} -gt 0 ]; then
+            echo "❌ Missing: ${MISSING[*]}"
+            echo "secrets_valid=false" >> $GITHUB_OUTPUT
+            echo "missing_list=${MISSING[*]}" >> $GITHUB_OUTPUT
+            exit 1
+          fi
           echo "✅ All secrets present"
-          echo "missing=false" >> $GITHUB_OUTPUT
+          echo "secrets_valid=true" >> $GITHUB_OUTPUT
+          echo "missing_list=" >> $GITHUB_OUTPUT
 
       - name: 🛡️ Security Audit
         run: npm run security-check
@@ -107,7 +115,7 @@ jobs:
     name: 🏗️ Build Project
     runs-on: ubuntu-latest
     needs: preflight
-    if: ${{ needs.preflight.outputs.missing == 'false' }}
+    if: ${{ needs.preflight.outputs.secrets_valid == 'true' }}
 
     steps:
       - uses: actions/checkout@v4
@@ -196,6 +204,7 @@ jobs:
     name: 🔥 Deploy Firebase Hosting
     runs-on: ubuntu-latest
     needs: [preflight, build, deploy-worker]
+    if: ${{ needs.preflight.outputs.secrets_valid == 'true' && needs.build.result == 'success' && needs.deploy-worker.result == 'success' }}
 
     steps:
       - uses: actions/checkout@v4
@@ -237,7 +246,7 @@ jobs:
     name: 🏷️ Commit & Tag
     runs-on: ubuntu-latest
     needs: [preflight, deploy-worker, deploy-firebase]
-    if: ${{ always() && needs.deploy-worker.result == 'success' && needs.deploy-firebase.result == 'success' }}
+    if: ${{ needs.preflight.outputs.secrets_valid == 'true' && needs.deploy-worker.result == 'success' && needs.deploy-firebase.result == 'success' }}
 
     steps:
       - uses: actions/checkout@v4
@@ -299,10 +308,10 @@ jobs:
           echo "" >> $GITHUB_STEP_SUMMARY
 
           echo "### Secrets Check" >> $GITHUB_STEP_SUMMARY
-          if [ "${{ needs.preflight.outputs.missing }}" = "false" ]; then
+          if [ "${{ needs.preflight.outputs.secrets_valid }}" = "true" ]; then
             echo "- ✅ All secrets configured" >> $GITHUB_STEP_SUMMARY
           else
-            echo "- ❌ Missing: ${{ needs.preflight.outputs.missing }}" >> $GITHUB_STEP_SUMMARY
+            echo "- ❌ Missing: ${{ needs.preflight.outputs.missing_list }}" >> $GITHUB_STEP_SUMMARY
           fi
           echo "" >> $GITHUB_STEP_SUMMARY
 
