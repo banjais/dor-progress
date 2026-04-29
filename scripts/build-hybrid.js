@@ -73,6 +73,16 @@ header h2{margin:0;font-size:1rem;display:flex;align-items:center;gap:10px;font-
   .icon-btn, .status-btn { width: 44px !important; height: 44px !important; }
   header h2 { font-size: 0.85rem; }
 }
+/* Tablet – show table with limited columns */
+@media (min-width: 768px) and (max-width: 1024px) {
+  #btn-table { display: flex !important; }
+  #btn-cards { display: none !important; }
+  #view-table { display: block !important; }
+  #view-cards { display: none !important; }
+  /* Show first 6 columns, hide others */
+  th:nth-child(n+7), td:nth-child(n+7) { display: none; }
+  .icon-btn, .status-btn { width: 38px !important; height: 38px !important; }
+}
 `;
 
 const nonCriticalCss = fullCss.replace(criticalCss, '').replace(/^\s*\n/mg, '');
