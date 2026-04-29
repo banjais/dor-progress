@@ -46,14 +46,7 @@ const commitSha = getGitSha();
 const buildId = getBuildId(commitSha);
 
 const values = {
-  '__API_BASE_URL__': resolveValue('API_BASE_URL', () => {
-    try {
-      const toml = fs.readFileSync(path.resolve(process.cwd(), 'wrangler.toml'), 'utf8');
-      const match = toml.match(/API_BASE_URL\s*=\s*"([^"]+)"/);
-      if (match) return match[1];
-    } catch {}
-    return 'https://dor-progress.banjays.workers.dev';
-  }),
+  '__API_BASE_URL__': resolveValue('API_BASE_URL', () => ''),
   '__BUILD_ID__': resolveValue('BUILD_ID', () => buildId),
   '__COMMIT_SHA__': resolveValue('COMMIT_SHA', () => commitSha)
 };
