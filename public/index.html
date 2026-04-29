@@ -164,16 +164,15 @@
       animation: noise-jitter 0.1s steps(2) infinite;
     }
 
-    body {
-      font-family: "Noto Sans Devanagari", "Noto Sans Devanagari Local", "Roboto", "Roboto Local", -apple-system, BlinkMacSystemFont, "Segoe UI", "Helvetica Neue", Arial, sans-serif;
-      background-color: var(--bg);
-      color: var(--text);
-      margin: 0;
-      transition: background-color 0.5s ease, color 0.5s ease;
-      font-size: calc(clamp(14px, 1.1vw, 16px) * var(--font-multiplier, 1));
-      /* Responsive base font */
-      -webkit-font-smoothing: antialiased;
-    }
+     body {
+       font-family: "Noto Sans Devanagari", "Noto Sans Devanagari Local", "Roboto", "Roboto Local", -apple-system, BlinkMacSystemFont, "Segoe UI", "Helvetica Neue", Arial, sans-serif;
+       background-color: var(--bg);
+       color: var(--text);
+       margin: 0;
+       transition: background-color 0.5s ease, color 0.5s ease;
+       font-size: calc(clamp(14px, 1.1vw, 16px) * var(--font-multiplier, 1));
+       /* Let browser use default font rendering (crispest for platform) */
+     }
 
     .highlight-word {
       background-color: var(--selected-bg);
@@ -216,20 +215,22 @@
       animation: modal-up 0.2s ease-out;
     }
 
-    header {
-      background: var(--primary);
-      background: linear-gradient(135deg, var(--primary) 0%, var(--primary-dark) 100%);
-      color: white;
-      padding: 0.5rem 5%;
-      position: sticky;
-      top: 0;
-      z-index: 100;
-      height: 48px;
-      display: flex;
-      align-items: center;
-      box-shadow: 0 4px 12px rgba(0, 153, 218, 0.2);
-      /* Subtle Glow */
-    }
+     header {
+       background: linear-gradient(135deg, var(--primary) 0%, var(--primary-dark) 100%);
+       background-color: var(--primary);
+       color: white;
+       padding: 0.5rem 5%;
+       position: sticky;
+       top: 0;
+       z-index: 100;
+       height: 48px;
+       display: flex;
+       align-items: center;
+       box-shadow: 0 4px 12px rgba(0, 153, 218, 0.2);
+       /* Ensure crisp text on all displays */
+       -webkit-font-smoothing: auto;
+       text-rendering: optimizeLegibility;
+     }
 
     .header-top {
       display: flex;
@@ -239,16 +240,20 @@
       width: 100%;
     }
 
-    header h2 {
-      margin: 0;
-      font-size: 0.95rem;
-      display: flex;
-      align-items: center;
-      gap: 10px;
-      font-weight: 800;
-      text-transform: uppercase;
-      letter-spacing: 0.05em;
-    }
+     header h2 {
+       margin: 0;
+       font-size: 1rem;
+       display: flex;
+       align-items: center;
+       gap: 10px;
+       font-weight: 800;
+       text-transform: uppercase;
+       letter-spacing: 0.05em;
+       /* Crisp text on all displays */
+       -webkit-font-smoothing: auto;
+       text-rendering: optimizeLegibility;
+       text-shadow: none;
+     }
 
     header h2 img {
       height: 24px;
@@ -286,19 +291,21 @@
       box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.05);
     }
 
-    .toggle-btn {
-      background: var(--surface);
-      border: none;
-      color: var(--text-light);
-      padding: 6px 14px;
-      border-radius: 8px;
-      font-size: 0.7rem;
-      font-weight: 700;
-      cursor: pointer;
-      box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
-      /* 3D Effect */
-      transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
-    }
+     .toggle-btn {
+       background: var(--surface);
+       border: none;
+       color: var(--text-light);
+       padding: 8px 16px;
+       border-radius: 8px;
+       font-size: 0.75rem;
+       font-weight: 700;
+       cursor: pointer;
+       box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+       transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+       /* Crisp text */
+       -webkit-font-smoothing: auto;
+       text-rendering: optimizeLegibility;
+     }
 
     /* Hide Professional Print Branding from the screen view */
     #print-header,
@@ -332,19 +339,22 @@
       cursor: pointer;
     }
 
-    .icon-btn {
-      background: var(--surface);
-      border: 1px solid var(--border);
-      width: 34px;
-      height: 34px;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      border-radius: 10px;
-      cursor: pointer;
-      box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
-      font-size: 1.1rem;
-    }
+     .icon-btn {
+       background: var(--surface);
+       border: 1px solid var(--border);
+       width: 34px;
+       height: 34px;
+       display: flex;
+       align-items: center;
+       justify-content: center;
+       border-radius: 10px;
+       cursor: pointer;
+       box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+       font-size: 1.1rem;
+       /* Crisp text/icons */
+       -webkit-font-smoothing: auto;
+       text-rendering: optimizeLegibility;
+     }
 
     .icon-btn:hover {
       background: var(--bg);
@@ -836,20 +846,23 @@
     }
 
     /* Status Button & Spinner Styles */
-    .status-btn {
-      background: rgba(255, 255, 255, 0.2);
-      border: none;
-      color: white;
-      width: 24px;
-      height: 24px;
-      border-radius: 50%;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      cursor: pointer;
-      font-size: 0.7rem;
-      transition: all 0.2s;
-    }
+     .status-btn {
+       background: rgba(255, 255, 255, 0.2);
+       border: none;
+       color: white;
+       width: 32px;
+       height: 32px;
+       border-radius: 50%;
+       display: flex;
+       align-items: center;
+       justify-content: center;
+       cursor: pointer;
+       font-size: 0.85rem;
+       transition: all 0.2s;
+       /* Crisp text */
+       -webkit-font-smoothing: auto;
+       text-rendering: optimizeLegibility;
+     }
 
     .status-btn:hover {
       background: rgba(255, 255, 255, 0.3);
@@ -1374,7 +1387,7 @@
           <div style="display:flex; align-items:center; gap:8px">
             <span id="data-sync-icon" style="display:none; font-size:0.7rem; color:white; opacity:0.8;"
               title="Syncing Data">🔄</span>
-            <div id="status" style="font-size:0.65rem; font-weight:700;">Connecting...</div>
+            <div id="status" style="font-size:0.75rem; font-weight:700; -webkit-font-smoothing:auto;">Connecting...</div>
             <button class="status-btn" id="status-refresh-btn" onclick="checkStatus()"
               title="Check Connection">🔄</button>
           </div>
