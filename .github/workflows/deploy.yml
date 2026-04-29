@@ -1,60 +1,386 @@
-worker:
-  name: ☁️ Worker Deploy (Safe Mode)
-  runs-on: ubuntu-latest
-  needs: preflight
+name: Deploy to Production
 
-  steps:
-    - uses: actions/checkout@v4
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      bump-type:
+        description: 'Version bump type'
+        required: true
+        default: 'patch'
+        type: choice
+        options:
+          - patch
+          - minor
+          - major
+      commit-message:
+        description: 'Commit message'
+        required: false
+        default: ''
+        type: string
+      skip-tests:
+        description: 'Skip tests?'
+        required: false
+        default: 'false'
+        type: boolean
 
-    - uses: actions/setup-node@v4
-      with:
-        node-version: 20
-        cache: npm
+permissions:
+  contents: write
+  id-token: write
 
-    - name: Install dependencies
-      run: npm ci
+jobs:
+  preflight:
+    name: 🔒 Preflight & Validation
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+      commit_msg: ${{ steps.commit_msg.outputs.msg }}
+      bump_type: ${{ inputs.bump-type || 'patch' }}
+      commit_message: ${{ inputs.commit-message || 'Auto-deploy' }}
+      api_base_url: ${{ steps.api_url.outputs.url }}
 
-    - name: Run tests (block deploy if failing)
-      run: npm test
-      env:
-        ADMIN_SECRET: ${{ secrets.ADMIN_SECRET }}
-        GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+    steps:
+      - name: 📥 Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
 
-    - name: Build project
-      run: npm run build
+      - name: 🔧 Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
 
-    - name: Verify build output
-      run: |
-        if [ ! -d "dist" ]; then
-          echo "❌ Build failed: dist missing"
-          exit 1
-        fi
+      - name: 📦 Install Dependencies
+        run: npm ci
 
-    - name: Install Wrangler
-      run: npm install -g wrangler
+      - name: 🔐 Validate Secrets
+        id: secrets
+        run: |
+          echo "🔍 Checking required secrets..."
 
-    - name: Deploy Worker (secure mode)
-      run: wrangler deploy
-      env:
-        CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-        UPSTASH_REDIS_REST_URL: ${{ secrets.UPSTASH_REDIS_REST_URL }}
-        UPSTASH_REDIS_REST_TOKEN: ${{ secrets.UPSTASH_REDIS_REST_TOKEN }}
-        GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
-        ADMIN_SECRET: ${{ secrets.ADMIN_SECRET }}
+          REQUIRED_SECRETS=(
+            "CLOUDFLARE_API_TOKEN"
+            "UPSTASH_REDIS_REST_URL"
+            "UPSTASH_REDIS_REST_TOKEN"
+            "GEMINI_API_KEY"
+            "ADMIN_SECRET"
+            "FIREBASE_TOKEN"
+          )
 
-    - name: Strict Health Check
-      run: |
-        for i in 1 2 3 4 5; do
-          CODE=$(curl -s -o /dev/null -w "%{http_code}" https://dor-progress.banjays.workers.dev)
+          MISSING=()
+          for secret in "${REQUIRED_SECRETS[@]}"; do
+            if [ -z "${!secret}" ]; then
+              MISSING+=("$secret")
+            fi
+          done
 
-          if [ "$CODE" = "200" ]; then
-            echo "✅ Worker OK"
-            exit 0
+          if [ ${#MISSING[@]} -gt 0 ]; then
+            echo "❌ Missing secrets: ${MISSING[*]}"
+            echo "missing=true" >> $GITHUB_OUTPUT
+            echo "missing_list=${MISSING[*]}" >> $GITHUB_OUTPUT
+            exit 1
           fi
 
-          echo "Retry $i... status=$CODE"
-          sleep 5
-        done
+          echo "✅ All secrets present"
+          echo "missing=false" >> $GITHUB_OUTPUT
+          echo "missing_list=" >> $GITHUB_OUTPUT
 
-        echo "❌ Worker failed health check"
-        exit 1
+      - name: 🛡️ Security Audit
+        run: npm run security-check
+
+      - name: 🔍 Type Check
+        run: npm run lint
+
+      - name: 🧪 Run Tests
+        if: inputs.skip-tests != 'true'
+        run: npm test
+        env:
+          ADMIN_SECRET: ${{ secrets.ADMIN_SECRET }}
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+
+      - name: 📊 Determine Version
+        id: version
+        run: |
+          CURRENT=$(node -p "require('./package.json').version")
+          echo "Current version: $CURRENT"
+
+          BUMP="${{ inputs.bump-type || 'patch' }}"
+          IFS='.' read -r MAJOR MINOR PATCH <<< "$CURRENT"
+
+          case "$BUMP" in
+            major)   MAJOR=$((MAJOR + 1)); MINOR=0; PATCH=0 ;;
+            minor)   MINOR=$((MINOR + 1)); PATCH=0 ;;
+            patch)   PATCH=$((PATCH + 1)) ;;
+          esac
+
+          NEW="$MAJOR.$MINOR.$PATCH"
+          echo "version=$NEW" >> $GITHUB_OUTPUT
+          echo "New version: $NEW"
+
+      - name: 💬 Get Commit Message
+        id: commit_msg
+        run: |
+          MSG="${{ inputs.commit-message }}"
+          if [ -z "$MSG" ]; then
+            MSG="Deploy v${{ steps.version.outputs.version }} (${{ inputs.bump-type }})"
+          fi
+          echo "msg=$MSG" >> $GITHUB_OUTPUT
+          echo "Commit: $MSG"
+
+      - name: 🔗 Resolve API Base URL
+        id: api_url
+        run: |
+          # Default to production worker URL
+          echo "url=https://dor-progress.banjays.workers.dev" >> $GITHUB_OUTPUT
+
+  build-and-test:
+    name: 🏗️ Build & Verify
+    runs-on: ubuntu-latest
+    needs: preflight
+    if: needs.preflight.outputs.missing == 'false'
+
+    outputs:
+      build_success: ${{ steps.build.outputs.success }}
+
+    steps:
+      - name: 📥 Checkout
+        uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: 🔧 Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: 📦 Install
+        run: npm ci
+
+      - name: 🏗️ Build Project
+        id: build
+        run: |
+          npm run build
+          echo "success=true" >> $GITHUB_OUTPUT
+        env:
+          API_BASE_URL: ${{ needs.preflight.outputs.api_base_url }}
+
+      - name: 📦 Upload Build Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-artifacts
+          path: |
+            .build/
+            dist/
+          retention-days: 7
+
+      - name: 🔍 Verify Injection
+        run: |
+          echo "✅ Checking injected values..."
+          grep -q "${{ needs.preflight.outputs.api_base_url }}" .build/index.html && echo "✅ API_BASE_URL injected"
+          grep -q "${{ needs.preflight.outputs.version }}" .build/index.html && echo "✅ BUILD_ID injected"
+          grep -q "v${{ needs.preflight.outputs.version }}" .build/sw.v2.js && echo "✅ COMMIT_SHA (version tag) present"
+
+  deploy-worker:
+    name: ☁️ Deploy Cloudflare Worker
+    runs-on: ubuntu-latest
+    needs: [preflight, build-and-test]
+    if: needs.preflight.outputs.missing == 'false' && needs.build-and-test.outputs.build_success == 'true'
+
+    steps:
+      - name: 📥 Checkout
+        uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: 🔧 Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: 📦 Install
+        run: npm ci
+
+      - name: 🚀 Deploy Worker
+        run: wrangler deploy
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          UPSTASH_REDIS_REST_URL: ${{ secrets.UPSTASH_REDIS_REST_URL }}
+          UPSTASH_REDIS_REST_TOKEN: ${{ secrets.UPSTASH_REDIS_REST_TOKEN }}
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          ADMIN_SECRET: ${{ secrets.ADMIN_SECRET }}
+          API_BASE_URL: ${{ needs.preflight.outputs.api_base_url }}
+          FIREBASE_API_KEY: ${{ secrets.FIREBASE_API_KEY }}
+          FIREBASE_PROJECT_ID: ${{ secrets.FIREBASE_PROJECT_ID }}
+          FIREBASE_PROJECT_NUMBER: ${{ secrets.FIREBASE_PROJECT_NUMBER }}
+          FIREBASE_AUTH_DOMAIN: ${{ secrets.FIREBASE_AUTH_DOMAIN }}
+          FIREBASE_STORAGE_BUCKET: ${{ secrets.FIREBASE_STORAGE_BUCKET }}
+          FIREBASE_MESSAGING_SENDER_ID: ${{ secrets.FIREBASE_MESSAGING_SENDER_ID }}
+          FIREBASE_APP_ID: ${{ secrets.FIREBASE_APP_ID }}
+          FIREBASE_MEASUREMENT_ID: ${{ secrets.FIREBASE_MEASUREMENT_ID }}
+          RECAPTCHA_SITE_KEY: ${{ secrets.RECAPTCHA_SITE_KEY }}
+
+      - name: ✅ Health Check
+        run: |
+          URL="${{ needs.preflight.outputs.api_base_url }}"
+          echo "🔍 Checking $URL ..."
+          for i in 1 2 3 4 5; do
+            CODE=$(curl -s -o /dev/null -w "%{http_code}" "$URL")
+            if [ "$CODE" = "200" ]; then
+              echo "✅ Worker responding ($CODE)"
+              exit 0
+            fi
+            echo "⏳ Retry $i... status=$CODE"
+            sleep 5
+          done
+          echo "❌ Worker failed health check"
+          exit 1
+
+  deploy-firebase:
+    name: 🔥 Deploy Firebase Hosting
+    runs-on: ubuntu-latest
+    needs: [preflight, build-and-test, deploy-worker]
+    if: |
+      needs.preflight.outputs.missing == 'false' &&
+      needs.build-and-test.outputs.build_success == 'true' &&
+      always() &&
+      needs.deploy-worker.result == 'success'
+
+    steps:
+      - name: 📥 Checkout
+        uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: 🔧 Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: 📦 Install
+        run: npm ci
+
+      - name: 🔧 Install Firebase CLI
+        run: npm install -g firebase-tools
+
+      - name: 🔥 Deploy Hosting
+        run: |
+          firebase deploy \
+            --only hosting \
+            --public .build \
+            --project "${{ secrets.FIREBASE_PROJECT_ID || 'dor-progress' }}" \
+            --token "${{ secrets.FIREBASE_TOKEN }}"
+        env:
+          FIREBASE_TOKEN: ${{ secrets.FIREBASE_TOKEN }}
+
+      - name: ✅ Verify Firebase Deployment
+        run: |
+          URL="https://dor-progress.web.app"
+          echo "🔍 Verifying $URL ..."
+          for i in 1 2 3; do
+            CODE=$(curl -s -o /dev/null -w "%{http_code}" "$URL")
+            if [ "$CODE" = "200" ]; then
+              echo "✅ Firebase Hosting OK ($CODE)"
+              exit 0
+            fi
+            echo "⏳ Retry $i... status=$CODE"
+            sleep 10
+          done
+          echo "❌ Firebase Hosting verification failed"
+          exit 1
+
+  commit-and-tag:
+    name: 🏷️ Commit & Tag Version
+    runs-on: ubuntu-latest
+    needs: [preflight, deploy-worker, deploy-firebase]
+    if: |
+      needs.preflight.outputs.missing == 'false' &&
+      needs.deploy-worker.result == 'success' &&
+      needs.deploy-firebase.result == 'success'
+
+    steps:
+      - name: 📥 Checkout
+        uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          fetch-depth: 0
+
+      - name: 🔧 Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: 📦 Install
+        run: npm ci
+
+      - name: 🔢 Bump Version
+        run: |
+          npm version ${{ needs.preflight.outputs.bump_type }} --no-git-tag-version
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: 💾 Commit Changes
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add package.json package-lock.json
+          git commit -m "chore: bump version to $(node -p "require('./package.json').version")"
+          git tag -a "v$(node -p "require('./package.json').version")" -m "Release v$(node -p "require('./package.json').version")"
+          git push origin main --follow-tags
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  notify:
+    name: 📢 Deployment Summary
+    runs-on: ubuntu-latest
+    needs: [preflight, build-and-test, deploy-worker, deploy-firebase, commit-and-tag]
+    if: always()
+
+    steps:
+      - name: 📊 Generate Summary
+        run: |
+          cat << 'EOF' >> $GITHUB_STEP_SUMMARY
+          # 🚀 Deployment Summary
+
+          ### Deployed Services
+          | Service | URL | Status |
+          |---------|-----|--------|
+          | ☁️ Cloudflare Worker | https://dor-progress.banjays.workers.dev | ✅ Deployed |
+          | 🔥 Firebase Hosting | https://dor-progress.web.app | ✅ Deployed |
+
+          ### Build Details
+          - **Version:** ${{ needs.preflight.outputs.version }}
+          - **Commit SHA:** ${{ github.sha }}
+          - **Build ID:** ${{ github.run_id }}
+          - **Trigger:** ${{ github.event_name }}
+
+          ### Commit Info
+          - **Message:** ${{ needs.preflight.outputs.commit_msg }}
+          - **Branch:** ${{ github.ref_name }}
+          - **Tag:** v${{ needs.preflight.outputs.version }}
+
+          ### GitHub Actions
+          - **Workflow:** ${{ github.workflow }}
+          - **Run URL:** ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+
+          ### Secrets Configuration
+          $(if [ "${{ needs.preflight.outputs.missing }}" = "false" ]; then echo "- ✅ All secrets configured"; else echo "- ❌ Missing: ${{ needs.preflight.outputs.missing_list }}"; fi)
+
+          ### Post-Deploy
+          1. Clear CDN cache if needed
+          2. Monitor logs: \`npm run logs\`
+          3. Check analytics dashboard
+          EOF
+
+      - name: 🔔 Notify (Optional Webhook)
+        if: secrets.DEPLOY_WEBHOOK_URL != ''
+        run: |
+          curl -X POST "${{ secrets.DEPLOY_WEBHOOK_URL }}" \
+            -H "Content-Type: application/json" \
+            -d '{"version":"${{ needs.preflight.outputs.version }}","status":"success","url":"https://dor-progress.web.app"}'

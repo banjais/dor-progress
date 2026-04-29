@@ -79,3 +79,6 @@ firebase-service-account.json
 # Build scripts and generated assets
 generate-icons.js
 generated-icons/
+
+# Local build output
+.build/
