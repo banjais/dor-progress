@@ -4431,9 +4431,14 @@
       }
     };
 
-    // Initialize App via Security Handshake
-    setupSecurity();
-  </script>
+     // Initialize App via Security Handshake
+     setupSecurity();
+     
+     // Mobile: default to card view (better for small screens)
+     if (window.innerWidth < 768 && currentView === 'table') {
+       setView('cards');
+     }
+   </script>
 </body>
 
 </html>

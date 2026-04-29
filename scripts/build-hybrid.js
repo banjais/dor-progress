@@ -58,6 +58,21 @@ header h2{margin:0;font-size:1rem;display:flex;align-items:center;gap:10px;font-
 #kpi-stats{flex:2;display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:1rem}
 .kpi-card{background:var(--surface);padding:1rem 1.5rem;border-radius:16px;border:1px solid var(--border);border-left:5px solid var(--primary);box-shadow:0 4px 6px -1px rgba(0,0,0,.05);margin-bottom:1rem}
 .info-bar{max-width:1400px;margin:.8rem auto .2rem;padding:0 5%}
+/* Mobile-first responsive – applies immediately on small screens */
+@media (max-width: 767px) {
+  #btn-table { display: none !important; }
+  #btn-cards { display: flex !important; }
+  #view-table { display: none !important; }
+  #view-cards { display: block !important; }
+  .data-card { width: 100% !important; max-width: none !important; }
+  .table-wrapper { overflow-x: hidden; }
+  table { min-width: auto; }
+  #action-bar { flex-direction: column; }
+  #kpi-row { flex-direction: column; }
+  .toggle-btn { padding: 10px 16px !important; font-size: 0.85rem !important; }
+  .icon-btn, .status-btn { width: 44px !important; height: 44px !important; }
+  header h2 { font-size: 0.85rem; }
+}
 `;
 
 const nonCriticalCss = fullCss.replace(criticalCss, '').replace(/^\s*\n/mg, '');
