@@ -11,7 +11,7 @@
     ],
     "headers": [
       {
-        "source": "/index.html",
+        "source": "/public/index.html",
         "headers": [
           {
             "key": "Cache-Control",
