@@ -193,6 +193,9 @@ jobs:
       - name: 📦 Install
         run: npm ci
 
+      - name: 🔧 Install Wrangler
+        run: npm install -g wrangler
+
       - name: 🚀 Deploy
         run: wrangler deploy
         env:
