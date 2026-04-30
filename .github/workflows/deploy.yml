@@ -357,6 +357,7 @@ jobs:
     env:
       FIREBASE_PROJECT_ID: ${{ secrets['FIREBASE_PROJECT_ID'] || 'dor-progress' }}
       FIREBASE_TOKEN: ${{ secrets['FIREBASE_TOKEN'] }}
+      FIREBASE_SERVICE_ACCOUNT: ${{ secrets['FIREBASE_SERVICE_ACCOUNT'] }}
 
     steps:
       - uses: actions/checkout@v4
@@ -380,13 +381,21 @@ jobs:
         if: steps.node-modules-cache.outputs.cache-hit != 'true'
         run: npm ci --prefer-offline --no-audit
 
+      - name: 🔐 Setup Service Account JSON
+        if: ${{ env.FIREBASE_SERVICE_ACCOUNT != '' }}
+        run: |
+          echo "$FIREBASE_SERVICE_ACCOUNT" > service-account.json
+          echo "GOOGLE_APPLICATION_CREDENTIALS=$(pwd)/service-account.json" >> $GITHUB_ENV
+
       - name: 🚀 Deploy Hosting
         run: |
-          npx firebase deploy \
-            --only hosting \
-            --public .build \
-            --project "$FIREBASE_PROJECT_ID" \
-            --token "$FIREBASE_TOKEN"
+          if [ -n "$GOOGLE_APPLICATION_CREDENTIALS" ]; then
+            echo "Using Google Service Account JSON mapping..."
+            npx firebase deploy --only hosting --public .build --project "$FIREBASE_PROJECT_ID"
+          else
+            echo "Falling back to deprecated CI token mapping..."
+            npx firebase deploy --only hosting --public .build --project "$FIREBASE_PROJECT_ID" --token "$FIREBASE_TOKEN"
+          fi
 
       - name: ✅ Verify
         run: |
