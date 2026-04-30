@@ -281,6 +281,51 @@
       gap: 8px;
     }
 
+    /* Pill Switch for Language Toggle */
+    .lang-switch-container {
+      display: inline-flex;
+      position: relative;
+      width: 56px;
+      height: 28px;
+      cursor: pointer;
+      margin: 0 4px;
+      border-radius: 14px;
+      background: var(--bg);
+      border: 1px solid var(--border);
+      align-items: center;
+    }
+    .lang-switch-container input { display: none; }
+    .lang-slider {
+      position: absolute;
+      top: 0; left: 0; right: 0; bottom: 0;
+      border-radius: 14px;
+      transition: .3s;
+    }
+    .lang-slider:before {
+      position: absolute;
+      content: "";
+      height: 22px;
+      width: 22px;
+      left: 2px;
+      bottom: 2px;
+      background-color: var(--primary);
+      border-radius: 50%;
+      transition: .3s cubic-bezier(0.4, 0.0, 0.2, 1);
+      z-index: 2;
+    }
+    .lang-switch-container input:checked + .lang-slider:before {
+      transform: translateX(28px);
+    }
+    .lang-lbl {
+      position: absolute;
+      font-size: 0.6rem;
+      font-weight: 800;
+      color: var(--text-light);
+      z-index: 1;
+    }
+    .lang-lbl.left { left: 6px; }
+    .lang-lbl.right { right: 8px; }
+
     .toggle-group {
       background: var(--bg);
       padding: 4px;
@@ -1406,19 +1451,26 @@
       <button class="icon-btn" id="official-pdf-btn" onclick="downloadPdf(store?.updateDate)"
         title="Download Official (High-Res) PDF">📥</button>
       <button class="icon-btn" onclick="toggleHistory()" title="Report History">🕒</button>
-      <button class="icon-btn" id="header-mute-btn" onclick="toggleMute()" title="Mute/Unmute">🔊</button>
-      <button class="icon-btn" id="settings-btn" onclick="showSettings()" title="Settings">⚙️</button>
+      <!-- Modern Mobile-friendly Pill Language Switch -->
+      <label class="lang-switch-container" title="Switch Language">
+        <input type="checkbox" id="lang-switch-chk" onchange="window.setLang(this.checked ? 'en' : 'ne')" />
+        <div class="lang-slider">
+           <span class="lang-lbl left">NE</span>
+           <span class="lang-lbl right">EN</span>
+        </div>
+      </label>
 
-      <div class="toggle-group" id="lang-toggle">
-        <button class="toggle-btn" onclick="setLang('ne')" id="btn-ne">नेपाली</button>
-        <button class="toggle-btn" onclick="setLang('en')" id="btn-en">EN</button>
-      </div>
-
-      <div class="toggle-group" id="view-toggle">
+      <!-- View toggle hidden on first load per request to remove raw tabs -->
+      <div class="toggle-group" id="view-toggle" style="display: none;">
         <button class="toggle-btn" onclick="setView('table')" id="btn-table" title="Table View">☷</button>
         <button class="toggle-btn" onclick="setView('charts')" id="btn-charts" title="Charts View">📊</button>
         <button class="toggle-btn" onclick="setView('cards')" id="btn-cards" title="Cards View">🗂️</button>
       </div>
+
+      <button class="icon-btn" id="header-mute-btn" onclick="toggleMute()" title="Mute/Unmute">🔊</button>
+      
+      <!-- Settings button at the absolute very right -->
+      <button class="icon-btn" id="settings-btn" onclick="showSettings()" title="Settings">⚙️</button>
     </div>
   </div>
 
@@ -2657,7 +2709,10 @@
       currentSort = { key: null, dir: 1 };
 
       const t = I18N[l];
-      document.querySelectorAll('#lang-toggle .toggle-btn').forEach(b => b.classList.toggle('active', b.id === 'btn-' + l));
+      const langChk = document.getElementById('lang-switch-chk');
+      if (langChk && langChk.checked !== (l === 'en')) {
+         langChk.checked = (l === 'en');
+      }
 
       // Total UI Update
       document.getElementById('main-title').innerText = t.mainTitle;

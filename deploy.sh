@@ -16,14 +16,15 @@ case $BUMP in
     *) echo "❌ Error: Invalid bump type. Use patch, minor, or major."; exit 1 ;;
 esac
 
-# 3. Clean build artifacts
-echo "🧹 Cleaning build artifacts..."
-rm -rf dist .wrangler .firebase .build
+# 3. Clean build artifacts, logs, and caches fully
+echo "🧹 Cleaning build artifacts and cache completely..."
+rm -rf dist .wrangler .firebase .build node_modules/.cache
 
 # 4. Load local secrets for validation
 if [ -f .dev.vars ]; then
     echo "ℹ️ Loading local secrets from .dev.vars for validation..."
     while IFS= read -r line || [ -n "$line" ]; do
+        line="${line//$'\r'/}"
         if [[ "$line" =~ ^[A-Za-z_][A-Za-z0-9_]*= ]]; then
             export "$line"
         fi
@@ -42,29 +43,40 @@ echo "🧪 Running tests..."
 npm test
 
 # 6. Full Build (compile + copy + inject + verify)
-echo "🏗️  Building project..."
+echo "🏗️  Rebuilding project completely..."
 npm run build
 
-# Note: Deployment is handled by GitHub Actions to provide centralized logs and status.
-echo "📦 Build complete. Pushing to GitHub for deployment..."
+# 7. Real-Time Local Deployment
+echo "🔥 Deploying to Firebase Hosting..."
+npx firebase deploy --only hosting --project dor-progress --force --public .build
 
-# 7. Versioning
+echo "☁️ Deploying to Cloudflare Workers (Wrangler)..."
+npx wrangler deploy
+
+# 8. Versioning
 npm version "$BUMP" --no-git-tag-version
 VERSION=$(node -p "require('./package.json').version")
-
-# 8. Commit message
 MSG="${2:-Manual deployment update}"
 
-# 9. Git Sync
-echo "📤 Pushing v${VERSION} and tags to GitHub..."
+# 9. Git Sync (Comparing Local is Source)
+echo "📤 Committing Local source changes and Pushing v${VERSION} to GitHub..."
 git add .
-git commit -m "v${VERSION}: ${MSG}"
+git commit -m "v${VERSION}: ${MSG} (Local deployed version matching source)"
 git tag -a "v${VERSION}" -m "Release v${VERSION}"
 git push origin main --follow-tags
 
-# 10. Done
+# 10. CI/CD Auto-Deploy triggers
+echo "🤖 GitHub Auto Deploy & Cloudflare Auto Deploy will now trigger based on this push."
+
+# 11. Diagnostic Output
 echo ""
-echo "✅ Deploy complete!"
-echo "   Version: v${VERSION}"
-REPO_PATH=$(git remote get-url origin | sed -E 's/.*github.com[:\/](.*)(\.git)?/\1/')
-echo "   📊 Actions: https://github.com/${REPO_PATH}/actions"
+echo "========================================="
+echo "✅ DEPLOYMENT DIAGNOSTICS & SUMMARY"
+echo "========================================="
+echo "   Release Version: v${VERSION}"
+REPO_PATH=$(git remote get-url origin | sed -E 's/.*github.com[:\/](.*)(\.git)?/\1/' || echo "banjais/dor-progress")
+echo "   GitHub Actions : https://github.com/${REPO_PATH}/actions"
+echo ""
+echo "📋 Project Info (diag):"
+npm run info || true
+echo "========================================="
