@@ -21,7 +21,10 @@ const buildDir = path.resolve(cwd, '.build');
 console.log('\n⚡ Fast Hybrid Build\n');
 
 // Clean + copy
-execSync(`rm -rf ${buildDir.replace(/\\/g, '/')} && cp -r ${publicDir.replace(/\\/g, '/')} ${buildDir.replace(/\\/g, '/')}`);
+if (fs.existsSync(buildDir)) {
+  fs.rmSync(buildDir, { recursive: true, force: true });
+}
+fs.cpSync(publicDir, buildDir, { recursive: true });
 
 // Read HTML
 const htmlPath = path.join(publicDir, 'index.html');

@@ -12,6 +12,7 @@ import { Tiktoken } from 'js-tiktoken/lite';
 interface Env {
     // Bindings and Vars from wrangler.toml
     TRANSLATION_KV: KVNamespace;
+    RATE_LIMITER: DurableObjectNamespace;
 
     // Secrets (Managed via 'npx wrangler secret put')
     UPSTASH_REDIS_REST_URL: string;
@@ -313,7 +314,7 @@ export default {
             }
             if (normalizedPath === '/api/admin/config-check') {
                 const keys: (keyof Env)[] = [
-                    'TRANSLATION_KV', 'UPSTASH_REDIS_REST_URL', 'UPSTASH_REDIS_REST_TOKEN',
+                    'TRANSLATION_KV', 'RATE_LIMITER', 'UPSTASH_REDIS_REST_URL', 'UPSTASH_REDIS_REST_TOKEN',
                     'GEMINI_API_KEY', 'ADMIN_SECRET', 'FIREBASE_PROJECT_ID',
                     'BUILD_ID', 'COMMIT_SHA', 'DEPLOY_TIMESTAMP'
                 ];
@@ -338,6 +339,15 @@ export default {
                     health.kv = "CONNECTED";
                 } catch (e) { health.kv = "FAILED"; health.status = "DEGRADED"; }
 
+                // 3. Durable Object Storage Integrity Check (Internal DB)
+                try {
+                    const id = env.RATE_LIMITER.idFromName("health_probe");
+                    const stub = env.RATE_LIMITER.get(id);
+                    const doRes = await stub.fetch(new Request("https://rate.limit/health_check"));
+                    health.internalDb = doRes.ok ? "HEALTHY" : "CORRUPT";
+                    if (!doRes.ok) health.status = "DEGRADED";
+                } catch (e) { health.internalDb = "UNREACHABLE"; health.status = "DEGRADED"; }
+
                 const redisTest = await this.getRedisCache("system:health_ping", env);
                 health.redis = redisTest !== "CONFIG_ERROR" && redisTest !== null ? "CONNECTED" : "DISCONNECTED";
 
@@ -360,7 +370,6 @@ export default {
                     timestamp: new Date().toISOString()
                 }), { headers: { ...securityHeaders, "Content-Type": "application/json" } });
             }
-
             // Future admin routes (idempotency, cache-purge, etc.) go here
         }
 
@@ -410,8 +419,11 @@ export default {
     },
 
     async checkRateLimit(clientIp: string, env: Env): Promise<boolean> {
-        // Rate limiting disabled – Durable Objects not available
-        return false;
+        if (!env.RATE_LIMITER) return false;
+        const id = env.RATE_LIMITER.idFromName(clientIp);
+        const stub = env.RATE_LIMITER.get(id);
+        const res = await stub.fetch(new Request("https://rate.limit/"));
+        return res.status === 429;
     },
 
     async getRedisCache(key: string, env: Env): Promise<string | null> {

@@ -9,14 +9,16 @@ compatibility_flags = ["nodejs_compat"]
 binding = "TRANSLATION_KV"
 id = "d032e134adec47ab85ea1b5a8c18caab"
 
-[[durable_objects.bindings]]
-name = "RATE_LIMITER"
-class_name = "RateLimiter"
+# Durable Objects removed – not available in current Cloudflare plan
+# [[durable_objects.bindings]]
+# name = "RATE_LIMITER"
+# class_name = "RateLimiter"
 
-[[migrations]]
-tag = "v2"
-new_sqlite_classes = ["RateLimiter"]
-deleted_classes = ["IdempotencyLock"]
+# Migrations removed – not needed without Durable Objects
+# [[migrations]]
+# tag = "v2"
+# new_sqlite_classes = ["RateLimiter"]
+# deleted_classes = ["IdempotencyLock"]
 
 [triggers]
 crons = ["0 * * * *"]

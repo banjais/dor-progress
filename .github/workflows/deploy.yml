@@ -31,6 +31,26 @@ jobs:
   preflight:
     name: 🔒 Preflight Checks
     runs-on: ubuntu-latest
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets['CLOUDFLARE_API_TOKEN'] }}
+      UPSTASH_REDIS_REST_URL: ${{ secrets['UPSTASH_REDIS_REST_URL'] }}
+      UPSTASH_REDIS_REST_TOKEN: ${{ secrets['UPSTASH_REDIS_REST_TOKEN'] }}
+      GEMINI_API_KEY: ${{ secrets['GEMINI_API_KEY'] }}
+      ADMIN_SECRET: ${{ secrets['ADMIN_SECRET'] }}
+      FIREBASE_TOKEN: ${{ secrets['FIREBASE_TOKEN'] }}
+      FIREBASE_PROJECT_NUMBER: ${{ secrets['FIREBASE_PROJECT_NUMBER'] }}
+      FIREBASE_APP_ID: ${{ secrets['FIREBASE_APP_ID'] }}
+      RECAPTCHA_SITE_KEY: ${{ secrets['RECAPTCHA_SITE_KEY'] }}
+      FIREBASE_API_KEY: ${{ secrets['FIREBASE_API_KEY'] }}
+      FIREBASE_PROJECT_ID: ${{ secrets['FIREBASE_PROJECT_ID'] }}
+      FIREBASE_AUTH_DOMAIN: ${{ secrets['FIREBASE_AUTH_DOMAIN'] }}
+      FIREBASE_STORAGE_BUCKET: ${{ secrets['FIREBASE_STORAGE_BUCKET'] }}
+      FIREBASE_MESSAGING_SENDER_ID: ${{ secrets['FIREBASE_MESSAGING_SENDER_ID'] }}
+      FIREBASE_MEASUREMENT_ID: ${{ secrets['FIREBASE_MEASUREMENT_ID'] }}
+      SMTP_SERVER: ${{ secrets['SMTP_SERVER'] }}
+      SMTP_USERNAME: ${{ secrets['SMTP_USERNAME'] }}
+      SMTP_PASSWORD: ${{ secrets['SMTP_PASSWORD'] }}
+      ALERT_RECIPIENT_EMAIL: ${{ secrets['ALERT_RECIPIENT_EMAIL'] }}
     outputs:
       version: ${{ steps.version.outputs.version }}
       commit_msg: ${{ steps.commit_msg.outputs.msg }}
@@ -47,22 +67,47 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 20
-          cache: npm
+
+      - name: 📂 Cache Turborepo/Build
+        uses: actions/cache@v4
+        with:
+          path: .turbo
+          key: ${{ runner.os }}-turbo-${{ github.sha }}
+          restore-keys: |
+            ${{ runner.os }}-turbo-
+
+      - name: 📂 Cache node_modules
+        id: node-modules-cache
+        uses: actions/cache@v4
+        with:
+          path: node_modules
+          key: ${{ runner.os }}-node-modules-${{ hashFiles('package-lock.json') }}
+          restore-keys: |
+            ${{ runner.os }}-node-modules-
 
       - name: 📦 Install
-        run: npm ci
+        if: steps.node-modules-cache.outputs.cache-hit != 'true'
+        run: npm ci --prefer-offline --no-audit
 
       - name: 🔐 Validate Secrets
         id: validate-secrets
         run: |
           echo "🔍 Checking required secrets..."
-          REQUIRED=(CLOUDFLARE_API_TOKEN UPSTASH_REDIS_REST_URL UPSTASH_REDIS_REST_TOKEN GEMINI_API_KEY ADMIN_SECRET FIREBASE_TOKEN)
+          REQUIRED=(CLOUDFLARE_API_TOKEN UPSTASH_REDIS_REST_URL UPSTASH_REDIS_REST_TOKEN GEMINI_API_KEY ADMIN_SECRET FIREBASE_TOKEN FIREBASE_API_KEY FIREBASE_PROJECT_ID FIREBASE_AUTH_DOMAIN FIREBASE_PROJECT_NUMBER FIREBASE_APP_ID RECAPTCHA_SITE_KEY FIREBASE_STORAGE_BUCKET FIREBASE_MESSAGING_SENDER_ID FIREBASE_MEASUREMENT_ID SMTP_SERVER SMTP_USERNAME SMTP_PASSWORD ALERT_RECIPIENT_EMAIL)
           MISSING=()
           for s in "${REQUIRED[@]}"; do
             if [ -z "${!s}" ]; then
               MISSING+=("$s")
             fi
           done
+        # Specific validation for Google App Password format
+        if [ -n "$SMTP_PASSWORD" ]; then
+          CLEAN_PASS=$(echo "$SMTP_PASSWORD" | tr -d ' ')
+          if [[ ! "$CLEAN_PASS" =~ ^[a-z]{16}$ ]]; then
+            echo "❌ SMTP_PASSWORD is not a valid Google App Password format (expected 16 lowercase letters)."
+            MISSING+=("SMTP_PASSWORD_FORMAT_INVALID")
+          fi
+        fi
           if [ ${#MISSING[@]} -gt 0 ]; then
             echo "❌ Missing: ${MISSING[*]}"
             echo "secrets_valid=false" >> $GITHUB_OUTPUT
@@ -72,15 +117,22 @@ jobs:
           echo "✅ All secrets present"
           echo "secrets_valid=true" >> $GITHUB_OUTPUT
           echo "missing_list=" >> $GITHUB_OUTPUT
-        env:
-          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          UPSTASH_REDIS_REST_URL: ${{ secrets.UPSTASH_REDIS_REST_URL }}
-          UPSTASH_REDIS_REST_TOKEN: ${{ secrets.UPSTASH_REDIS_REST_TOKEN }}
-          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
-          ADMIN_SECRET: ${{ secrets.ADMIN_SECRET }}
-          FIREBASE_TOKEN: ${{ secrets.FIREBASE_TOKEN }}
 
-      - name: 🛡️ Security Audit
+      - name: 🌐 Upstash SSL Diagnostic
+        env:
+          UPSTASH_URL: ${{ secrets.UPSTASH_REDIS_REST_URL }}
+        run: |
+          # Extract hostname from the REST URL (remove https:// and any trailing paths)
+          UPSTASH_HOST=$(echo "$UPSTASH_URL" | sed -e 's|^[^/]*//||' -e 's|/.*$||')
+          echo "🔍 Testing SSL Handshake with $UPSTASH_HOST..."
+          if ! echo "Q" | openssl s_client -connect "$UPSTASH_HOST:443" -servername "$UPSTASH_HOST" -verify_return_error > /dev/null 2>&1; then
+            echo "❌ SSL Handshake failed for $UPSTASH_HOST"
+            exit 1
+          fi
+          echo "✅ SSL Handshake successful"
+
+      - name: 🛡️ Security Audit & Lint
+        # If using Turbo: npx turbo security-check lint
         run: |
           npm run security-check
           npm audit --audit-level=high
@@ -91,9 +143,6 @@ jobs:
       - name: 🧪 Run Tests
         if: ${{ github.event.inputs.skip-tests != 'true' }}
         run: npm test
-        env:
-          ADMIN_SECRET: ${{ secrets.ADMIN_SECRET }}
-          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
 
       - name: 📊 Version
         id: version
@@ -111,13 +160,19 @@ jobs:
 
       - name: 🔗 API Base URL
         id: api_url
-        run: echo "url=https://dor-progress.banjays.workers.dev" >> $GITHUB_OUTPUT
+        run: |
+          URL="https://dor-progress.banjays.workers.dev"
+          # Validate URL format and ensure no characters that could trigger XSS or Shell injection (< > " ' | ( ) ;)
+          if [[ ! "$URL" =~ ^https://[a-zA-Z0-9.-]+(/[a-zA-Z0-9._~:/?#\[\]@!$&*+,;=-]*)?$ ]] || [[ "$URL" =~ [\<\>\"\'\|\;\(\)] ]]; then
+            echo "❌ Invalid or dangerous API_BASE_URL detected: $URL"
+            exit 1
+          fi
+          echo "url=$URL" >> $GITHUB_OUTPUT
 
   build:
     name: 🏗️ Build Project
     runs-on: ubuntu-latest
     needs: preflight
-    if: ${{ needs.preflight.outputs.secrets_valid == 'true' }}
 
     steps:
       - uses: actions/checkout@v4
@@ -127,15 +182,46 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 20
-          cache: npm
+
+      - name: 🚀 Cache Turborepo/Build
+        uses: actions/cache@v4
+        with:
+          path: |
+            .turbo
+            node_modules/.cache
+          key: ${{ runner.os }}-build-cache-${{ github.sha }}
+          restore-keys: |
+            ${{ runner.os }}-build-cache-
+
+      - name: 📂 Cache node_modules
+        id: node-modules-cache
+        uses: actions/cache@v4
+        with:
+          path: node_modules
+          key: ${{ runner.os }}-node-modules-${{ hashFiles('package-lock.json') }}
+          restore-keys: |
+            ${{ runner.os }}-node-modules-
 
       - name: 📦 Install
-        run: npm ci
+        if: steps.node-modules-cache.outputs.cache-hit != 'true'
+        run: npm ci --prefer-offline --no-audit
 
       - name: 🏗️ Build
-        run: npm run build
+        # Using npx turbo build allows for task skipping if no files changed
+        run: npx turbo build --cache-dir=".turbo"
         env:
           API_BASE_URL: ${{ needs.preflight.outputs.api_base_url }}
+
+      - name: 💉 Inject Placeholders
+        env:
+          API_URL: ${{ needs.preflight.outputs.api_base_url }}
+          BUILD_ID: ${{ github.run_id }}
+          COMMIT_SHA: ${{ github.sha }}
+        run: |
+          # Using shell variables ($API_URL) instead of GHA interpolation prevents shell injection
+          sed -i "s|__API_BASE_URL__|$API_URL|g" .build/index.html
+          sed -i "s|__BUILD_ID__|$BUILD_ID|g" .build/index.html
+          sed -i "s|__COMMIT_SHA__|$COMMIT_SHA|g" .build/sw.v2.js
 
       - name: 📦 Upload Artifacts
         uses: actions/upload-artifact@v4
@@ -144,7 +230,7 @@ jobs:
           path: |
             .build/
             dist/
-          retention-days: 7
+          retention-days: 90
 
       - name: ✅ Verify Build
         run: |
@@ -174,6 +260,26 @@ jobs:
     runs-on: ubuntu-latest
     needs: [preflight, build]
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets['CLOUDFLARE_API_TOKEN'] }}
+      UPSTASH_REDIS_REST_URL: ${{ secrets['UPSTASH_REDIS_REST_URL'] }}
+      UPSTASH_REDIS_REST_TOKEN: ${{ secrets['UPSTASH_REDIS_REST_TOKEN'] }}
+      GEMINI_API_KEY: ${{ secrets['GEMINI_API_KEY'] }}
+      ADMIN_SECRET: ${{ secrets['ADMIN_SECRET'] }}
+      API_BASE_URL: ${{ needs.preflight.outputs.api_base_url }}
+      FIREBASE_API_KEY: ${{ secrets['FIREBASE_API_KEY'] }}
+      FIREBASE_PROJECT_ID: ${{ secrets['FIREBASE_PROJECT_ID'] }}
+      FIREBASE_PROJECT_NUMBER: ${{ secrets['FIREBASE_PROJECT_NUMBER'] }}
+      FIREBASE_AUTH_DOMAIN: ${{ secrets['FIREBASE_AUTH_DOMAIN'] }}
+      FIREBASE_STORAGE_BUCKET: ${{ secrets['FIREBASE_STORAGE_BUCKET'] }}
+      FIREBASE_MESSAGING_SENDER_ID: ${{ secrets['FIREBASE_MESSAGING_SENDER_ID'] }}
+      FIREBASE_APP_ID: ${{ secrets['FIREBASE_APP_ID'] }}
+      FIREBASE_MEASUREMENT_ID: ${{ secrets['FIREBASE_MEASUREMENT_ID'] }}
+      SMTP_SERVER: ${{ secrets['SMTP_SERVER'] }}
+      SMTP_USERNAME: ${{ secrets['SMTP_USERNAME'] }}
+      SMTP_PASSWORD: ${{ secrets['SMTP_PASSWORD'] }}
+      ALERT_RECIPIENT_EMAIL: ${{ secrets['ALERT_RECIPIENT_EMAIL'] }}
+      RECAPTCHA_SITE_KEY: ${{ secrets['RECAPTCHA_SITE_KEY'] }}
 
     steps:
       - uses: actions/checkout@v4
@@ -183,35 +289,29 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 20
-          cache: npm
+
+      - name: 📂 Cache node_modules
+        id: node-modules-cache
+        uses: actions/cache@v4
+        with:
+          path: node_modules
+          key: ${{ runner.os }}-node-modules-${{ hashFiles('package-lock.json') }}
+          restore-keys: |
+            ${{ runner.os }}-node-modules-
 
       - name: 📦 Install
-        run: npm ci
+        if: steps.node-modules-cache.outputs.cache-hit != 'true'
+        run: npm ci --prefer-offline --no-audit
 
       - name: 🚀 Deploy
         run: npx wrangler deploy
-        env:
-          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          UPSTASH_REDIS_REST_URL: ${{ secrets.UPSTASH_REDIS_REST_URL }}
-          UPSTASH_REDIS_REST_TOKEN: ${{ secrets.UPSTASH_REDIS_REST_TOKEN }}
-          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
-          ADMIN_SECRET: ${{ secrets.ADMIN_SECRET }}
-          API_BASE_URL: ${{ needs.preflight.outputs.api_base_url }}
-          FIREBASE_API_KEY: ${{ secrets.FIREBASE_API_KEY }}
-          FIREBASE_PROJECT_ID: ${{ secrets.FIREBASE_PROJECT_ID }}
-          FIREBASE_PROJECT_NUMBER: ${{ secrets.FIREBASE_PROJECT_NUMBER }}
-          FIREBASE_AUTH_DOMAIN: ${{ secrets.FIREBASE_AUTH_DOMAIN }}
-          FIREBASE_STORAGE_BUCKET: ${{ secrets.FIREBASE_STORAGE_BUCKET }}
-          FIREBASE_MESSAGING_SENDER_ID: ${{ secrets.FIREBASE_MESSAGING_SENDER_ID }}
-          FIREBASE_APP_ID: ${{ secrets.FIREBASE_APP_ID }}
-          FIREBASE_MEASUREMENT_ID: ${{ secrets.FIREBASE_MEASUREMENT_ID }}
-          RECAPTCHA_SITE_KEY: ${{ secrets.RECAPTCHA_SITE_KEY }}
 
       - name: 💓 Health Check
         run: |
           URL="${{ needs.preflight.outputs.api_base_url }}"
+          echo "Checking $URL..."
           for i in 1 2 3 4 5; do
-            CODE=$(curl -s -o /dev/null -w "%{http_code}" "$URL")
+            CODE=$(curl -sL -o /dev/null -w "%{http_code}" "$URL" || echo "000")
             [ "$CODE" = "200" ] && echo "✅ Worker OK ($CODE)" && exit 0
             echo "⏳ Retry $i... $CODE"
             sleep 5
@@ -219,11 +319,44 @@ jobs:
           echo "❌ Worker failed"
           exit 1
 
+      # Optional: Live log streaming during development/debugging
+      # Note: This requires a long-running process or backgrounding
+      # - name: 📝 Stream Worker Logs
+      #   run: npx wrangler tail --format json > worker_logs.json &
+      #   env:
+      #     CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+
+  load-test:
+    name: 🧪 API Load Test
+    runs-on: ubuntu-latest
+    needs: [preflight, deploy-worker]
+    if: success()
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: 🚀 Run k6 Load Test
+        uses: grafana/k6-action@v0.3.1
+        with:
+          filename: .github/workflows/load-test.js
+        env:
+          API_BASE_URL: ${{ needs.preflight.outputs.api_base_url }}
+
+      - name: 📦 Upload k6 Report
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: k6-performance-report
+          path: summary.html
+          retention-days: 90
+
   deploy-firebase:
     name: 🔥 Deploy Firebase Hosting
     runs-on: ubuntu-latest
     needs: [preflight, build, deploy-worker]
-    if: ${{ needs.preflight.outputs.secrets_valid == 'true' && needs.build.result == 'success' && needs.deploy-worker.result == 'success' }}
+    env:
+      FIREBASE_PROJECT_ID: ${{ secrets['FIREBASE_PROJECT_ID'] || 'dor-progress' }}
+      FIREBASE_TOKEN: ${{ secrets['FIREBASE_TOKEN'] }}
 
     steps:
       - uses: actions/checkout@v4
@@ -233,18 +366,27 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 20
-          cache: npm
+
+      - name: 📂 Cache node_modules
+        id: node-modules-cache
+        uses: actions/cache@v4
+        with:
+          path: node_modules
+          key: ${{ runner.os }}-node-modules-${{ hashFiles('package-lock.json') }}
+          restore-keys: |
+            ${{ runner.os }}-node-modules-
 
       - name: 📦 Install
-        run: npm ci
+        if: steps.node-modules-cache.outputs.cache-hit != 'true'
+        run: npm ci --prefer-offline --no-audit
 
-      - name:  Deploy
+      - name: 🚀 Deploy Hosting
         run: |
           npx firebase deploy \
             --only hosting \
             --public .build \
-            --project "${{ secrets.FIREBASE_PROJECT_ID || 'dor-progress' }}" \
-            --token "${{ secrets.FIREBASE_TOKEN }}"
+            --project "$FIREBASE_PROJECT_ID" \
+            --token "$FIREBASE_TOKEN"
 
       - name: ✅ Verify
         run: |
@@ -258,10 +400,35 @@ jobs:
            echo "❌ Firebase failed"
            exit 1
 
+  performance:
+    name: ⚡ Performance Audit
+    runs-on: ubuntu-latest
+    needs: [deploy-firebase]
+    if: success()
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: 📦 Install LHCI
+        run: npm install -g @lhci/cli@0.13.x
+
+      - name: 🔦 Lighthouse Audit
+        run: |
+          lhci collect --url="https://dor-progress.web.app"
+          lhci assert --assertions.performance=0.90 \
+                      --assertions.accessibility=0.90 \
+                      --assertions.best-practices=0.90 \
+                      --assertions.seo=0.90
+
   summary:
     name: 📋 Deployment Summary
     runs-on: ubuntu-latest
-    needs: [preflight, build, deploy-worker, deploy-firebase]
+    needs: [preflight, build, deploy-worker, deploy-firebase, performance, load-test]
     if: always()
 
     steps:
@@ -269,6 +436,7 @@ jobs:
         run: |
           STATUS_WORKER="${{ needs.deploy-worker.result }}"
           STATUS_FIREBASE="${{ needs.deploy-firebase.result }}"
+          STATUS_LOAD="${{ needs.load-test.result }}"
 
           echo "# 🚀 Deployment Summary" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
@@ -278,6 +446,7 @@ jobs:
           echo "|---------|-----|--------|" >> $GITHUB_STEP_SUMMARY
           echo "| 🔥 Firebase Hosting (Frontend) | https://dor-progress.web.app | $STATUS_FIREBASE |" >> $GITHUB_STEP_SUMMARY
           echo "| ☁️ Cloudflare Worker (API) | Internal – proxied via Firebase | $STATUS_WORKER |" >> $GITHUB_STEP_SUMMARY
+          echo "| 🧪 k6 Load Test (API) | ${{ needs.preflight.outputs.api_base_url }} | $STATUS_LOAD |" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
 
           echo "### Build Info" >> $GITHUB_STEP_SUMMARY
@@ -288,10 +457,10 @@ jobs:
           echo "" >> $GITHUB_STEP_SUMMARY
 
           echo "### Secrets Check" >> $GITHUB_STEP_SUMMARY
-          if [ "${{ needs.preflight.outputs.secrets_valid }}" = "true" ]; then
+          if [[ "${{ needs.preflight.outputs.secrets_valid }}" == "true" ]]; then
             echo "- ✅ All secrets configured" >> $GITHUB_STEP_SUMMARY
           else
-            echo "- ❌ Missing: ${{ needs.preflight.outputs.missing_list }}" >> $GITHUB_STEP_SUMMARY
+            echo "- ❌ Missing: ${{ needs.preflight.outputs.missing_list || 'Unknown' }}" >> $GITHUB_STEP_SUMMARY
           fi
           echo "" >> $GITHUB_STEP_SUMMARY
 
