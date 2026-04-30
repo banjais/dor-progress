@@ -42,17 +42,17 @@ const criticalCss = `
 :root{--primary:#0099da;--primary-dark:#0077aa;--bg:#f0f4f8;--surface:#fff;--text:#111827;--text-light:#4b5563;--good:#10b981;--stable:#3b82f6;--critical:#ef4444;--border:#e5e7eb;--hover:rgba(0,0,0,.03);--selected-bg:rgba(0,153,218,.1)}
 [data-theme="dark"]{--bg:#0b0f1a;--surface:#151c2e;--text:#f9fafb;--text-light:#9ca3af;--border:#2d3748;--primary:#38bdf8;--primary-dark:#0ea5e9;--hover:rgba(255,255,255,.06);--selected-bg:rgba(56,189,248,.2)}
 html{box-sizing:border-box}*,*:before,*:after{box-sizing:inherit}body{margin:0;font-family:"Noto Sans Devanagari","Roboto",sans-serif;background:var(--bg);color:var(--text);transition:background-color .5s,color .5s;-webkit-font-smoothing:auto;text-rendering:optimizeLegibility}
-header{background:linear-gradient(135deg,var(--primary) 0%,var(--primary-dark) 100%);background-color:var(--primary);color:#fff;padding:.5rem 5%;position:sticky;top:0;z-index:100;height:48px;display:flex;align-items:center;box-shadow:0 4px 12px rgba(0,153,218,.2);-webkit-font-smoothing:auto;text-rendering:optimizeLegibility}
+header{background-color:var(--primary);color:#fff;padding:.5rem 5%;position:sticky;top:0;z-index:100;height:48px;display:flex;align-items:center;-webkit-font-smoothing:auto;text-rendering:optimizeLegibility}
 .header-top{display:flex;justify-content:space-between;align-items:center;gap:20px;width:100%}
 header h2{margin:0;font-size:1rem;display:flex;align-items:center;gap:10px;font-weight:800;text-transform:uppercase;letter-spacing:.05em;-webkit-font-smoothing:auto;text-rendering:optimizeLegibility;text-shadow:none}
 #action-bar{background:var(--surface);padding:12px 5%;border-bottom:1px solid var(--border);position:sticky;top:48px;z-index:90}
 .search-container{position:relative;flex-grow:1;max-width:400px}
 .search-container input{width:100%;padding:10px 75px 10px 40px;border-radius:12px;border:1px solid var(--border);background:var(--bg);color:var(--text);font-size:.85rem;outline:none;transition:border .3s}
 .search-container i{position:absolute;left:15px;top:11px;opacity:.5}
-.toggle-group{background:var(--bg);padding:4px;border-radius:10px;display:flex;gap:3px;box-shadow:inset 0 2px 4px rgba(0,0,0,.05)}
-.toggle-btn{background:var(--surface);border:none;color:var(--text-light);padding:8px 16px;border-radius:8px;font-size:.75rem;font-weight:700;cursor:pointer;box-shadow:0 2px 4px rgba(0,0,0,.1);transition:all .2s cubic-bezier(.4,0,.2,1);-webkit-font-smoothing:auto;text-rendering:optimizeLegibility}
-.icon-btn{background:var(--surface);border:1px solid var(--border);width:34px;height:34px;display:flex;align-items:center;justify-content:center;border-radius:10px;cursor:pointer;box-shadow:0 2px 4px rgba(0,0,0,.1);font-size:1.1rem;-webkit-font-smoothing:auto;text-rendering:optimizeLegibility}
-.status-btn{background:rgba(255,255,255,.2);border:none;color:#fff;width:32px;height:32px;border-radius:50%;display:flex;align-items:center;justify-content:center;cursor:pointer;font-size:.85rem;transition:all .2s;-webkit-font-smoothing:auto;text-rendering:optimizeLegibility}
+.toggle-group{background:var(--bg);padding:4px;border-radius:10px;display:flex;gap:3px}
+.toggle-btn{background:var(--surface);border:none;color:var(--text-light);padding:8px 16px;border-radius:8px;font-size:.75rem;font-weight:700;cursor:pointer;transition:all .2s cubic-bezier(.4,0,.2,1);-webkit-font-smoothing:auto;text-rendering:optimizeLegibility}
+.icon-btn{background:var(--surface);border:1px solid var(--border);width:34px;height:34px;display:flex;align-items:center;justify-content:center;border-radius:10px;cursor:pointer;font-size:1.1rem;-webkit-font-smoothing:auto;text-rendering:optimizeLegibility}
+.status-btn{background:var(--primary-dark);border:none;color:#fff;width:32px;height:32px;border-radius:50%;display:flex;align-items:center;justify-content:center;cursor:pointer;font-size:.85rem;transition:all .2s;-webkit-font-smoothing:auto;text-rendering:optimizeLegibility}
 #loader{position:fixed;inset:0;background:var(--bg);display:flex;justify-content:center;align-items:center;z-index:1000}
 #loader .chart-container{width:60px;height:60px;margin:0 auto 15px}
 #loader .spinning{animation:spin 1s linear infinite}

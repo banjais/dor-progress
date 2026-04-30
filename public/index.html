@@ -216,7 +216,7 @@
     }
 
      header {
-       background: linear-gradient(135deg, var(--primary) 0%, var(--primary-dark) 100%);
+       background: var(--primary);
        background-color: var(--primary);
        color: white;
        padding: 0.5rem 5%;
@@ -226,7 +226,6 @@
        height: 48px;
        display: flex;
        align-items: center;
-       box-shadow: 0 4px 12px rgba(0, 153, 218, 0.2);
        /* Ensure crisp text on all displays */
        -webkit-font-smoothing: auto;
        text-rendering: optimizeLegibility;
@@ -288,7 +287,6 @@
       border-radius: 10px;
       display: flex;
       gap: 3px;
-      box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.05);
     }
 
      .toggle-btn {
@@ -300,7 +298,6 @@
        font-size: 0.75rem;
        font-weight: 700;
        cursor: pointer;
-       box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
        transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
        /* Crisp text */
        -webkit-font-smoothing: auto;
@@ -316,13 +313,11 @@
 
     .toggle-btn:active {
       transform: translateY(1px);
-      box-shadow: 0 1px 2px rgba(0, 0, 0, 0.1);
     }
 
     .toggle-btn.active {
       background: var(--primary);
       color: white;
-      box-shadow: 0 4px 10px rgba(0, 153, 218, 0.3);
     }
 
     /* PWA Install Button Styling */
@@ -349,7 +344,6 @@
        justify-content: center;
        border-radius: 10px;
        cursor: pointer;
-       box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
        font-size: 1.1rem;
        /* Crisp text/icons */
        -webkit-font-smoothing: auto;
