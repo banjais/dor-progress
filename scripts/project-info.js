@@ -129,7 +129,6 @@ if (fs.existsSync(devVarsPath)) {
 section('✅ Pre-deploy Checks');
 const issues = [];
 if (!fs.existsSync(devVarsPath)) issues.push('No .dev.vars (local secrets configured)');
-if (!fs.existsSync(distDir)) issues.push('Worker not built (run: npm run compile)');
 if (!fs.existsSync(buildDir)) issues.push('Firebase not built (run: npm run build)');
 if (issues.length) {
   for (const issue of issues) console.log(`  ⚠️  ${issue}`);
