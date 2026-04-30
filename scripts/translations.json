@@ -9,7 +9,14 @@
         "total_target": "Total Target",
         "total_progress": "Total Progress",
         "annual_target": "Annual Target",
-        "annual_progress": "Annual Progress to Date"
+        "annual_progress": "Annual Progress to Date",
+        "कालोपत्रे सडक (दुई लेन)-NH&Other Road": "Blacktopped Road (Two Lane)",
+        "कालोपत्रे सडक (चार लेन वा चार लेन भन्दा बढी)": "Blacktopped Road (Four Lane+)",
+        "पुल निर्माण": "Bridge Construction",
+        "सुरूङ निर्माण (मेन टनेल र ईभ्याकुएसन टनेल)": "Tunnel Construction",
+        "रोजगारी सिर्जना": "Job Creation",
+        "पुँजीगत खर्च": "Capital Expenditure",
+        "गुनासो फर्छ्यौट": "Grievance Redressal"
     },
     "ne": {
         "indicator": "सूचक",

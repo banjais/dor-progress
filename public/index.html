@@ -97,6 +97,43 @@
       /* Darker blue for selection */
     }
 
+    /* Professional Browser-Consistent Tooltips */
+    [data-title] {
+      position: relative;
+    }
+
+    [data-title]::after {
+      content: attr(data-title);
+      position: absolute;
+      bottom: 125%;
+      left: 50%;
+      transform: translateX(-50%) translateY(5px);
+      background: #111827;
+      color: #fff;
+      padding: 4px 10px;
+      border-radius: 6px;
+      font-size: 0.65rem;
+      font-weight: 700;
+      white-space: nowrap;
+      opacity: 0;
+      visibility: hidden;
+      transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+      z-index: 10000;
+      pointer-events: none;
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+    }
+
+    [data-title]:hover::after {
+      opacity: 1;
+      visibility: visible;
+      transform: translateX(-50%) translateY(0);
+    }
+
+    [data-theme="dark"] [data-title]::after {
+      background: var(--primary);
+      color: var(--bg);
+    }
+
     /* Local Fallback Fonts: Used if Google CDN fails */
     @font-face {
       font-family: 'Noto Sans Devanagari Local';
@@ -164,15 +201,15 @@
       animation: noise-jitter 0.1s steps(2) infinite;
     }
 
-     body {
-       font-family: "Noto Sans Devanagari", "Noto Sans Devanagari Local", "Roboto", "Roboto Local", -apple-system, BlinkMacSystemFont, "Segoe UI", "Helvetica Neue", Arial, sans-serif;
-       background-color: var(--bg);
-       color: var(--text);
-       margin: 0;
-       transition: background-color 0.5s ease, color 0.5s ease;
-       font-size: calc(clamp(14px, 1.1vw, 16px) * var(--font-multiplier, 1));
-       /* Let browser use default font rendering (crispest for platform) */
-     }
+    body {
+      font-family: "Noto Sans Devanagari", "Noto Sans Devanagari Local", "Roboto", "Roboto Local", -apple-system, BlinkMacSystemFont, "Segoe UI", "Helvetica Neue", Arial, sans-serif;
+      background-color: var(--bg);
+      color: var(--text);
+      margin: 0;
+      transition: background-color 0.5s ease, color 0.5s ease;
+      font-size: calc(clamp(14px, 1.1vw, 16px) * var(--font-multiplier, 1));
+      /* Let browser use default font rendering (crispest for platform) */
+    }
 
     .highlight-word {
       background-color: var(--selected-bg);
@@ -215,21 +252,21 @@
       animation: modal-up 0.2s ease-out;
     }
 
-     header {
-       background: var(--primary);
-       background-color: var(--primary);
-       color: white;
-       padding: 0.5rem 5%;
-       position: sticky;
-       top: 0;
-       z-index: 100;
-       height: 48px;
-       display: flex;
-       align-items: center;
-       /* Ensure crisp text on all displays */
-       -webkit-font-smoothing: auto;
-       text-rendering: optimizeLegibility;
-     }
+    header {
+      background: var(--primary);
+      background-color: var(--primary);
+      color: white;
+      padding: 0.5rem 5%;
+      position: sticky;
+      top: 0;
+      z-index: 100;
+      height: 48px;
+      display: flex;
+      align-items: center;
+      /* Ensure crisp text on all displays */
+      -webkit-font-smoothing: auto;
+      text-rendering: optimizeLegibility;
+    }
 
     .header-top {
       display: flex;
@@ -239,20 +276,20 @@
       width: 100%;
     }
 
-     header h2 {
-       margin: 0;
-       font-size: 1rem;
-       display: flex;
-       align-items: center;
-       gap: 10px;
-       font-weight: 800;
-       text-transform: uppercase;
-       letter-spacing: 0.05em;
-       /* Crisp text on all displays */
-       -webkit-font-smoothing: auto;
-       text-rendering: optimizeLegibility;
-       text-shadow: none;
-     }
+    header h2 {
+      margin: 0;
+      font-size: 1rem;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      font-weight: 800;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      /* Crisp text on all displays */
+      -webkit-font-smoothing: auto;
+      text-rendering: optimizeLegibility;
+      text-shadow: none;
+    }
 
     header h2 img {
       height: 24px;
@@ -294,13 +331,21 @@
       border: 1px solid var(--border);
       align-items: center;
     }
-    .lang-switch-container input { display: none; }
+
+    .lang-switch-container input {
+      display: none;
+    }
+
     .lang-slider {
       position: absolute;
-      top: 0; left: 0; right: 0; bottom: 0;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
       border-radius: 14px;
       transition: .3s;
     }
+
     .lang-slider:before {
       position: absolute;
       content: "";
@@ -313,9 +358,11 @@
       transition: .3s cubic-bezier(0.4, 0.0, 0.2, 1);
       z-index: 2;
     }
-    .lang-switch-container input:checked + .lang-slider:before {
+
+    .lang-switch-container input:checked+.lang-slider:before {
       transform: translateX(28px);
     }
+
     .lang-lbl {
       position: absolute;
       font-size: 0.6rem;
@@ -323,8 +370,14 @@
       color: var(--text-light);
       z-index: 1;
     }
-    .lang-lbl.left { left: 6px; }
-    .lang-lbl.right { right: 8px; }
+
+    .lang-lbl.left {
+      left: 6px;
+    }
+
+    .lang-lbl.right {
+      right: 8px;
+    }
 
     .toggle-group {
       background: var(--bg);
@@ -334,20 +387,20 @@
       gap: 3px;
     }
 
-     .toggle-btn {
-       background: var(--surface);
-       border: none;
-       color: var(--text-light);
-       padding: 8px 16px;
-       border-radius: 8px;
-       font-size: 0.75rem;
-       font-weight: 700;
-       cursor: pointer;
-       transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
-       /* Crisp text */
-       -webkit-font-smoothing: auto;
-       text-rendering: optimizeLegibility;
-     }
+    .toggle-btn {
+      background: var(--surface);
+      border: none;
+      color: var(--text-light);
+      padding: 8px 16px;
+      border-radius: 8px;
+      font-size: 0.75rem;
+      font-weight: 700;
+      cursor: pointer;
+      transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+      /* Crisp text */
+      -webkit-font-smoothing: auto;
+      text-rendering: optimizeLegibility;
+    }
 
     /* Hide Professional Print Branding from the screen view */
     #print-header,
@@ -379,21 +432,21 @@
       cursor: pointer;
     }
 
-     .icon-btn {
-       background: var(--surface);
-       border: 1px solid var(--border);
-       width: 34px;
-       height: 34px;
-       display: flex;
-       align-items: center;
-       justify-content: center;
-       border-radius: 10px;
-       cursor: pointer;
-       font-size: 1.1rem;
-       /* Crisp text/icons */
-       -webkit-font-smoothing: auto;
-       text-rendering: optimizeLegibility;
-     }
+    .icon-btn {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      width: 34px;
+      height: 34px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      border-radius: 10px;
+      cursor: pointer;
+      font-size: 1.1rem;
+      /* Crisp text/icons */
+      -webkit-font-smoothing: auto;
+      text-rendering: optimizeLegibility;
+    }
 
     .icon-btn:hover {
       background: var(--bg);
@@ -885,23 +938,23 @@
     }
 
     /* Status Button & Spinner Styles */
-     .status-btn {
-       background: rgba(255, 255, 255, 0.2);
-       border: none;
-       color: white;
-       width: 32px;
-       height: 32px;
-       border-radius: 50%;
-       display: flex;
-       align-items: center;
-       justify-content: center;
-       cursor: pointer;
-       font-size: 0.85rem;
-       transition: all 0.2s;
-       /* Crisp text */
-       -webkit-font-smoothing: auto;
-       text-rendering: optimizeLegibility;
-     }
+    .status-btn {
+      background: rgba(255, 255, 255, 0.2);
+      border: none;
+      color: white;
+      width: 32px;
+      height: 32px;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      font-size: 0.85rem;
+      transition: all 0.2s;
+      /* Crisp text */
+      -webkit-font-smoothing: auto;
+      text-rendering: optimizeLegibility;
+    }
 
     .status-btn:hover {
       background: rgba(255, 255, 255, 0.3);
@@ -1426,7 +1479,8 @@
           <div style="display:flex; align-items:center; gap:8px">
             <span id="data-sync-icon" style="display:none; font-size:0.7rem; color:white; opacity:0.8;"
               title="Syncing Data">🔄</span>
-            <div id="status" style="font-size:0.75rem; font-weight:700; -webkit-font-smoothing:auto;">Connecting...</div>
+            <div id="status" style="font-size:0.75rem; font-weight:700; -webkit-font-smoothing:auto;">Connecting...
+            </div>
             <button class="status-btn" id="status-refresh-btn" onclick="checkStatus()"
               title="Check Connection">🔄</button>
           </div>
@@ -1440,23 +1494,23 @@
   <div id="action-bar">
     <div class="search-container">
       <i>🔍</i>
-      <input type="text" id="search-input" oninput="handleSearch()" placeholder="Search Indicators...">
+      <input type="text" id="search-input" oninput="handleSearch()" placeholder="Search">
     </div>
 
     <div class="header-controls">
-      <button class="icon-btn" onclick="shareApp()">🔗</button>
+      <button class="icon-btn" id="share-app-btn" onclick="shareApp()" data-title="Share">🔗</button>
       <button class="icon-btn" onclick="toggleTheme()" id="theme-icon">🌓</button>
-      <button class="icon-btn" onclick="window.print()">🖨️</button>
-      <button class="icon-btn" onclick="generateClientPDF()" title="Export PDF">📄</button>
+      <button class="icon-btn" id="print-btn" onclick="window.print()" data-title="Print">🖨️</button>
+      <button class="icon-btn" id="generate-client-pdf-btn" onclick="generateClientPDF()">📄</button>
       <button class="icon-btn" id="official-pdf-btn" onclick="downloadPdf(store?.updateDate)"
-        title="Download Official (High-Res) PDF">📥</button>
-      <button class="icon-btn" onclick="toggleHistory()" title="Report History">🕒</button>
+        data-title="Download">📥</button>
+      <button class="icon-btn" id="toggle-history-btn" onclick="toggleHistory()">🕒</button>
       <!-- Modern Mobile-friendly Pill Language Switch -->
-      <label class="lang-switch-container" title="Switch Language">
+      <label class="lang-switch-container" id="lang-switch-container" data-title="Language">
         <input type="checkbox" id="lang-switch-chk" onchange="window.setLang(this.checked ? 'en' : 'ne')" />
         <div class="lang-slider">
-           <span class="lang-lbl left">NE</span>
-           <span class="lang-lbl right">EN</span>
+          <span class="lang-lbl left">NE</span>
+          <span class="lang-lbl right">EN</span>
         </div>
       </label>
 
@@ -1468,7 +1522,7 @@
       </div>
 
       <button class="icon-btn" id="header-mute-btn" onclick="toggleMute()" title="Mute/Unmute">🔊</button>
-      
+
       <!-- Settings button at the absolute very right -->
       <button class="icon-btn" id="settings-btn" onclick="showSettings()" title="Settings">⚙️</button>
     </div>
@@ -1487,21 +1541,21 @@
         <div style="display:flex; align-items:center; gap:10px;">
           <span style="font-size:1.2rem">🤖</span>
           <b id="ai-brief-header-text"
-            style="color:var(--primary); font-size:0.8rem; text-transform:uppercase; letter-spacing:0.05em">Gemini
-            Executive Briefing / जेमिनी कार्यकारी सारांश</b>
+            style="color:var(--primary); font-size:0.8rem; text-transform:uppercase; letter-spacing:0.05em">
+            Briefing / सारांश</b>
         </div>
         <div style="display:flex; gap:8px;">
-          <button id="ai-translate-btn" onclick="translateAiBrief()" class="icon-btn" title="Translate Brief"
+          <button id="ai-translate-btn" onclick="translateAiBrief()" class="icon-btn"
             style="width: 28px; height: 28px; font-size: 0.8rem; flex-shrink: 0;">🌐</button>
-          <button id="ai-read-btn" onclick="toggleReadAloud()" class="icon-btn" title="Read Aloud"
+          <button id="ai-read-btn" onclick="toggleReadAloud()" class="icon-btn"
             style="width: 28px; height: 28px; font-size: 0.8rem; flex-shrink: 0;">🔊</button>
           <button id="ai-share-audio-btn" onclick="shareAiBriefAudio()" class="icon-btn" title="Share Audio"
             style="width: 28px; height: 28px; font-size: 0.8rem; flex-shrink: 0;">🔗</button>
           <button id="ai-download-audio-btn" onclick="downloadAiBriefAudio()" class="icon-btn" title="Download Audio"
             style="width: 28px; height: 28px; font-size: 0.8rem; flex-shrink: 0;">📥</button>
-          <button onclick="shareAiBrief()" class="icon-btn" title="Share Brief"
+          <button id="ai-share-brief-btn" onclick="shareAiBrief()" class="icon-btn"
             style="width: 28px; height: 28px; font-size: 0.8rem; flex-shrink: 0;">📤</button>
-          <button onclick="printAiBrief()" class="icon-btn" title="Print Memo"
+          <button id="ai-print-brief-btn" onclick="printAiBrief()" class="icon-btn"
             style="width: 28px; height: 28px; font-size: 0.8rem; flex-shrink: 0;">🖨️</button>
         </div>
       </div>
@@ -1717,7 +1771,6 @@
       }
     }
 
-    window.setLang = setLang;
     /**
      * Centralized fetch helper to handle base URLs and Firebase App Check tokens.
      */
@@ -2404,24 +2457,40 @@
     const I18N = {
       ne: {
         govt: "नेपाल सरकार", ministry: "भौतिक पूर्वाधार तथा यातायात मन्त्रालय", dept: "सडक विभाग", city: "चाकुपाट, ललितपुर", reportTitle: "DoR प्रगति प्रतिवेदन (साप्ताहिक)",
-        mainTitle: "DoR सडक विभाग", total: "कुल सूचक", met: "लक्ष्य पूरा", attention: "ध्यान दिनुपर्ने", update: "अन्तिम अपडेट",
-        live: "● प्रत्यक्ष", offline: "● अफलाइन", loading: "डेटा लोड हुँदैछ...", search: "खोज्नुहोस्...",
-        progress: "समग्र प्रगति", refreshing: "पुनः लोड हुँदै", sec: "सेकेन्ड", briefTitle: "जेमिनी कार्यकारी सारांश",
+        mainTitle: "DoR सडक विभाग", total: "कुल सूचक", met: "लक्ष्य", attention: "ध्यान", update: "अन्तिम अपडेट",
+        live: "● प्रत्यक्ष", offline: "● अफलाइन", loading: "लोडिङ", search: "खोज",
+        progress: "प्रगति", refreshing: "रिफ्रेस", sec: "सेकेन्ड", briefTitle: "सारांश",
         charts: "प्रगति चार्ट",
-        auraText: "🤖 मद्दत चाहिन्छ?", auraAnalyzing: "जोखिम विश्लेषण गर्दै... 🤖🧠", auraIsolated: "जोखिम अलग गरियो!", auraTracing: "सफलता ट्र्याक गर्दै... 🤖✨", auraFiltered: "सफलता फिल्टर गरियो!",
-        noDataToVisualize: "दृश्यका लागि कुनै डाटा छैन",
-        linkCopied: "लिंक क्लिपबोर्डमा प्रतिलिपि गरियो!",
+        auraText: "🤖 मद्दत?", auraAnalyzing: "जोखिम विश्लेषण... 🤖🧠", auraIsolated: "जोखिम अलग!", auraTracing: "सफलता ट्र्याक... 🤖✨", auraFiltered: "सफलता फिल्टर!",
+        noDataToVisualize: "डाटा छैन",
+        linkCopied: "लिंक प्रतिलिपि!",
+        checkConnection: "जडान",
+        switchLanguage: "भाषा",
+        reportHistory: "इतिहास",
+        exportPdf: "पीडीएफ",
+        downloadOfficialPdf: "डाउनलोड",
+        muteUnmute: "ध्वनि",
+        settings: "सेटिङ",
+        translateBrief: "अनुवाद",
+        readAloud: "वाचन",
+        shareAudio: "साझा",
+        downloadAudio: "डाउनलोड",
+        shareBrief: "साझा",
+        printMemo: "प्रिन्ट",
+        tableView: "तालिका",
+        chartsView: "चार्ट",
+        cardsView: "कार्ड",
         stable: "प्रणाली स्थिर: जोखिम १०% भन्दा कम",
         netHealth: "नेटवर्क अवस्था",
-        latency: "कनेक्सन विलम्बता",
+        latency: "विलम्बता",
         latest: "भर्खरै",
         poweredBy: "द्वारा संचालित",
         ago: "पटक अघि",
         justNow: "भर्खरै",
         secsAgo: "सेकेन्ड अघि",
         minsAgo: "मिनेट अघि",
-        noResults: "कुनै नतिजा फेला परेन",
-        retrySearch: "पुनः प्रयास गर्नुहोस्",
+        noResults: "नतिजा भेटिएन",
+        retrySearch: "सफाइ",
         results: "नतिजाहरू",
         connStrength: "लिंक:",
         connExcellent: "उत्कृष्ट",
@@ -2432,53 +2501,53 @@
         selectMonth: "महिना छान्नुहोस्",
         diagPeriod: "लेखापरीक्षण अवधि",
         verificationTitle: "प्रतिवेदन प्रमाणीकरण",
-        verifiedSuccess: "✅ प्रतिवेदन प्रमाणित भयो — डाटाबेसमा भेटियो।",
-        invalidReport: "❌ प्रतिवेदन अमान्य — डाटाबेसमा भेटिएन।",
+        verifiedSuccess: "✅ प्रमाणित",
+        invalidReport: "❌ अमान्य",
         settings: "सेटिङहरू",
         theme: "थिम प्राथमिकता",
         themeLight: "लाइट मोड",
         themeDark: "डार्क मोड",
         themeSystem: "प्रणाली पूर्वनिर्धारित",
-        clearCache: "डाटा क्यास मेटाउनुहोस्",
-        resetAll: "सबै रिसेट गर्नुहोस्",
-        resetConfirm: "के तपाईं निश्चित हुनुहुन्छ? यसले सबै थिमहरू, अफलाइन डाटा र सेटिङहरू मेटाउनेछ।",
+        clearCache: "क्यास सफाइ",
+        resetAll: "रिसेट",
+        resetConfirm: "सबै डेटा मेटिनेछ। निश्चित हुनुहुन्छ?",
         totalCache: "कुल पीवाइई (PWA) क्यास",
-        downloadOffline: "अफलाइन डेटा डाउनलोड गर्नुहोस्",
-        downloading: "डाउनलोड हुँदै...",
-        downloadComplete: "डेटा अफलाइनका लागि सुरक्षित गरियो!",
+        downloadOffline: "अफलाइन डाउनलोड",
+        downloading: "डाउनलोड",
+        downloadComplete: "डाउनलोड सम्पन्न",
         forceThrottled: "पुनः लोड सीमा पुग्यो। हालैको डेटा प्रयोग गर्दै।",
-        cacheCleared: "क्यास मेटाइयो र डेटा पुनः लोड गरियो!",
+        cacheCleared: "क्यास सफा",
         qualifying: "योग्यता जाँच्दै...",
         storageUsage: "भण्डारण उपयोग",
         calculating: "गणना गर्दै...",
         lowData: "कम डाटा मोड",
         uiVolume: "प्रणाली ध्वनि भोल्युम",
-        muteAll: "सबै म्यूट गरिएको छ",
+        muteAll: "म्यूट",
         dbBackup: "क्लाउड ब्याकअप",
         dbBackupDesc: "डाटाबेस स्न्यापशट सुरक्षित गर्नुहोस्",
-        dbRestore: "डाटाबेस रिस्टोर",
+        dbRestore: "रिस्टोर",
         dbRestoreDesc: "क्लाउडबाट डाटा रिकभर गर्नुहोस्",
         dataSyncing: "डाटा सिङ्क हुँदैछ...",
-        readAloud: "पढेर सुनाउनुहोस्",
-        stopReading: "पढ्न रोक्नुहोस्",
-        downloadAudio: "अडियो डाउनलोड गर्नुहोस्",
-        shareAudio: "अडियो साझा गर्नुहोस्",
-        preparingAudio: "अडियो तयार गर्दै...",
+        readAloud: "वाचन",
+        stopReading: "रोक्नुहोस्",
+        downloadAudio: "डाउनलोड",
+        shareAudio: "साझा",
+        preparingAudio: "तयारी...",
         voiceSelection: "आवाज चयन",
         voiceDesc: "पढ्नको लागि आवाज छान्नुहोस्",
         speechPitch: "पढ्ने पिच",
         speechPitchDesc: "आवाजको टोन मिलाउनुहोस्",
-        pauseReading: "पढ्न रोक्नुहोस्",
-        resumeReading: "पढ्न जारी राख्नुहोस्",
+        pauseReading: "पज",
+        resumeReading: "पुनः सुरु",
         speechRate: "पढ्ने गति",
         speechRateDesc: "पढेर सुनाउने गति मिलाउनुहोस्",
         darkSchedule: "डार्क मोड शेड्युल",
-        darkScheduleDesc: "सूर्योदय र सूर्यास्तको आधारमा थिम बदल्नुहोस्",
+        darkScheduleDesc: "समय अनुसार थिम परिवर्तन",
         systemFont: "प्रणाली फन्ट प्रयोग गर्नुहोस्",
         systemFontDesc: "मानक ओएस फन्ट प्रयोग गर्नुहोस्",
         fontSize: "फन्ट साइज",
         fontSizeDesc: "राम्रो पढ्न योग्यताको लागि फन्ट साइज मिलाउनुहोस्",
-        soundPitch: "ध्वनि पिच (फ्रिक्वेन्सी)",
+        soundPitch: "पिच",
         soundPack: "ध्वनि प्याक",
         highContrast: "उच्च कन्ट्रास्ट मोड",
         highContrastDesc: "अधिकतम दृश्यताको लागि कालो र सेतो थिम प्रयोग गर्नुहोस्",
@@ -2486,40 +2555,40 @@
         grayscaleDesc: "रंग अन्धोपन भएका प्रयोगकर्ताहरूको लागि रङ्गहरू हटाउनुहोस्",
         blueLightFilter: "निलो प्रकाश फिल्टर",
         blueLightDesc: "राती आँखाको आरामको लागि न्यानो रङ्गहरू प्रयोग गर्नुहोस्",
-        resetAudio: "ध्वनि सेटिङहरू रिसेट गर्नुहोस्",
+        resetAudio: "ध्वनि रिसेट",
         packModern: "आधुनिक",
         packClassic: "क्लासिक",
         packRetro: "रेट्रो",
-        updateReady: "नयाँ संस्करण उपलब्ध छ। अहिले अपडेट गर्नुहोस्?",
+        updateReady: "नयाँ संस्करण। अपडेट गर्ने?",
         lowDataDesc: "छिटो लोड गर्न एआई विश्लेषण असक्षम गर्नुहोस्",
         appVersion: "एप संस्करण",
-        whatsNew: "नयाँ के छ?",
+        whatsNew: "नयाँ",
         downloading: "डाउनलोड हुँदैछ",
-        checkUpdates: "अपडेट जाँच गर्नुहोस्",
+        checkUpdates: "अपडेट जाँच",
         install: "इन्स्टल",
-        installSuccess: "एप सफलतापूर्वक इन्स्टल भयो! धन्यवाद।",
+        installSuccess: "इन्स्टल सम्पन्न",
         months: ["वैशाख", "जेठ", "असार", "साउन", "भदौ", "असोज", "कात्तिक", "मंसिर", "पुस", "माघ", "फागुन", "चैत"]
       },
       en: {
         govt: "Government of Nepal", ministry: "Ministry of Physical Infrastructure & Transport", dept: "Department of Roads", city: "Chakupat, Lalitpur", reportTitle: "DoR Progress Report (Weekly)",
-        mainTitle: "DoR MIS Dashboard", total: "Total Indicators", met: "Target Met", attention: "Attention Req.", update: "Last Updated",
-        live: "● LIVE", offline: "● OFFLINE", loading: "Loading Data...", search: "Search Indicators...",
-        progress: "OVERALL PROGRESS", refreshing: "Refreshing in", sec: "s", briefTitle: "Gemini Executive Briefing",
+        mainTitle: "DoR MIS Dashboard", total: "Total", met: "Met", attention: "Attention", update: "Updated",
+        live: "● LIVE", offline: "● OFFLINE", loading: "Loading", search: "Search",
+        progress: "PROGRESS", refreshing: "Refreshing", sec: "s", briefTitle: "Briefing",
         charts: "Progress Charts",
-        auraText: "🤖 Need help?", auraAnalyzing: "Analyzing Risks... 🤖🧠", auraIsolated: "Risks Isolated!", auraTracing: "Tracing Success... 🤖✨", auraFiltered: "Success Filtered!",
-        noDataToVisualize: "No data to visualize",
-        linkCopied: "Link copied to clipboard!",
+        auraText: "🤖 Help?", auraAnalyzing: "Analyzing... 🤖🧠", auraIsolated: "Isolated!", auraTracing: "Tracing... 🤖✨", auraFiltered: "Filtered!",
+        noDataToVisualize: "No data",
+        linkCopied: "Link copied!",
         stable: "System Stable: Risk level below 10%",
         netHealth: "Network Health",
-        latency: "Connection Latency",
+        latency: "Latency",
         latest: "Latest",
         poweredBy: "Powered by",
         ago: "refreshes ago",
         justNow: "Just now",
         secsAgo: "s ago",
         minsAgo: "m ago",
-        noResults: "No results found for",
-        retrySearch: "Clear & Retry",
+        noResults: "No results",
+        retrySearch: "Clear",
         results: "Results",
         connStrength: "Link:",
         connExcellent: "Excellent",
@@ -2530,53 +2599,69 @@
         selectMonth: "Select Month",
         diagPeriod: "Audit Period",
         verificationTitle: "Report Verification",
-        verifiedSuccess: "✅ Report Verified — Record found in database.",
-        invalidReport: "❌ Invalid Report — No matching record found.",
+        verifiedSuccess: "✅ Verified",
+        invalidReport: "❌ Invalid",
+        checkConnection: "Connection",
+        switchLanguage: "Language",
+        reportHistory: "History",
+        exportPdf: "PDF",
+        downloadOfficialPdf: "Download",
+        muteUnmute: "Sound",
+        settings: "Settings",
+        translateBrief: "Translate",
+        readAloud: "Narration",
+        shareAudio: "Share",
+        downloadAudio: "Download",
+        shareBrief: "Share",
+        printMemo: "Print",
+        tableView: "Table",
+        chartsView: "Charts",
+        cardsView: "Cards",
         settings: "Settings",
         theme: "Theme Preference",
         themeLight: "Light Mode",
         themeDark: "Dark Mode",
         themeSystem: "System Default",
-        clearCache: "Clear Data Cache",
-        resetAll: "Reset All (Factory)",
-        resetConfirm: "Are you sure? This will delete all themes, offline data, and settings.",
+        clearCache: "Clear Cache",
+        resetAll: "Reset",
+        resetConfirm: "All data will be deleted. Proceed?",
         totalCache: "Total PWA Cache",
-        downloadOffline: "Download Offline Data",
-        downloading: "Downloading...",
-        downloadComplete: "All data saved for offline use!",
-        forceThrottled: "Refresh limit reached. Using recently cached data.",
-        cacheCleared: "Cache cleared and data reloaded!",
+        downloadOffline: "Offline Download",
+        downloading: "Downloading",
+        downloadComplete: "Download Complete",
+        forceThrottled: "Refresh limit reached. Using cache.",
+        cacheCleared: "Cache cleared",
         qualifying: "Qualifying...",
         storageUsage: "Storage Usage",
         calculating: "Calculating...",
         lowData: "Low Data Mode",
         uiVolume: "UI Sound Volume",
-        muteAll: "Mute All Active",
+        muteAll: "Mute",
         dbBackup: "Cloud Backup",
         dbBackupDesc: "Save database snapshot to KV",
-        dbRestore: "Restore Database",
+        dbRestore: "Restore",
         dbRestoreDesc: "Recover data from a cloud snapshot",
-        dataSyncing: "Data Syncing...",
-        readAloud: "Read Aloud",
-        stopReading: "Stop Reading",
-        downloadAudio: "Download Audio (MP3)",
-        shareAudio: "Share Audio",
-        preparingAudio: "Preparing MP3...",
+        dataSyncing: "Syncing...",
+        readAloud: "Narration",
+        stopReading: "Stop",
+        downloadAudio: "Download",
+        shareAudio: "Share",
+        preparingAudio: "Preparing...",
         voiceSelection: "Voice Selection",
         voiceDesc: "Choose a voice for reading",
         speechPitch: "Speech Pitch",
         speechPitchDesc: "Adjust the voice tone",
-        pauseReading: "Pause Reading",
-        resumeReading: "Resume Reading",
+        pauseReading: "Pause",
+        resumeReading: "Resume",
         speechRate: "Speech Speed",
         speechRateDesc: "Adjust the narration speed",
         darkSchedule: "Dark Mode Schedule",
-        darkScheduleDesc: "Automatic switching based on sunrise/sunset",
+        darkScheduleDesc: "Schedule based theme",
         systemFont: "Use System Font",
         systemFontDesc: "Use standard OS typography",
         fontSize: "Font Size",
         fontSizeDesc: "Adjust font size for better readability",
-        soundPitch: "Sound Pitch (Frequency)",
+        soundPitch: "Pitch",
         soundPack: "Sound Pack",
         highContrast: "High Contrast Mode",
         highContrastDesc: "Use pure black and white for maximum visibility",
@@ -2584,18 +2669,18 @@
         grayscaleDesc: "Remove colors for users with color blindness",
         blueLightFilter: "Blue Light Filter",
         blueLightDesc: "Use warmer colors for eye comfort at night",
-        resetAudio: "Reset Audio Settings",
+        resetAudio: "Reset Audio",
         packModern: "Modern",
         packClassic: "Classic",
         packRetro: "Retro",
-        updateReady: "New version available. Update now?",
+        updateReady: "New version. Update?",
         lowDataDesc: "Disable AI analysis for faster loading",
         appVersion: "App Version",
-        whatsNew: "What's New?",
+        whatsNew: "What's New",
         downloading: "Downloading",
-        checkUpdates: "Check for Updates",
+        checkUpdates: "Check Updates",
         install: "Install",
-        installSuccess: "App installed successfully! Thank you.",
+        installSuccess: "Installed",
         months: ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"]
       }
     };
@@ -2700,57 +2785,98 @@
       setTheme(current === 'dark' ? 'light' : 'dark');
     };
 
-    window.setLang = setLang;
-    function setLang(l) {
+    window.setLang = async function (l) {
       const prevLang = currentLang;
       currentLang = l;
+      localStorage.setItem('pref-lang', l);
+
+      // Update switch UI
+      const langChk = document.getElementById('lang-switch-chk');
+      if (langChk) langChk.checked = (l === 'en');
 
       // Reset sort key because headers change per language
       currentSort = { key: null, dir: 1 };
 
-      const t = I18N[l];
-      const langChk = document.getElementById('lang-switch-chk');
-      if (langChk && langChk.checked !== (l === 'en')) {
-         langChk.checked = (l === 'en');
+      const labels = I18N[l];
+      if (!window.translations) {
+        try {
+          const res = await fetch(`${WORKER_BASE}/api/translations`);
+          window.translations = await res.json();
+        } catch (e) { console.warn("Failed to fetch translations"); }
       }
+
+      // Rapid Language Toggle Helper (with local I18N fallback)
+      const t = (key, fallback) => (window.translations && window.translations[currentLang] && window.translations[currentLang][key]) || fallback || key;
 
       // Total UI Update
-      document.getElementById('main-title').innerText = t.mainTitle;
-      document.getElementById('h-govt').innerText = t.govt;
-      document.getElementById('h-min').innerText = t.ministry;
-      document.getElementById('h-dept').innerText = t.dept;
-      document.getElementById('h-city').innerText = t.city;
+      document.getElementById('main-title').innerText = labels.mainTitle;
+      document.getElementById('h-govt').innerText = labels.govt;
+      document.getElementById('h-min').innerText = labels.ministry;
+      document.getElementById('h-dept').innerText = labels.dept;
+      document.getElementById('h-city').innerText = labels.city;
+
+      const uiMap = {
+        'status': t('connecting', labels.loading),
+        'search-input': { prop: 'placeholder', val: t('search_placeholder', labels.search) },
+        'chart-text': t('target_progress', labels.progress),
+        'hist-weekly-btn': t('weekly_archives', 'Weekly'),
+        'hist-cumulative-btn': t('cumulative_summary', 'Summary'),
+        'btn-current-week': t('view_latest', 'Latest'),
+        'print-btn': { prop: 'title', val: t('print', 'Print') },
+        'share-app-btn': { prop: 'title', val: t('shareApp', 'Share') },
+        'theme-icon': { prop: 'title', val: t('toggleTheme', 'Theme') },
+        'generate-client-pdf-btn': { prop: 'title', val: t('exportPdf', 'PDF') },
+        'official-pdf-btn': { prop: 'title', val: t('downloadOfficialPdf', 'Download') },
+        'toggle-history-btn': { prop: 'title', val: t('reportHistory', 'History') },
+        'header-mute-btn': { prop: 'title', val: t('muteUnmute', 'Sound') },
+        'settings-btn': { prop: 'title', val: t('settings', 'Settings') },
+        'ai-translate-btn': { prop: 'title', val: t('translateBrief', 'Translate') },
+        'ai-read-btn': { prop: 'title', val: t('readAloud', 'Narration') },
+        'ai-share-audio-btn': { prop: 'title', val: t('shareAudio', 'Share') },
+        'ai-download-audio-btn': { prop: 'title', val: t('downloadAudio', 'Download') },
+        'ai-share-brief-btn': { prop: 'title', val: t('shareBrief', 'Share') },
+        'ai-print-brief-btn': { prop: 'title', val: t('printMemo', 'Print') },
+        'btn-table': { prop: 'title', val: t('tableView', 'Table') },
+        'btn-charts': { prop: 'title', val: t('chartsView', 'Charts') },
+        'btn-cards': { prop: 'title', val: t('cardsView', 'Cards') }
+      };
 
       // Update dynamic labels to remove unwanted template code from UI
-      if (document.getElementById('lbl-year')) document.getElementById('lbl-year').innerText = t.year;
-      if (document.getElementById('lbl-month')) document.getElementById('lbl-month').innerText = t.selectMonth;
-      if (document.getElementById('lbl-diag-period')) document.getElementById('lbl-diag-period').innerText = t.diagPeriod;
+      if (document.getElementById('lbl-year')) document.getElementById('lbl-year').innerText = labels.year;
+      if (document.getElementById('lbl-month')) document.getElementById('lbl-month').innerText = labels.selectMonth;
+      if (document.getElementById('lbl-diag-period')) document.getElementById('lbl-diag-period').innerText = labels.diagPeriod;
 
+      Object.entries(uiMap).forEach(([id, config]) => {
+        const el = document.getElementById(id);
+        if (!el) return;
+        if (typeof config === 'string') el.innerText = config;
+        else if (config.prop === 'title') {
+          el.setAttribute('data-title', config.val);
+          el.removeAttribute('title'); // Prevent native browser tooltip collision
+        }
+        else el[config.prop] = config.val;
+      });
 
       // Update Gemini badge text
-      document.getElementById('gemini-badge').innerHTML = `${t.poweredBy} <span>Gemini</span>`;
-      document.getElementById('h-report').innerText = t.reportTitle;
-      document.getElementById('aura-text').innerText = t.auraText; // Update AI Aura text on language change
+      document.getElementById('gemini-badge').innerHTML = `${labels.poweredBy} <span>Gemini</span>`;
+      document.getElementById('h-report').innerText = labels.reportTitle;
+      document.getElementById('aura-text').innerText = labels.auraText;
 
       if (document.getElementById('ai-brief-card').style.display !== 'none') {
-        document.getElementById('ai-brief-header-text').innerText = t.briefTitle;
+        document.getElementById('ai-brief-header-text').innerText = labels.briefTitle;
       }
 
-      document.getElementById('search-input').placeholder = t.search;
-      document.getElementById('chart-text').innerText = t.progress;
-
-      // Refresh dropdown names if they exist in DOM
       renderDropdowns();
 
       // Trigger data reload if language changed or first load
       if (prevLang !== l) {
         document.getElementById("loader").style.display = "flex";
-        document.getElementById("loading-msg").innerText = t.loading;
-        loadData();
+        document.getElementById("loading-msg").innerText = labels.loading;
+        await loadData();
       } else if (store) {
         render(store);
       }
-    }
+    };
 
     window.setView = setView;
     function setView(v) {
@@ -3144,7 +3270,7 @@
       document.getElementById('modal-body').innerHTML = `
     <div class="modal-header">
       <div style="display:flex; justify-content:space-between; align-items:start">
-        <h3 style="margin:0">${r[headers[0]]}</h3>
+        <h3 style="margin:0">${t(r[headers[0]])}</h3>
         <span style="font-size:0.6rem;background:var(--bg);padding:4px 10px;border-radius:6px;font-weight:bold;color:var(--primary)">${dispProg}% DONE</span>
       </div>
       <div style="margin-top:20px; text-align:center">
@@ -4257,12 +4383,12 @@
           tbody += `<td>
             <div style="display:flex; align-items:center; gap:8px;">
               ${renderMiniChart(annualPerc, true)} 
-              <button class="icon-btn" onclick="event.stopPropagation(); showInChartView('${name.replace(/'/g, "\\'")}')" title="Show in Chart View" style="width:24px; height:24px; font-size:0.7rem; padding:0; border-radius:6px; flex-shrink:0;">📊</button>
-              <button class="icon-btn" onclick="event.stopPropagation(); copyDeepLink('${name.replace(/'/g, "\\'")}')" title="Copy Deep Link" style="width:24px; height:24px; font-size:0.7rem; padding:0; border-radius:6px; flex-shrink:0;">🔗</button>
+              <button class="icon-btn" onclick="event.stopPropagation(); showInChartView('${name.replace(/'/g, "\\'")}')" data-title="${t.showInChartView}" style="width:24px; height:24px; font-size:0.7rem; padding:0; border-radius:6px; flex-shrink:0;">📊</button>
+              <button class="icon-btn" onclick="event.stopPropagation(); copyDeepLink('${name.replace(/'/g, "\\'")}')" data-title="${t.copyDeepLink}" style="width:24px; height:24px; font-size:0.7rem; padding:0; border-radius:6px; flex-shrink:0;">🔗</button>
             </div>
           </td>`;
           headers.forEach((h, i) => {
-            let val = r[h] ?? "";
+            let val = (i === 0) ? t(r[h]) : (r[h] ?? "");
 
             if (highlightRegex) {
               val = String(val).replace(highlightRegex, '<b>$1</b>');
@@ -4318,10 +4444,10 @@
           cards += `
             <div class="data-card" data-indicator="${name}" onclick="showModal('${name.replace(/'/g, "\\'")}', this, true)">
               <div style="padding:1rem;background:rgba(0,0,0,0.02);display:flex;justify-content:space-between;align-items:center">
-                <div style="display:flex; align-items:center">${renderMiniChart(annPerc)}<b>${name}</b></div>
+                <div style="display:flex; align-items:center">${renderMiniChart(annPerc)}<b>${t(name)}</b></div>
                 <div style="display:flex; align-items:center; gap:6px">
                   <span style="font-size:0.7rem;background:${annColor};color:white;padding:2px 8px;border-radius:4px;font-weight:bold;">${dispAnn}%</span>
-                  <button class="icon-btn" onclick="event.stopPropagation(); showInChartView('${name.replace(/'/g, "\\'")}')" title="Show in Chart View" style="width:24px; height:24px; font-size:0.7rem; padding:0; border-radius:6px">📊</button>
+                  <button class="icon-btn" onclick="event.stopPropagation(); showInChartView('${name.replace(/'/g, "\\'")}')" data-title="${t.showInChartView}" style="width:24px; height:24px; font-size:0.7rem; padding:0; border-radius:6px">📊</button>
                 </div>
               </div>
               <div style="padding:1rem">
@@ -4366,10 +4492,10 @@
           chartHtml += `
       <div class="chart-card" data-indicator="${name}" onclick="showModal('${name.replace(/'/g, "\\'")}', this, true)" style="cursor:pointer">
         <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px">
-          <b style="font-size:0.9rem">${name}</b>
+          <b style="font-size:0.9rem">${t(name)}</b>
           <div style="display:flex; align-items:center; gap:6px">
             <span style="font-size:0.75rem; font-weight:800; color:${color}">${dispProg}%</span>
-            <button class="icon-btn" onclick="event.stopPropagation(); showInCardView('${name.replace(/'/g, "\\'")}')" title="Show in Card View" style="width:24px; height:24px; font-size:0.7rem; padding:0; border-radius:6px">🗂️</button>
+            <button class="icon-btn" onclick="event.stopPropagation(); showInCardView('${name.replace(/'/g, "\\'")}')" data-title="${t.showInCardView}" style="width:24px; height:24px; font-size:0.7rem; padding:0; border-radius:6px">🗂️</button>
           </div>
         </div>
         <div class="chart-bar-container">
@@ -4480,14 +4606,14 @@
       }
     };
 
-     // Initialize App via Security Handshake
-     setupSecurity();
-     
-     // Mobile: default to card view (better for small screens)
-     if (window.innerWidth < 768 && currentView === 'table') {
-       setView('cards');
-     }
-   </script>
+    // Initialize App via Security Handshake
+    setupSecurity();
+
+    // Mobile: default to card view (better for small screens)
+    if (window.innerWidth < 768 && currentView === 'table') {
+      setView('cards');
+    }
+  </script>
 </body>
 
 </html>

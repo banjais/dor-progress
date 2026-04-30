@@ -51,6 +51,7 @@ header h2{margin:0;font-size:1rem;display:flex;align-items:center;gap:10px;font-
 .search-container i{position:absolute;left:15px;top:11px;opacity:.5}
 .toggle-group{background:var(--bg);padding:4px;border-radius:10px;display:flex;gap:3px}
 .toggle-btn{background:var(--surface);border:none;color:var(--text-light);padding:8px 16px;border-radius:8px;font-size:.75rem;font-weight:700;cursor:pointer;transition:all .2s cubic-bezier(.4,0,.2,1);-webkit-font-smoothing:auto;text-rendering:optimizeLegibility}
+.toggle-btn.active{background:var(--primary);color:#fff;box-shadow:0 2px 4px rgba(0,0,0,0.1)}
 .icon-btn{background:var(--surface);border:1px solid var(--border);width:34px;height:34px;display:flex;align-items:center;justify-content:center;border-radius:10px;cursor:pointer;font-size:1.1rem;-webkit-font-smoothing:auto;text-rendering:optimizeLegibility}
 .status-btn{background:var(--primary-dark);border:none;color:#fff;width:32px;height:32px;border-radius:50%;display:flex;align-items:center;justify-content:center;cursor:pointer;font-size:.85rem;transition:all .2s;-webkit-font-smoothing:auto;text-rendering:optimizeLegibility}
 #loader{position:fixed;inset:0;background:var(--bg);display:flex;justify-content:center;align-items:center;z-index:1000}
