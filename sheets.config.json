@@ -1,0 +1,134 @@
+{
+  "_comment": "Sheet Display Configuration for DoR MIS Dashboard. Add new sheets here — the app will auto-discover columns from the sheet itself, this file only controls HOW they are displayed.",
+
+  "sheets": [
+    {
+      "id": "main",
+      "sheetId": "1ohBXufi7WEvKVAdMavbM5ZQfWnjxveFxgR0FJZf4EJM",
+      "publishedId": "__FROM_ENV_PUBLISHED_SHEET_ID__",
+      "range": "Dashboard",
+      "label": {
+        "ne": "मुख्य ड्यासबोर्ड",
+        "en": "Main Dashboard"
+      },
+      "enabled": true,
+
+      "columns": [
+        {
+          "key_ne": "सूचक",
+          "key_en": "Indicator",
+          "type": "text",
+          "showInCard": true,
+          "showInTable": true,
+          "isPrimary": true,
+          "width": "wide"
+        },
+        {
+          "key_ne": "SDG संकेत",
+          "key_en": "SDG Code",
+          "type": "text",
+          "showInCard": false,
+          "showInTable": true,
+          "width": "narrow"
+        },
+        {
+          "key_ne": "समीक्षा अवधि",
+          "key_en": "Review Period",
+          "type": "text",
+          "showInCard": false,
+          "showInTable": true,
+          "width": "narrow"
+        },
+        {
+          "key_ne": "भार",
+          "key_en": "Weightage",
+          "type": "number",
+          "showInCard": false,
+          "showInTable": true,
+          "width": "narrow"
+        },
+        {
+          "key_ne": "इकाइ",
+          "key_en": "Unit",
+          "type": "text",
+          "showInCard": true,
+          "showInTable": true,
+          "width": "narrow"
+        },
+        {
+          "key_ne": "वेशलाइन",
+          "key_en": "Baseline",
+          "type": "number",
+          "showInCard": false,
+          "showInTable": true,
+          "width": "narrow"
+        },
+        {
+          "key_ne": "कुल लक्ष्य",
+          "key_en": "Total Target",
+          "type": "number",
+          "showInCard": true,
+          "showInTable": true,
+          "isTarget": true,
+          "width": "normal"
+        },
+        {
+          "key_ne": "कुल प्रगति",
+          "key_en": "Total Progress",
+          "type": "number",
+          "showInCard": true,
+          "showInTable": true,
+          "isProgress": true,
+          "width": "normal"
+        },
+        {
+          "key_ne": "बार्षिक लक्ष्य",
+          "key_en": "Annual Target",
+          "type": "number",
+          "showInCard": true,
+          "showInTable": true,
+          "isAnnualTarget": true,
+          "width": "normal"
+        },
+        {
+          "key_ne": "हाल सम्म को बार्षिक प्रगति",
+          "key_en": "Annual Progress to Date",
+          "type": "number",
+          "showInCard": true,
+          "showInTable": true,
+          "isAnnualProgress": true,
+          "width": "normal"
+        }
+      ],
+
+      "display": {
+        "progressBar": {
+          "targetColumn_ne": "बार्षिक लक्ष्य",
+          "targetColumn_en": "Annual Target",
+          "progressColumn_ne": "हाल सम्म को बार्षिक प्रगति",
+          "progressColumn_en": "Annual Progress to Date"
+        },
+        "statusThresholds": {
+          "good": 80,
+          "stable": 50,
+          "critical": 0
+        },
+        "cardMaxColumns": 5
+      }
+    }
+  ],
+
+  "_instructions": {
+    "addNewSheet": "To add a new sheet: copy an object from the 'sheets' array above, change 'id', 'sheetId', 'range', and 'label'. Set 'enabled: true'. The Worker will auto-fetch its columns. Add column display rules in 'columns'. No code changes needed.",
+    "columnTypes": ["text", "number", "percent", "date", "status"],
+    "columnFlags": {
+      "isPrimary": "Used as the row identifier/title",
+      "isTarget": "Used in combined total progress calculations",
+      "isProgress": "Used in combined total progress calculations",
+      "isAnnualTarget": "Used for progress bar and status color calculation",
+      "isAnnualProgress": "Used for progress bar and status color calculation",
+      "showInCard": "Visible in Card view",
+      "showInTable": "Visible in Table view"
+    }
+  }
+}

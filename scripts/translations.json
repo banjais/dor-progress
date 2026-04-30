@@ -1,0 +1,26 @@
+{
+    "en": {
+        "indicator": "Indicator",
+        "sdg_code": "SDG Code",
+        "review_period": "Review Period",
+        "weight": "Weight",
+        "unit": "Unit",
+        "baseline": "Baseline",
+        "total_target": "Total Target",
+        "total_progress": "Total Progress",
+        "annual_target": "Annual Target",
+        "annual_progress": "Annual Progress to Date"
+    },
+    "ne": {
+        "indicator": "सूचक",
+        "sdg_code": "SDG संकेत",
+        "review_period": "समीक्षा अवधि",
+        "weight": "भार",
+        "unit": "इकाइ",
+        "baseline": "वेशलाइन",
+        "total_target": "कुल लक्ष्य",
+        "total_progress": "कुल प्रगति",
+        "annual_target": "बार्षिक लक्ष्य",
+        "annual_progress": "हाल सम्म को बार्षिक प्रगति"
+    }
+}

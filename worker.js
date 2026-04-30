@@ -2,6 +2,29 @@ import { jwtVerify, createRemoteJWKSet } from 'jose';
 
 const JWKS = createRemoteJWKSet(new URL('https://firebaseappcheck.googleapis.com/v1/jwks'));
 
+/**
+ * Sheets Config: Loaded from sheets.config.json committed in the repo.
+ * This is the URL of the raw file on the default branch.
+ * When a new sheet is added to sheets.config.json, the Worker picks it up automatically.
+ */
+const SHEETS_CONFIG_URL = 'https://raw.githubusercontent.com/banjais/dor-progress/main/sheets.config.json';
+
+/** In-memory cache for the sheets config (per Worker invocation) */
+let _sheetsConfigCache = null;
+
+async function getSheetsConfig() {
+  if (_sheetsConfigCache) return _sheetsConfigCache;
+  try {
+    const res = await fetch(SHEETS_CONFIG_URL, { cf: { cacheTtl: 300 } });
+    if (!res.ok) throw new Error(`Config fetch failed: ${res.status}`);
+    _sheetsConfigCache = await res.json();
+    return _sheetsConfigCache;
+  } catch (e) {
+    console.error('[SheetsConfig] Failed to load sheets.config.json:', e.message);
+    return null;
+  }
+}
+
 // World-class Static Translation Dictionary for DoR Progress Indicators
 const TRANSLATIONS = {
   // Headers
@@ -266,49 +289,117 @@ export default {
       });
     }
 
-    const SHEET_ID = "1ohBXufi7WEvKVAdMavbM5ZQfWnjxveFxgR0FJZf4EJM";
-    const SHEET_RANGE = "Dashboard";
+    // ─── SHEETS CONFIG ENDPOINT ──────────────────────────────────────────────
+    // Serves the sheets.config.json to the frontend so it knows how to render columns.
+    if (url.pathname.endsWith('/api/sheets-config')) {
+      const config = await getSheetsConfig();
+      if (!config) {
+        return new Response(JSON.stringify({ error: 'sheets.config.json could not be loaded' }), {
+          status: 503,
+          headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' }
+        });
+      }
+      return new Response(JSON.stringify(config), {
+        headers: {
+          'Content-Type': 'application/json',
+          'Cache-Control': 'public, max-age=300',
+          'Access-Control-Allow-Origin': '*'
+        }
+      });
+    }
+
     const API_KEY = env.GOOGLE_SHEETS_API_KEY;
     const DOR_LOGO = "/logo.png";
+
+    // PDF endpoint — uses dynamic sheetId from config
+    if (url.pathname === "/api/report.pdf") {
+      const sheetsConfig = await getSheetsConfig();
+      const mainSheet = sheetsConfig?.sheets?.find(s => s.enabled !== false);
+      const PDF_SHEET_ID = mainSheet?.sheetId ?? "1ohBXufi7WEvKVAdMavbM5ZQfWnjxveFxgR0FJZf4EJM";
+      const pdfUrl = `https://docs.google.com/spreadsheets/d/e/${PDF_SHEET_ID}/export?format=pdf&gid=0`;
+      return Response.redirect(pdfUrl, 302);
+    }
 
     const cache = caches.default;
     const cacheKey = new Request(url.toString());
 
-    // PDF endpoint
-    if (url.pathname === "/api/report.pdf") {
-      const pdfUrl = `https://docs.google.com/spreadsheets/d/e/${SHEET_ID}/export?format=pdf&gid=0`;
-      return Response.redirect(pdfUrl, 302);
-    }
-
-    // Main API endpoint - handles both direct and Firebase-rewritten paths
     if (url.pathname === "/api/report" || url.pathname === "/api/dor-progress") {
       const requestedLang = url.searchParams.get("lang") || "ne";
+      const requestedSheetId = url.searchParams.get("sheet") || "main";
 
-      // Check cache (cache by language too)
+      // Dynamically load the sheet definition from sheets.config.json
+      const sheetsConfig = await getSheetsConfig();
+      const sheetDef = sheetsConfig?.sheets?.find(s => s.id === requestedSheetId && s.enabled !== false)
+        ?? sheetsConfig?.sheets?.find(s => s.enabled !== false);
+
+      const SHEET_ID = sheetDef?.sheetId ?? "1ohBXufi7WEvKVAdMavbM5ZQfWnjxveFxgR0FJZf4EJM";
+      const SHEET_RANGE = sheetDef?.range ?? "Dashboard";
+
+      // Check cache (cache by language + sheet)
       let cached = await cache.match(cacheKey);
       if (cached) return cached;
 
-      // Fetch from Google Sheets API v4
-      if (!API_KEY) {
-        return new Response(JSON.stringify({ error: "GOOGLE_SHEETS_API_KEY not configured" }), {
-          status: 500,
-          headers: { "Content-Type": "application/json" }
-        });
+      /**
+       * DUAL-STRATEGY DATA FETCH
+       * Strategy 1 (Primary):   Sheets API v4 using GOOGLE_SHEETS_API_KEY + sheetId.
+       *                          Returns rich structured JSON. Requires API key.
+       * Strategy 2 (Fallback):  Published CSV link using PUBLISHED_SHEET_ID secret.
+       *                          No API key needed. Works even when API is unavailable.
+       * Auto-detects which to use based on available secrets.
+       */
+      async function fetchSheetValues(sheetId, range, apiKey, publishedId) {
+        // --- Strategy 1: Sheets API v4 ---
+        if (apiKey && sheetId) {
+          try {
+            const apiUrl = `https://sheets.googleapis.com/v4/spreadsheets/${sheetId}/values/${range}!A1:Z100?key=${apiKey}`;
+            const res = await fetch(apiUrl);
+            if (res.ok) {
+              const data = await res.json();
+              console.log(`[Sheets] Strategy 1 (API v4) succeeded for sheet: ${sheetId}`);
+              return { values: data.values || [], strategy: 'api-v4' };
+            }
+            console.warn(`[Sheets] Strategy 1 failed (${res.status}), falling back to CSV...`);
+          } catch (e) {
+            console.warn('[Sheets] Strategy 1 exception:', e.message);
+          }
+        }
+
+        // --- Strategy 2: Published CSV Fallback ---
+        if (publishedId) {
+          try {
+            const csvUrl = `https://docs.google.com/spreadsheets/d/e/${publishedId}/pub?output=csv&gid=0`;
+            const res = await fetch(csvUrl);
+            if (res.ok) {
+              const csvText = await res.text();
+              // Parse CSV into values[][] format (same as Sheets API v4)
+              const values = csvText.trim().split('\n').map(line =>
+                line.split(',').map(cell => cell.replace(/^"|"$/g, '').trim())
+              );
+              console.log(`[Sheets] Strategy 2 (Published CSV) succeeded for publishedId: ${publishedId}`);
+              return { values, strategy: 'published-csv' };
+            }
+          } catch (e) {
+            console.warn('[Sheets] Strategy 2 exception:', e.message);
+          }
+        }
+
+        return { values: [], strategy: 'none' };
       }
 
-      // Fetch a larger range to ensure we find headers even if rows are added at top
-      const apiUrl = `https://sheets.googleapis.com/v4/spreadsheets/${SHEET_ID}/values/${SHEET_RANGE}!A1:Z100?key=${API_KEY}`;
-      const res = await fetch(apiUrl);
+      const { values, strategy } = await fetchSheetValues(
+        SHEET_ID,
+        SHEET_RANGE,
+        API_KEY,
+        env.PUBLISHED_SHEET_ID
+      );
 
-      if (!res.ok) {
-        return new Response(JSON.stringify({ error: `Sheets API error: ${res.status}` }), {
-          status: 500,
-          headers: { "Content-Type": "application/json" }
-        });
+      if (!values.length) {
+        return new Response(JSON.stringify({
+          error: 'Could not fetch sheet data. Both API key and published CSV strategies failed.',
+          strategies_tried: ['api-v4', 'published-csv']
+        }), { status: 503, headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' } });
       }
 
-      const sheetData = await res.json();
-      const values = sheetData.values || [];
 
       // 1. Dynamic Header Discovery: Find the first row that looks like a header (>= 3 non-empty cells)
       const headerRowIdx = values.findIndex(row => row.filter(cell => String(cell || "").trim().length > 0).length >= 3);

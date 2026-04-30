@@ -82,8 +82,8 @@ header h2{margin:0;font-size:1rem;display:flex;align-items:center;gap:10px;font-
   #btn-cards { display: none !important; }
   #view-table { display: block !important; }
   #view-cards { display: none !important; }
-  /* Show first 6 columns, hide others */
-  th:nth-child(n+7), td:nth-child(n+7) { display: none; }
+  /* Enable horizontal scroll for 10-column table on tablets instead of hiding */
+  .table-wrapper { overflow-x: auto; -webkit-overflow-scrolling: touch; }
   .icon-btn, .status-btn { width: 38px !important; height: 38px !important; }
 }
 `;
@@ -92,7 +92,7 @@ const nonCriticalCss = fullCss.replace(criticalCss, '').replace(/^\s*\n/mg, '');
 
 html = html.replace(/<style>[\s\S]*?<\/style>/, `<style>${criticalCss}</style>`);
 
-console.log(`   CSS: ${Math.round(fullCss.length/1024)} KB → critical ${Math.round(criticalCss.length/1024)} KB + deferred ${Math.round(nonCriticalCss.length/1024)} KB`);
+console.log(`   CSS: ${Math.round(fullCss.length / 1024)} KB → critical ${Math.round(criticalCss.length / 1024)} KB + deferred ${Math.round(nonCriticalCss.length / 1024)} KB`);
 
 // ============================================
 // 2. Extract JavaScript
@@ -108,7 +108,7 @@ if (!fullJs) {
 
 // Write external JS file
 fs.writeFileSync(path.join(buildDir, 'app.js'), fullJs);
-console.log(`   JS: ${Math.round(fullJs.length/1024)} KB → app.js`);
+console.log(`   JS: ${Math.round(fullJs.length / 1024)} KB → app.js`);
 
 // Replace entire inline script block with external reference
 html = html.replace(
@@ -183,10 +183,10 @@ for (const f of files) {
   const s = fs.statSync(path.join(buildDir, f)).size;
   total += s;
   if (f !== '_inline.js' && f !== 'tsconfig.tsbuildinfo') {
-    console.log(`   ${f.padStart(30)} ${(s/1024).toFixed(1)} KB`);
+    console.log(`   ${f.padStart(30)} ${(s / 1024).toFixed(1)} KB`);
   }
 }
-console.log(`   ${'Total:'.padEnd(30)} ${(total/1024).toFixed(1)} KB`);
+console.log(`   ${'Total:'.padEnd(30)} ${(total / 1024).toFixed(1)} KB`);
 
 console.log('\n✨ Hybrid build complete!\n');
 console.log('Next: npm run deploy:hosting or npm run deploy\n');
