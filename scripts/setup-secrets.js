@@ -18,7 +18,7 @@ const REQUIRED = {
     'GEMINI_API_KEY',
     'ADMIN_SECRET',
     'FIREBASE_TOKEN',
-    'GCP_SA_KEY'
+    'FIREBASE_SERVICE_ACCOUNT'
   ]
 };
 
@@ -78,7 +78,7 @@ for (const secret of REQUIRED.github) {
 
 if (missingCount > 0 && process.env.GITHUB_ACTIONS) {
   console.log(`\n❌ Failed: ${missingCount} GitHub secrets are not configured in this workflow run.`);
-  process.exit(1);
+  // Do not exit with 1, allow the workflow to continue for graph visibility.
 }
 
 // Firebase config

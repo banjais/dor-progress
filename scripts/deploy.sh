@@ -48,9 +48,9 @@ npm run build
 
 # 7. Real-Time Local Deployment
 echo "🔥 Deploying to Firebase Hosting..."
-if [ -n "$GCP_SA_KEY" ]; then
+if [ -n "$FIREBASE_SERVICE_ACCOUNT" ]; then
     # Preferred: Use Service Account Key
-    echo "$GCP_SA_KEY" > sa_key.json
+    echo "$FIREBASE_SERVICE_ACCOUNT" > sa_key.json
     GOOGLE_APPLICATION_CREDENTIALS=sa_key.json npx firebase deploy --only hosting --project dor-progress --force --public .build
     rm sa_key.json
 else
