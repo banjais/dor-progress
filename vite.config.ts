@@ -36,8 +36,9 @@ export default defineConfig({
     }
   ],
   define: {
-    'import.meta.env.VITE_API_BASE_URL': JSON.stringify(process.env.API_BASE_URL || ''),
-    'import.meta.env.VITE_BUILD_ID': JSON.stringify('vite-dev'),
-    'import.meta.env.VITE_COMMIT_SHA': JSON.stringify('dev'),
+    'import.meta.env.VITE_API_BASE_URL': JSON.stringify('https://dor-progress.banjays.workers.dev'),
+    'import.meta.env.VITE_BUILD_ID': JSON.stringify(new Date().toISOString()),
+    'import.meta.env.VITE_COMMIT_SHA': JSON.stringify('production'),
   }
+
 });
