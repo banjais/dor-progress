@@ -1,6 +1,6 @@
 {
   "name": "dor-progress",
-  "version": "1.0.92",
+  "version": "1.0.93",
   "type": "module",
   "scripts": {
     "// === DEVELOPMENT ===": "",
@@ -29,7 +29,7 @@
     "typecheck": "tsc --noEmit",
     "test": "bash -c 'if [ -f .dev.vars ]; then while IFS= read -r line || [ -n \"$line\" ]; do if [[ \"$line\" =~ ^[A-Za-z_][A-Za-z0-9_]*= ]]; then export \"$line\"; fi; done < .dev.vars; fi && vitest run'",
     "test:watch": "vitest",
-    "security-check": "npm audit --audit-level=high && npm run secrets",
+    "security-check": "npm audit --audit-level=high && bash ./scripts/verify-no-secrets.sh",
     "secrets": "node scripts/check-secrets.js",
     "secrets:setup": "node scripts/setup-secrets.js",
     "// === VERSIONING ===": "",

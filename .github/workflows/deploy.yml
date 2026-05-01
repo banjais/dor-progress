@@ -83,6 +83,7 @@ jobs:
       SMTP_USERNAME: ${{ secrets['SMTP_USERNAME'] }}
       SMTP_PASSWORD: ${{ secrets['SMTP_PASSWORD'] }}
       ALERT_RECIPIENT_EMAIL: ${{ secrets['ALERT_RECIPIENT_EMAIL'] }}
+      API_BASE_URL: ${{ secrets.API_BASE_URL }}
     outputs:
       version: ${{ steps.version.outputs.version }}
       commit_msg: ${{ steps.commit_msg.outputs.msg }}
@@ -194,8 +195,14 @@ jobs:
       - name: 🔗 API Base URL
         id: api_url
         run: |
-          URL="https://dor-progress.banjays.workers.dev"
-          if [[ ! "$URL" =~ ^https://[a-zA-Z0-9.-]+(/[a-zA-Z0-9._~:/?#\[\]@!$&*+,;=-]*)?$ ]] || [[ "$URL" =~ [<>"\'|;()] ]]; then
+          URL="$API_BASE_URL"
+          if [ -z "$URL" ]; then
+            echo "❌ API_BASE_URL secret is not set"
+            exit 1
+          fi
+          safe_regex='^https://[a-zA-Z0-9.-]+(/[a-zA-Z0-9._~:/?#\[\]@!$&*+,;=-]*)?$'
+          dangerous="[<>\"'|;()]"
+          if [[ ! "$URL" =~ $safe_regex ]] || [[ "$URL" =~ $dangerous ]]; then
             echo "❌ Invalid or dangerous API_BASE_URL detected: $URL"
             exit 1
           fi
