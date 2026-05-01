@@ -5,30 +5,7 @@
 
 import { PDFDocument, rgb, StandardFonts } from 'pdf-lib';
 import { Tiktoken } from 'js-tiktoken/lite';
-
-/**
- * Interface for environment bindings.
- */
-interface Env {
-    // Bindings and Vars from wrangler.toml
-    TRANSLATION_KV: KVNamespace;
-
-    // Secrets (Managed via 'npx wrangler secret put')
-    UPSTASH_REDIS_REST_URL: string;
-    UPSTASH_REDIS_REST_TOKEN: string;
-    GEMINI_API_KEY: string;
-    ADMIN_SECRET: string;
-    FIREBASE_PROJECT_ID: string;
-
-    // Optional Firebase fields (future use)
-    FIREBASE_STORAGE_BUCKET?: string;
-    FIREBASE_MESSAGING_SENDER_ID?: string;
-
-    // Build metadata (passed as vars)
-    BUILD_ID: string;
-    COMMIT_SHA: string;
-    DEPLOY_TIMESTAMP: string;
-}
+import { Env } from './shared/types';
 
 /**
  * Official Branding Constants from dor.gov.np
@@ -87,6 +64,21 @@ const CIRCUIT_BREAKER_KEY = "system:circuit_open";
 const FAIL_THRESHOLD = 5;
 const COOL_OFF_SECONDS = 600; // 10 minutes
 
+// App Check Ban Constants
+const APP_CHECK_FAIL_COUNT_KEY_PREFIX = "appcheck:fail_count:";
+const APP_CHECK_FAIL_THRESHOLD = 5; // Number of App Check failures before an IP is banned
+const BANNED_IP_KEY_PREFIX = "appcheck:banned_ip:";
+const BAN_DURATION_SECONDS = 3600; // 1 hour ban
+
+
+/**
+ * In-memory rate limiting (Per-Isolate)
+ * Note: This is local to each Worker isolate and not shared globally across regions.
+ */
+const RATE_LIMIT_MAP = new Map<string, { count: number; reset: number }>();
+const RATE_LIMIT_MAX_REQUESTS = 60; // Max requests per window
+const RATE_LIMIT_WINDOW_MS = 60000; // 1 minute window
+
 /**
  * Check if circuit breaker is open (Gemini repeatedly failing)
  */
@@ -119,6 +111,35 @@ async function recordGeminiFailure(env: Env): Promise<void> {
 }
 
 /**
+ * Records an App Check failure for an IP and potentially bans it.
+ */
+async function recordAppCheckFailure(ip: string, env: Env, ctx: ExecutionContext): Promise<void> {
+    const failCountKey = APP_CHECK_FAIL_COUNT_KEY_PREFIX + ip;
+    const bannedIpKey = BANNED_IP_KEY_PREFIX + ip;
+
+    // Increment failure count
+    const currentCountStr = await env.TRANSLATION_KV.get(failCountKey);
+    let currentCount = currentCountStr ? parseInt(currentCountStr, 10) : 0;
+    currentCount++;
+
+    // Store updated count with a short expiration (e.g., 10 minutes)
+    ctx.waitUntil(env.TRANSLATION_KV.put(failCountKey, currentCount.toString(), { expirationTtl: COOL_OFF_SECONDS }));
+
+    // If threshold reached, ban the IP
+    if (currentCount >= APP_CHECK_FAIL_THRESHOLD) {
+        ctx.waitUntil(env.TRANSLATION_KV.put(bannedIpKey, "true", { expirationTtl: BAN_DURATION_SECONDS }));
+        console.warn(`IP ${ip} banned for ${BAN_DURATION_SECONDS}s due to ${currentCount} App Check failures.`);
+    }
+}
+
+/**
+ * Checks if an IP is currently banned.
+ */
+async function isIpBanned(ip: string, env: Env): Promise<boolean> {
+    return (await env.TRANSLATION_KV.get(BANNED_IP_KEY_PREFIX + ip)) === "true";
+}
+
+/**
  * Cache key generator (hash-like to avoid huge keys)
  */
 function makeCacheKey(text: string, targetLang: string): string {
@@ -138,8 +159,9 @@ function makeCacheKey(text: string, targetLang: string): string {
 export async function translateWithGemini(
     text: string,
     targetLang: string,
-    env: Env
-): Promise<{ translated: string; source: "dictionary" | "gemini" | "cache" | "fallback" | "circuit-breaker" }> {
+    env: Env,
+    lowData: boolean = false
+): Promise<{ translated: string; source: "dictionary" | "gemini" | "cache" | "fallback" | "circuit-breaker" | "low-data" }> {
     // 1. Circuit breaker check
     if (await isCircuitBreakerOpen(env)) {
         return { translated: text, source: "circuit-breaker" };
@@ -172,7 +194,12 @@ export async function translateWithGemini(
         }
     }
 
-    // 4. Gemini AI translation (if key configured)
+    // 4. Low-data mode check: skip Gemini and return original text
+    if (lowData) {
+        return { translated: text, source: "low-data" };
+    }
+
+    // 5. Gemini AI translation (if key configured)
     if (!env.GEMINI_API_KEY || env.GEMINI_API_KEY.trim().length === 0) {
         // No Gemini configured — return original text
         return { translated: text, source: "fallback" };
@@ -274,6 +301,15 @@ export default {
         // Normalize path (remove trailing slashes) for consistent routing
         const normalizedPath = url.pathname.replace(/\/+$/, '');
 
+        // --- Immediate IP Ban Check (First Line of Defense) ---
+        if (await isIpBanned(clientIp, env)) {
+            return new Response(JSON.stringify({ error: "Access Denied: Your IP has been temporarily banned due to suspicious activity." }), {
+                status: 403,
+                headers: { ...securityHeaders, "Content-Type": "application/json" }
+            });
+        }
+
+
         // Diagnostic: log the incoming path (remove after testing)
         // console.log(`[dor-progress] path="${url.pathname}" normalized="${normalizedPath}"`);
 
@@ -298,7 +334,10 @@ export default {
             }
         }
 
-        const isLimited = !normalizedPath.startsWith('/api/admin/') && await this.checkRateLimit(clientIp, env);
+        // --- Global L1 Protection (IP-based) ---
+        // We only run the fast Memory check (L1) globally to shield the worker
+        const isLimited = !normalizedPath.startsWith('/api/admin/') &&
+            await this.checkRateLimit(clientIp, env, ctx, "L1");
         if (isLimited) {
             return new Response(JSON.stringify({ error: "Too Many Requests: Rate limit exceeded." }), {
                 status: 429,
@@ -312,10 +351,12 @@ export default {
                 return new Response("Unauthorized", { status: 401, headers: securityHeaders });
             }
             if (normalizedPath === '/api/admin/config-check') {
+                // List all critical environment variables to check their loading status
                 const keys: (keyof Env)[] = [
                     'TRANSLATION_KV', 'UPSTASH_REDIS_REST_URL', 'UPSTASH_REDIS_REST_TOKEN',
                     'GEMINI_API_KEY', 'ADMIN_SECRET', 'FIREBASE_PROJECT_ID',
-                    'BUILD_ID', 'COMMIT_SHA', 'DEPLOY_TIMESTAMP'
+                    'FIREBASE_API_KEY', 'FIREBASE_AUTH_DOMAIN', 'FIREBASE_APP_ID', 'FIREBASE_MESSAGING_SENDER_ID',
+                    'BUILD_ID', 'COMMIT_SHA', 'DEPLOY_TIMESTAMP',
                 ];
                 const results: Record<string, any> = {};
                 for (const k of keys) {
@@ -331,7 +372,7 @@ export default {
                     }
                 }
 
-                // 2. Live Infrastructure Health Check
+                // 2. Live Infrastructure Connectivity Health Checks
                 const health: Record<string, string> = { status: "OPERATIONAL" };
                 try {
                     await env.TRANSLATION_KV.put("system:health_ping", Date.now().toString(), { expirationTtl: 60 });
@@ -340,6 +381,16 @@ export default {
 
                 const redisTest = await this.getRedisCache("system:health_ping", env);
                 health.redis = redisTest !== "CONFIG_ERROR" && redisTest !== null ? "CONNECTED" : "DISCONNECTED";
+
+                // Firebase App Check JWKS connectivity test
+                if (env.FIREBASE_PROJECT_ID) {
+                    try {
+                        const fbJwksProbe = await fetch(`https://firebaseappcheck.googleapis.com/v1/jwks`);
+                        health.firebaseAppCheckJwks = fbJwksProbe.ok ? "CONNECTED" : `FAILED (${fbJwksProbe.status})`;
+                    } catch (e) {
+                        health.firebaseAppCheckJwks = "UNREACHABLE";
+                    }
+                } else { health.firebaseAppCheckJwks = "SKIPPED (FIREBASE_PROJECT_ID not set)"; }
 
                 // Free TTS Connectivity Probe
                 try {
@@ -366,8 +417,32 @@ export default {
 
         // Public API: Translation endpoint
         if (normalizedPath === '/api/translate') {
+            // 1. Verify Firebase App Check token to prevent unauthorized API usage
+            const appCheckToken = request.headers.get("X-Firebase-AppCheck");
+            const verification = await verifyAppCheckToken(appCheckToken, env, ctx);
+
+            if (!verification.valid) {
+                ctx.waitUntil(recordAppCheckFailure(clientIp, env, ctx)); // Record failure
+                return new Response(JSON.stringify({ error: "Unauthorized: App Check verification failed." }), {
+                    status: 401,
+                    headers: { ...securityHeaders, "Content-Type": "application/json" }
+                });
+            }
+
+            // 2. Identity-Aware Rate Limiting (L2 - Global)
+            // Use the App ID from the token as the Redis key instead of IP
+            const isAppLimited = await this.checkRateLimit(verification.appId || clientIp, env, ctx, "L2");
+            if (isAppLimited) {
+                return new Response(JSON.stringify({ error: "Rate limit exceeded for this app instance." }), {
+                    status: 429,
+                    headers: { ...securityHeaders, "Content-Type": "application/json" }
+                });
+            }
+
             const text = url.searchParams.get('text');
             const targetLang = url.searchParams.get('targetLang') || 'ne';
+            // Check for custom X-Low-Data header or standard Save-Data header
+            const lowData = request.headers.get("X-Low-Data") === "true" || request.headers.get("Save-Data") === "on";
 
             if (!text) {
                 return new Response(JSON.stringify({ error: "Missing 'text' query parameter" }), {
@@ -387,7 +462,7 @@ export default {
             }
 
             // Perform translation
-            const result = await translateWithGemini(text, targetLang, env);
+            const result = await translateWithGemini(text, targetLang, env, lowData);
 
             // Set rate limit cache (1 minute) — only if not circuit-broken
             if (result.source !== 'circuit-breaker') {
@@ -409,8 +484,56 @@ export default {
         return new Response("DoR API Operational", { headers: securityHeaders });
     },
 
-    async checkRateLimit(clientIp: string, env: Env): Promise<boolean> {
-        // Rate limiting disabled – Durable Objects not available
+    // Cron Trigger for JWKS caching (already implemented)
+    /**
+     * Cron Trigger: Proactively refreshes JWKS cache to handle rotation 
+     * without impacting user request latency.
+     */
+    async scheduled(event: ScheduledEvent, env: Env, ctx: ExecutionContext): Promise<void> {
+        const response = await fetch("https://firebaseappcheck.googleapis.com/v1/jwks");
+        const jwks = await response.json();
+        await env.TRANSLATION_KV.put("system:firebase_jwks", JSON.stringify(jwks), {
+            expirationTtl: 86400, // Hard expiry after 24h
+            metadata: { created: Date.now() }
+        });
+    },
+
+    async checkRateLimit(id: string, env: Env, ctx: ExecutionContext, tier: "L1" | "L2" | "both" = "both"): Promise<boolean> {
+        const now = Date.now();
+
+        // Tier 1: Memory (Fast Shield)
+        if (tier === "L1" || tier === "both") {
+            if (RATE_LIMIT_MAP.size > 10000) RATE_LIMIT_MAP.clear();
+            const record = RATE_LIMIT_MAP.get(id);
+            if (record && now < record.reset && record.count > RATE_LIMIT_MAX_REQUESTS) {
+                return true;
+            }
+            if (!record || now > record.reset) {
+                RATE_LIMIT_MAP.set(id, { count: 1, reset: now + RATE_LIMIT_WINDOW_MS });
+            } else {
+                record.count++;
+            }
+        }
+
+        // Tier 2: Redis (Global Identity-based Guard)
+        if (tier === "L2" || tier === "both") {
+            const windowKey = Math.floor(now / 60000);
+            const redisKey = `rate:global:${id}:${windowKey}`;
+
+            // Increment global counter
+            const globalCount = await this.incrRedis(redisKey, env);
+
+            // Set expiry on first request
+            if (globalCount === 1) {
+                ctx.waitUntil(this.expireRedis(redisKey, 60, env));
+            }
+
+            // Global limit (stricter for L2)
+            if (globalCount !== null && globalCount > 150) {
+                return true;
+            }
+        }
+
         return false;
     },
 
@@ -429,46 +552,114 @@ export default {
         const cmd = ["SET", key, val, "EX", ttl];
         await fetch(`${baseUrl}`, { method: "POST", headers: { Authorization: `Bearer ${env.UPSTASH_REDIS_REST_TOKEN}` }, body: JSON.stringify(cmd) });
     },
+
+    async incrRedis(key: string, env: Env): Promise<number | null> {
+        if (!env.UPSTASH_REDIS_REST_URL) return null;
+        const baseUrl = env.UPSTASH_REDIS_REST_URL.replace(/\/$/, "");
+        const res = await fetch(`${baseUrl}/incr/${key}`, {
+            headers: { Authorization: `Bearer ${env.UPSTASH_REDIS_REST_TOKEN}` }
+        });
+        if (!res.ok) return null;
+        const data = await res.json() as { result: number };
+        return data.result;
+    },
+
+    async expireRedis(key: string, ttl: number, env: Env): Promise<void> {
+        if (!env.UPSTASH_REDIS_REST_URL) return;
+        const baseUrl = env.UPSTASH_REDIS_REST_URL.replace(/\/$/, "");
+        await fetch(`${baseUrl}/expire/${key}/${ttl}`, {
+            headers: { Authorization: `Bearer ${env.UPSTASH_REDIS_REST_TOKEN}` }
+        });
+    },
     // ... (Other helpers)
 };
 
-// ... (Logic functions like translateWithGemini, applyBrandingToPdf follow)
+/**
+ * Cryptographically verifies a Firebase App Check token using Web Crypto API.
+ * Caches public keys in KV to ensure low latency.
+ */
+async function verifyAppCheckToken(token: string | null, env: Env, ctx: ExecutionContext): Promise<{ valid: boolean; appId?: string }> {
+    if (!token || !env.FIREBASE_PROJECT_ID) return { valid: false };
 
-async function verifyAppCheckToken(token: string | null, env: Env): Promise<boolean> {
-    if (!token || !env.FIREBASE_PROJECT_ID || token.split('.').length !== 3) return false;
+    const parts = token.split('.');
+    if (parts.length !== 3) return { valid: false };
+
     try {
-        const parts = token.split('.');
+        // 1. Decode Header and Payload
+        const header = JSON.parse(atob(parts[0].replace(/-/g, '+').replace(/_/g, '/')));
         const payload = JSON.parse(atob(parts[1].replace(/-/g, '+').replace(/_/g, '/')));
-        return payload.exp > Date.now() / 1000 && payload.iss === `https://firebaseappcheck.googleapis.com/${env.FIREBASE_PROJECT_ID}`;
-    } catch { return false; }
+
+        // 2. Validate Standard Claims
+        const now = Math.floor(Date.now() / 1000);
+        if (payload.exp < now) return { valid: false };
+
+        // Audience should be projects/<your-project-id>
+        if (payload.aud !== `projects/${env.FIREBASE_PROJECT_ID}`) {
+            // Sometimes audience is just the project ID or number depending on the client
+            if (!payload.aud.includes(env.FIREBASE_PROJECT_ID)) return { valid: false };
+        }
+
+        // 3. Signature Verification
+        const kid = header.kid;
+        if (!kid) return { valid: false };
+
+        // 4. Fetch JWKS with Stale-While-Revalidate (SWR) pattern
+        const jwksKey = "system:firebase_jwks";
+        const { value: cachedJwks, metadata } = await env.TRANSLATION_KV.getWithMetadata<{ created: number }>(jwksKey, "json");
+
+        let jwks = cachedJwks as any;
+        const isStale = !metadata || (Date.now() - metadata.created > 3600000); // Soft expire after 1 hour
+        const kidMissing = !jwks || !jwks.keys.some((k: any) => k.kid === kid);
+
+        // If KID is missing (rotation detected) or cache is empty, fetch blockingly
+        if (kidMissing) {
+            const res = await fetch("https://firebaseappcheck.googleapis.com/v1/jwks");
+            jwks = await res.json();
+            ctx.waitUntil(env.TRANSLATION_KV.put(jwksKey, JSON.stringify(jwks), {
+                expirationTtl: 86400,
+                metadata: { created: Date.now() }
+            }));
+        }
+        // If cache is just stale but usable, use it and refresh in background
+        else if (isStale) {
+            ctx.waitUntil((async () => {
+                const res = await fetch("https://firebaseappcheck.googleapis.com/v1/jwks");
+                const newJwks = await res.json();
+                await env.TRANSLATION_KV.put(jwksKey, JSON.stringify(newJwks), {
+                    expirationTtl: 86400,
+                    metadata: { created: Date.now() }
+                });
+            })());
+        }
+
+        const jwk = jwks.keys.find((k: any) => k.kid === kid);
+        if (!jwk) return { valid: false };
+
+        // Import key into Web Crypto
+        const key = await crypto.subtle.importKey(
+            "jwk",
+            jwk,
+            { name: "RSASSA-PKCS1-v1_5", hash: "SHA-256" },
+            false,
+            ["verify"]
+        );
+
+        // Verify signature
+        const encoder = new TextEncoder();
+        const data = encoder.encode(`${parts[0]}.${parts[1]}`);
+        const signature = Uint8Array.from(atob(parts[2].replace(/-/g, '+').replace(/_/g, '/')), c => c.charCodeAt(0));
+
+        const isValid = await crypto.subtle.verify("RSASSA-PKCS1-v1_5", key, signature, data);
+        // Sub contains the app ID or user ID depending on the token type
+        return { valid: isValid, appId: payload.sub };
+    } catch (e) {
+        console.error("App Check verification failed:", e);
+        return { valid: false };
+    }
 }
 
 function secureCompare(a: string, b: string): boolean {
     if (a.length !== b.length) return false; let r = 0;
     for (let i = 0; i < a.length; i++) r |= a.charCodeAt(i) ^ b.charCodeAt(i);
     return r === 0;
-}
-
-export class RateLimiter {
-    constructor(private state: DurableObjectState) { }
-    async fetch(request: Request) {
-        const url = new URL(request.url);
-
-        // Health Check Probe for Storage Integrity
-        if (url.pathname === '/health_check') {
-            try {
-                await this.state.storage.put("integrity_ping", Date.now());
-                const val = await this.state.storage.get("integrity_ping");
-                return new Response(val ? "OK" : "FAIL");
-            } catch (e) { return new Response("FAIL", { status: 500 }); }
-        }
-
-        let ts: number[] = await this.state.storage.get<number[]>("ts") || [];
-        const now = Date.now();
-        ts = ts.filter(t => now - t < 60000);
-        if (ts.length >= 100) return new Response("Throttled", { status: 429 });
-        ts.push(now);
-        await this.state.storage.put("ts", ts);
-        return new Response("OK");
-    }
 }

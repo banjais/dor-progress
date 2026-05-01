@@ -1,17 +1,19 @@
 {
   "name": "dor-progress",
-  "version": "1.0.80",
+  "version": "1.0.81",
   "type": "module",
   "scripts": {
     "// === DEVELOPMENT ===": "",
-    "dev": "wrangler dev",
+    "dev": "vite",
+    "dev:worker": "wrangler dev",
     "dev:hosting": "firebase emulators:start --only hosting",
-    "dev:all": "concurrently \"npm run dev\" \"npm run dev:hosting\"",
+    "dev:all": "concurrently \"npm run dev\" \"npm run dev:worker\"",
     "// === BUILD ===": "",
-    "build": "node scripts/build-hybrid.js",
+    "build": "vite build",
+    "postbuild": "node scripts/finalize-build.js",
     "build:verify": "node scripts/verify-build.js",
     "// === DEPLOYMENT ===": "",
-    "deploy": "sh deploy.sh",
+    "deploy": "sh scripts/deploy.sh",
     "deploy:all": "npm run deploy:worker && npm run deploy:hosting",
     "deploy:worker": "wrangler deploy",
     "deploy:hosting": "firebase deploy --only hosting --public .build",
@@ -40,7 +42,8 @@
     "status": "git status",
     "logs": "wrangler tail",
     "logs:live": "wrangler tail --format pretty",
-    "info": "node scripts/project-info.js"
+    "info": "tsx scripts/project-info.ts",
+    "prepare": "husky"
   },
   "dependencies": {
     "js-tiktoken": "^1.0.17",
@@ -49,13 +52,21 @@
   "devDependencies": {
     "@cloudflare/workers-types": "^4.20260426.1",
     "@types/node": "^20.12.7",
+    "@typescript-eslint/eslint-plugin": "^8.59.1",
+    "@typescript-eslint/parser": "^8.59.1",
     "concurrently": "^9.0.0",
     "dotenv": "^17.4.2",
     "esbuild": "^0.28.0",
+    "eslint": "^10.2.1",
+    "eslint-plugin-n": "^17.24.0",
+    "husky": "^9.1.7",
     "jose": "^6.2.2",
-    "nodemon": "^3.1.0",
+    "lint-staged": "^16.4.0",
     "sharp": "^0.34.5",
+    "tsx": "^4.21.0",
     "typescript": "^6.0.3",
+    "vite": "^7.3.2",
+    "vite-plugin-checker": "^0.13.0",
     "vitest": "^3.0.5"
   }
 }

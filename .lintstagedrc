@@ -1,0 +1,9 @@
+{
+  "*.ts": [
+    "eslint --fix",
+    "bash -c 'npx tsc --build'"
+  ],
+  "*.js": [
+    "eslint --fix"
+  ]
+}

@@ -1,0 +1,38 @@
+{
+    "root": true,
+    "parser": "@typescript-eslint/parser",
+    "plugins": [
+        "@typescript-eslint",
+        "n"
+    ],
+    "extends": [
+        "eslint:recommended",
+        "plugin:@typescript-eslint/recommended"
+    ],
+    "overrides": [
+        {
+            "files": [
+                "scripts/**/*.ts",
+                "scripts/**/*.js"
+            ],
+            "rules": {
+                "n/file-extension-in-import": [
+                    "error",
+                    "always"
+                ]
+            }
+        },
+        {
+            "files": [
+                "index.ts",
+                "shared/**/*.ts"
+            ],
+            "rules": {
+                "n/file-extension-in-import": [
+                    "error",
+                    "never"
+                ]
+            }
+        }
+    ]
+}

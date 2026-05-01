@@ -15,11 +15,10 @@ id = "d032e134adec47ab85ea1b5a8c18caab"
 # name = "RATE_LIMITER"
 # class_name = "RateLimiter"
 
-# Migrations removed – not needed without Durable Objects
-# [[migrations]]
-# tag = "v2"
-# new_sqlite_classes = ["RateLimiter"]
-# deleted_classes = ["IdempotencyLock"]
+[[migrations]]
+tag = "v3"
+deleted_classes = ["RateLimiter"]
+
 
 [triggers]
 crons = ["0 * * * *"]
