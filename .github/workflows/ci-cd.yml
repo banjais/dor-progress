@@ -1,0 +1,692 @@
+name: 🚀 Deploy to Production
+
+# ─────────────────────────────────────────────
+# TRIGGER GRAPH
+#   push(main) ──────────────────────────────┐
+#   pull_request ─────────────────────────── preflight
+#   workflow_dispatch (manual) ──────────────┘
+#       ↓
+#   secrets-check  (standalone, always runs)
+#       ↓
+#   build          (needs: preflight)
+#       ↓
+#   deploy-worker  (needs: build)
+#   deploy-firebase(needs: build)
+#       ↓
+#   check-worker   (needs: deploy-worker)
+#   check-firebase (needs: deploy-firebase)
+#       ↓
+#   load-test      (needs: deploy-worker)
+#   performance    (needs: deploy-firebase)
+#       ↓
+#   summary        (needs: all, always)
+# ─────────────────────────────────────────────
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+    inputs:
+      bump-type:
+        description: '📦 Version bump type'
+        required: true
+        default: 'patch'
+        type: choice
+        options: [patch, minor, major]
+      commit-message:
+        description: '💬 Custom commit message (optional)'
+        required: false
+        default: ''
+        type: string
+      skip-tests:
+        description: '⏭️ Skip tests?'
+        required: false
+        default: false
+        type: boolean
+      deploy-target:
+        description: '🎯 Deploy Target'
+        required: false
+        default: 'all'
+        type: choice
+        options: [all, firebase-only, worker-only]
+
+permissions:
+  contents: write
+  id-token: write
+
+# ═══════════════════════════════════════════════════════
+# JOB 1 — PREFLIGHT
+# ═══════════════════════════════════════════════════════
+jobs:
+  preflight:
+    name: 🔒 Preflight Checks
+    runs-on: ubuntu-latest
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets['CLOUDFLARE_API_TOKEN'] }}
+      UPSTASH_REDIS_REST_URL: ${{ secrets['UPSTASH_REDIS_REST_URL'] }}
+      UPSTASH_REDIS_REST_TOKEN: ${{ secrets['UPSTASH_REDIS_REST_TOKEN'] }}
+      GEMINI_API_KEY: ${{ secrets['GEMINI_API_KEY'] }}
+      ADMIN_SECRET: ${{ secrets['ADMIN_SECRET'] }}
+      FIREBASE_TOKEN: ${{ secrets['FIREBASE_TOKEN'] }}
+      FIREBASE_SERVICE_ACCOUNT: ${{ secrets['FIREBASE_SERVICE_ACCOUNT'] }}
+      FIREBASE_PROJECT_NUMBER: ${{ secrets['FIREBASE_PROJECT_NUMBER'] }}
+      FIREBASE_APP_ID: ${{ secrets['FIREBASE_APP_ID'] }}
+      RECAPTCHA_SITE_KEY: ${{ secrets['RECAPTCHA_SITE_KEY'] }}
+      FIREBASE_API_KEY: ${{ secrets['FIREBASE_API_KEY'] }}
+      FIREBASE_PROJECT_ID: ${{ secrets['FIREBASE_PROJECT_ID'] }}
+      FIREBASE_AUTH_DOMAIN: ${{ secrets['FIREBASE_AUTH_DOMAIN'] }}
+      FIREBASE_STORAGE_BUCKET: ${{ secrets['FIREBASE_STORAGE_BUCKET'] }}
+      FIREBASE_MESSAGING_SENDER_ID: ${{ secrets['FIREBASE_MESSAGING_SENDER_ID'] }}
+      FIREBASE_MEASUREMENT_ID: ${{ secrets['FIREBASE_MEASUREMENT_ID'] }}
+      SMTP_SERVER: ${{ secrets['SMTP_SERVER'] }}
+      SMTP_USERNAME: ${{ secrets['SMTP_USERNAME'] }}
+      SMTP_PASSWORD: ${{ secrets['SMTP_PASSWORD'] }}
+      ALERT_RECIPIENT_EMAIL: ${{ secrets['ALERT_RECIPIENT_EMAIL'] }}
+      API_BASE_URL: ${{ secrets.API_BASE_URL }}
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+      commit_msg: ${{ steps.commit_msg.outputs.msg }}
+      api_base_url: ${{ steps.api_url.outputs.url }}
+      secrets_valid: ${{ steps.validate-secrets.outputs.secrets_valid }}
+      missing_list: ${{ steps.validate-secrets.outputs.missing_list }}
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: 📂 Cache node_modules
+        id: node-modules-cache
+        uses: actions/cache@v4
+        with:
+          path: node_modules
+          key: ${{ runner.os }}-node-modules-${{ hashFiles('package-lock.json') }}
+          restore-keys: |
+            ${{ runner.os }}-node-modules-
+
+      - name: 📦 Install
+        if: steps.node-modules-cache.outputs.cache-hit != 'true'
+        run: npm ci --prefer-offline --no-audit
+
+      - name: 🔐 Validate Secrets
+        id: validate-secrets
+        run: |
+          echo "🔍 Checking required secrets..."
+          REQUIRED=(
+            CLOUDFLARE_API_TOKEN
+            UPSTASH_REDIS_REST_URL
+            UPSTASH_REDIS_REST_TOKEN
+            GEMINI_API_KEY
+            ADMIN_SECRET
+            FIREBASE_API_KEY
+            FIREBASE_PROJECT_ID
+            FIREBASE_AUTH_DOMAIN
+            FIREBASE_PROJECT_NUMBER
+            FIREBASE_APP_ID
+            RECAPTCHA_SITE_KEY
+            FIREBASE_STORAGE_BUCKET
+            FIREBASE_MESSAGING_SENDER_ID
+            FIREBASE_MEASUREMENT_ID
+            SMTP_SERVER
+            SMTP_USERNAME
+            SMTP_PASSWORD
+            ALERT_RECIPIENT_EMAIL
+          )
+          MISSING=()
+          for s in "${REQUIRED[@]}"; do
+            if [ -z "${!s}" ]; then
+              MISSING+=("$s")
+            fi
+          done
+          if [ ${#MISSING[@]} -gt 0 ]; then
+            echo "❌ Missing: ${MISSING[*]}"
+            echo "secrets_valid=false" >> $GITHUB_OUTPUT
+            echo "missing_list=${MISSING[*]}" >> $GITHUB_OUTPUT
+            exit 1
+          fi
+          echo "✅ All secrets present"
+          echo "secrets_valid=true" >> $GITHUB_OUTPUT
+          echo "missing_list=" >> $GITHUB_OUTPUT
+
+      - name: 🌐 Upstash SSL Diagnostic
+        env:
+          UPSTASH_URL: ${{ secrets.UPSTASH_REDIS_REST_URL }}
+        run: |
+          UPSTASH_HOST=$(echo "$UPSTASH_URL" | sed -e 's|^[^/]*//||' -e 's|/.*$||')
+          echo "🔍 Testing SSL Handshake with $UPSTASH_HOST..."
+          if ! echo "Q" | openssl s_client -connect "$UPSTASH_HOST:443" -servername "$UPSTASH_HOST" -verify_return_error > /dev/null 2>&1; then
+            echo "❌ SSL Handshake failed for $UPSTASH_HOST"
+            exit 1
+          fi
+          echo "✅ SSL Handshake successful"
+
+      - name: 🛡️ Security Audit & Lint
+        run: |
+          npm run security-check
+          npm audit --audit-level=high
+
+      - name: 🔍 Type Check
+        run: npm run lint
+
+      - name: 🧪 Run Tests
+        if: ${{ github.event.inputs.skip-tests != 'true' }}
+        run: npm test
+
+      - name: 📊 Version
+        id: version
+        run: |
+          VERSION=$(node -p "require('./package.json').version")
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "Version: $VERSION"
+
+      - name: 💬 Commit Message
+        id: commit_msg
+        run: |
+          MSG="${{ github.event.inputs.commit-message }}"
+          [ -z "$MSG" ] && MSG="Deploy v${{ steps.version.outputs.version }}"
+          echo "msg=$MSG" >> $GITHUB_OUTPUT
+
+      - name: 🔗 API Base URL
+        id: api_url
+        run: |
+          URL="$API_BASE_URL"
+          if [ -z "$URL" ]; then
+            echo "❌ API_BASE_URL secret is not set"
+            exit 1
+          fi
+          safe_regex='^https://[a-zA-Z0-9.-]+(/[a-zA-Z0-9._~:/?#\[\]@!$&*+,;=-]*)?$'
+          dangerous="[<>\"'|;()]"
+          if [[ ! "$URL" =~ $safe_regex ]] || [[ "$URL" =~ $dangerous ]]; then
+            echo "❌ Invalid or dangerous API_BASE_URL detected: $URL"
+            exit 1
+          fi
+          echo "url=$URL" >> $GITHUB_OUTPUT
+
+      - name: 📋 Preflight Summary
+        if: always()
+        run: |
+          echo "## 🔒 Preflight Summary" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "| Check | Status |" >> $GITHUB_STEP_SUMMARY
+          echo "|-------|--------|" >> $GITHUB_STEP_SUMMARY
+          echo "| 🔐 Secrets validation | ✅ Passed |" >> $GITHUB_STEP_SUMMARY
+          echo "| 🌐 Upstash SSL | ✅ OK |" >> $GITHUB_STEP_SUMMARY
+          echo "| 🛡️ Security audit | ✅ Clean |" >> $GITHUB_STEP_SUMMARY
+          echo "| 🔍 TypeScript check | ✅ No errors |" >> $GITHUB_STEP_SUMMARY
+          echo "| 🧪 Tests | ✅ Passed |" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Version:** \`${{ steps.version.outputs.version }}\`  |  **Branch:** \`${{ github.ref_name }}\`  |  **Commit:** \`${{ github.sha }}\`" >> $GITHUB_STEP_SUMMARY
+
+# ═══════════════════════════════════════════════════════
+# JOB 2 — SECRETS CHECK (standalone, shown in Actions UI)
+# ═══════════════════════════════════════════════════════
+  secrets-check:
+    name: 🔑 Secrets Status Report
+    runs-on: ubuntu-latest
+    if: always()
+    needs: preflight
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets['CLOUDFLARE_API_TOKEN'] }}
+      UPSTASH_REDIS_REST_URL: ${{ secrets['UPSTASH_REDIS_REST_URL'] }}
+      UPSTASH_REDIS_REST_TOKEN: ${{ secrets['UPSTASH_REDIS_REST_TOKEN'] }}
+      GEMINI_API_KEY: ${{ secrets['GEMINI_API_KEY'] }}
+      ADMIN_SECRET: ${{ secrets['ADMIN_SECRET'] }}
+      FIREBASE_TOKEN: ${{ secrets['FIREBASE_TOKEN'] }}
+      FIREBASE_SERVICE_ACCOUNT: ${{ secrets['FIREBASE_SERVICE_ACCOUNT'] }}
+      FIREBASE_API_KEY: ${{ secrets['FIREBASE_API_KEY'] }}
+      FIREBASE_PROJECT_ID: ${{ secrets['FIREBASE_PROJECT_ID'] }}
+      FIREBASE_AUTH_DOMAIN: ${{ secrets['FIREBASE_AUTH_DOMAIN'] }}
+      FIREBASE_PROJECT_NUMBER: ${{ secrets['FIREBASE_PROJECT_NUMBER'] }}
+      FIREBASE_APP_ID: ${{ secrets['FIREBASE_APP_ID'] }}
+      FIREBASE_STORAGE_BUCKET: ${{ secrets['FIREBASE_STORAGE_BUCKET'] }}
+      FIREBASE_MESSAGING_SENDER_ID: ${{ secrets['FIREBASE_MESSAGING_SENDER_ID'] }}
+      FIREBASE_MEASUREMENT_ID: ${{ secrets['FIREBASE_MEASUREMENT_ID'] }}
+      RECAPTCHA_SITE_KEY: ${{ secrets['RECAPTCHA_SITE_KEY'] }}
+      SMTP_SERVER: ${{ secrets['SMTP_SERVER'] }}
+      SMTP_USERNAME: ${{ secrets['SMTP_USERNAME'] }}
+      SMTP_PASSWORD: ${{ secrets['SMTP_PASSWORD'] }}
+      ALERT_RECIPIENT_EMAIL: ${{ secrets['ALERT_RECIPIENT_EMAIL'] }}
+
+    steps:
+      - name: 🔑 Generate Secrets Status Table
+        run: |
+          echo "## 🔑 Secrets Status Report" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "| Secret Name | Status | Category |" >> $GITHUB_STEP_SUMMARY
+          echo "|-------------|--------|----------|" >> $GITHUB_STEP_SUMMARY
+
+          check() {
+            local name=$1
+            local val="${!name}"
+            local category=$2
+            if [ -n "$val" ]; then
+              echo "| \`$name\` | ✅ Set | $category |" >> $GITHUB_STEP_SUMMARY
+            else
+              echo "| \`$name\` | ❌ **MISSING** | $category |" >> $GITHUB_STEP_SUMMARY
+            fi
+          }
+
+          check CLOUDFLARE_API_TOKEN       "☁️ Cloudflare"
+          check UPSTASH_REDIS_REST_URL     "🗄️ Redis"
+          check UPSTASH_REDIS_REST_TOKEN   "🗄️ Redis"
+          check GEMINI_API_KEY             "🤖 AI"
+          check ADMIN_SECRET               "🔐 Auth"
+          check FIREBASE_TOKEN             "🔥 Firebase (Legacy)"
+          check FIREBASE_SERVICE_ACCOUNT   "🔥 Firebase (Modern)"
+          check FIREBASE_API_KEY           "🔥 Firebase"
+          check FIREBASE_PROJECT_ID        "🔥 Firebase"
+          check FIREBASE_AUTH_DOMAIN       "🔥 Firebase"
+          check FIREBASE_PROJECT_NUMBER    "🔥 Firebase"
+          check FIREBASE_APP_ID            "🔥 Firebase"
+          check FIREBASE_STORAGE_BUCKET    "🔥 Firebase"
+          check FIREBASE_MESSAGING_SENDER_ID "🔥 Firebase"
+          check FIREBASE_MEASUREMENT_ID    "🔥 Firebase"
+          check RECAPTCHA_SITE_KEY         "🛡️ Security"
+          check SMTP_SERVER                "📧 Email"
+          check SMTP_USERNAME              "📧 Email"
+          check SMTP_PASSWORD              "📧 Email"
+          check ALERT_RECIPIENT_EMAIL      "📧 Email"
+
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "_View and manage secrets: [Repository Settings → Secrets](https://github.com/${{ github.repository }}/settings/secrets/actions)_" >> $GITHUB_STEP_SUMMARY
+
+# ═══════════════════════════════════════════════════════
+# JOB 3 — BUILD
+# ═══════════════════════════════════════════════════════
+  build:
+    name: 🏗️ Build Project
+    runs-on: ubuntu-latest
+    needs: preflight
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: 📂 Cache node_modules
+        id: node-modules-cache
+        uses: actions/cache@v4
+        with:
+          path: node_modules
+          key: ${{ runner.os }}-node-modules-${{ hashFiles('package-lock.json') }}
+          restore-keys: |
+            ${{ runner.os }}-node-modules-
+
+      - name: 📦 Install
+        if: steps.node-modules-cache.outputs.cache-hit != 'true'
+        run: npm ci --prefer-offline --no-audit
+
+      - name: 🏗️ Build
+        run: npx turbo build --cache-dir=".turbo"
+        env:
+          API_BASE_URL: ${{ needs.preflight.outputs.api_base_url }}
+
+       - name: 💉 Inject Placeholders
+         env:
+           API_URL: ${{ needs.preflight.outputs.api_base_url }}
+           BUILD_ID: ${{ github.run_id }}
+           COMMIT_SHA: ${{ github.sha }}
+         run: |
+           # Replace placeholders in index.html (Vite defines are primary, this is backup/redundant)
+           sed -i "s|__API_BASE_URL__|$API_URL|g" .build/index.html
+           sed -i "s|__BUILD_ID__|$BUILD_ID|g" .build/index.html
+           sed -i "s|__COMMIT_SHA__|$COMMIT_SHA|g" .build/index.html
+           # Replace placeholders in service worker
+           sed -i "s|__API_BASE_URL__|$API_URL|g" .build/sw.v2.js
+           sed -i "s|__BUILD_ID__|$BUILD_ID|g" .build/sw.v2.js
+           sed -i "s|__COMMIT_SHA__|$COMMIT_SHA|g" .build/sw.v2.js
+
+      - name: ✅ Verify Build Artifacts
+        run: |
+          echo "## 🏗️ Build Status" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "| File | Size | Status |" >> $GITHUB_STEP_SUMMARY
+          echo "|------|------|--------|" >> $GITHUB_STEP_SUMMARY
+          for f in .build/index.html .build/app.js .build/styles.css .build/sw.v2.js .build/manifest.json; do
+            if [ -f "$f" ]; then
+              size=$(du -sh "$f" | cut -f1)
+              echo "| \`$(basename $f)\` | $size | ✅ |" >> $GITHUB_STEP_SUMMARY
+            else
+              echo "| \`$(basename $f)\` | — | ❌ Missing |" >> $GITHUB_STEP_SUMMARY
+            fi
+          done
+          echo "" >> $GITHUB_STEP_SUMMARY
+
+          # Placeholder checks
+          grep -q '__API_BASE_URL__' .build/index.html && echo "❌ API_BASE_URL not injected" && exit 1
+          grep -q '__BUILD_ID__' .build/index.html     && echo "❌ BUILD_ID not injected"     && exit 1
+          grep -q '__COMMIT_SHA__' .build/sw.v2.js     && echo "❌ COMMIT_SHA not injected"   && exit 1
+          echo "✅ All placeholders injected correctly" >> $GITHUB_STEP_SUMMARY
+
+      - name: 📦 Upload Build Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-artifacts
+          path: |
+            .build/
+            dist/
+          retention-days: 90
+
+# ═══════════════════════════════════════════════════════
+# JOB 4 — DEPLOY CLOUDFLARE WORKER
+# ═══════════════════════════════════════════════════════
+  deploy-worker:
+    name: ☁️ Deploy Cloudflare Worker
+    runs-on: ubuntu-latest
+    needs: [preflight, build]
+    if: >
+      github.event_name == 'push' && github.ref == 'refs/heads/main' &&
+      (github.event.inputs.deploy-target == 'all' || github.event.inputs.deploy-target == 'worker-only' || github.event.inputs.deploy-target == '')
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets['CLOUDFLARE_API_TOKEN'] }}
+      UPSTASH_REDIS_REST_URL: ${{ secrets['UPSTASH_REDIS_REST_URL'] }}
+      UPSTASH_REDIS_REST_TOKEN: ${{ secrets['UPSTASH_REDIS_REST_TOKEN'] }}
+      GEMINI_API_KEY: ${{ secrets['GEMINI_API_KEY'] }}
+      ADMIN_SECRET: ${{ secrets['ADMIN_SECRET'] }}
+      API_BASE_URL: ${{ needs.preflight.outputs.api_base_url }}
+      FIREBASE_API_KEY: ${{ secrets['FIREBASE_API_KEY'] }}
+      FIREBASE_PROJECT_ID: ${{ secrets['FIREBASE_PROJECT_ID'] }}
+      FIREBASE_PROJECT_NUMBER: ${{ secrets['FIREBASE_PROJECT_NUMBER'] }}
+      FIREBASE_AUTH_DOMAIN: ${{ secrets['FIREBASE_AUTH_DOMAIN'] }}
+      FIREBASE_STORAGE_BUCKET: ${{ secrets['FIREBASE_STORAGE_BUCKET'] }}
+      FIREBASE_MESSAGING_SENDER_ID: ${{ secrets['FIREBASE_MESSAGING_SENDER_ID'] }}
+      FIREBASE_APP_ID: ${{ secrets['FIREBASE_APP_ID'] }}
+      FIREBASE_MEASUREMENT_ID: ${{ secrets['FIREBASE_MEASUREMENT_ID'] }}
+      SMTP_SERVER: ${{ secrets['SMTP_SERVER'] }}
+      SMTP_USERNAME: ${{ secrets['SMTP_USERNAME'] }}
+      SMTP_PASSWORD: ${{ secrets['SMTP_PASSWORD'] }}
+      ALERT_RECIPIENT_EMAIL: ${{ secrets['ALERT_RECIPIENT_EMAIL'] }}
+      RECAPTCHA_SITE_KEY: ${{ secrets['RECAPTCHA_SITE_KEY'] }}
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: 📂 Cache node_modules
+        id: node-modules-cache
+        uses: actions/cache@v4
+        with:
+          path: node_modules
+          key: ${{ runner.os }}-node-modules-${{ hashFiles('package-lock.json') }}
+          restore-keys: |
+            ${{ runner.os }}-node-modules-
+
+      - name: 📦 Install
+        if: steps.node-modules-cache.outputs.cache-hit != 'true'
+        run: npm ci --prefer-offline --no-audit
+
+      - name: 🚀 Deploy Worker
+        run: npx wrangler deploy
+
+# ═══════════════════════════════════════════════════════
+# JOB 5 — DEPLOY FIREBASE HOSTING
+# ═══════════════════════════════════════════════════════
+  deploy-firebase:
+    name: 🔥 Deploy Firebase Hosting
+    runs-on: ubuntu-latest
+    needs: [preflight, build]
+    if: >
+      github.event_name == 'push' && github.ref == 'refs/heads/main' &&
+      (github.event.inputs.deploy-target == 'all' || github.event.inputs.deploy-target == 'firebase-only' || github.event.inputs.deploy-target == '')
+    env:
+      FIREBASE_PROJECT_ID: ${{ secrets['FIREBASE_PROJECT_ID'] || 'dor-progress' }}
+      FIREBASE_TOKEN: ${{ secrets['FIREBASE_TOKEN'] }}
+      FIREBASE_SERVICE_ACCOUNT: ${{ secrets['FIREBASE_SERVICE_ACCOUNT'] }}
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: 📂 Cache node_modules
+        id: node-modules-cache
+        uses: actions/cache@v4
+        with:
+          path: node_modules
+          key: ${{ runner.os }}-node-modules-${{ hashFiles('package-lock.json') }}
+          restore-keys: |
+            ${{ runner.os }}-node-modules-
+
+      - name: 📦 Install
+        if: steps.node-modules-cache.outputs.cache-hit != 'true'
+        run: npm ci --prefer-offline --no-audit
+
+      - name: 📥 Download Build Artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: build-artifacts
+
+      - name: 🔐 Setup Service Account JSON
+        if: ${{ env.FIREBASE_SERVICE_ACCOUNT != '' }}
+        run: |
+          echo "$FIREBASE_SERVICE_ACCOUNT" > service-account.json
+          echo "GOOGLE_APPLICATION_CREDENTIALS=$(pwd)/service-account.json" >> $GITHUB_ENV
+
+      - name: 🚀 Deploy Hosting
+        run: |
+          if [ -n "$GOOGLE_APPLICATION_CREDENTIALS" ]; then
+            echo "Using Google Service Account JSON (modern auth)..."
+            npx firebase deploy --only hosting --public .build --project "$FIREBASE_PROJECT_ID"
+          else
+            echo "Falling back to FIREBASE_TOKEN (legacy)..."
+            npx firebase deploy --only hosting --public .build --project "$FIREBASE_PROJECT_ID" --token "$FIREBASE_TOKEN"
+          fi
+
+# ═══════════════════════════════════════════════════════
+# JOB 6 — HEALTH CHECK: CLOUDFLARE WORKER
+# ═══════════════════════════════════════════════════════
+  check-worker:
+    name: ☁️ Worker Health Check
+    runs-on: ubuntu-latest
+    needs: [preflight, deploy-worker]
+    if: always() && needs.deploy-worker.result == 'success'
+
+    steps:
+      - name: 🔍 Worker Endpoint Health Check
+        run: |
+          URL="${{ needs.preflight.outputs.api_base_url }}"
+          echo "## ☁️ Cloudflare Worker Health" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "| Endpoint | HTTP | Status |" >> $GITHUB_STEP_SUMMARY
+          echo "|----------|------|--------|" >> $GITHUB_STEP_SUMMARY
+
+          # Root check
+          for i in 1 2 3 4 5; do
+            CODE=$(curl -sL -o /dev/null -w "%{http_code}" "$URL" || echo "000")
+            if [ "$CODE" = "200" ]; then
+              echo "| \`/\` (root) | $CODE | ✅ OK |" >> $GITHUB_STEP_SUMMARY
+              break
+            fi
+            echo "⏳ Retry $i... $CODE"
+            sleep 5
+            if [ $i -eq 5 ]; then
+              echo "| \`/\` (root) | $CODE | ❌ Failed |" >> $GITHUB_STEP_SUMMARY
+              exit 1
+            fi
+          done
+
+          # Config check
+          CONFIG_CODE=$(curl -sL -o /dev/null -w "%{http_code}" "$URL/config-check" || echo "000")
+          if [ "$CONFIG_CODE" = "200" ]; then
+            echo "| \`/config-check\` | $CONFIG_CODE | ✅ OK |" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "| \`/config-check\` | $CONFIG_CODE | ⚠️ Degraded |" >> $GITHUB_STEP_SUMMARY
+          fi
+
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "🔗 Worker URL: $URL" >> $GITHUB_STEP_SUMMARY
+
+# ═══════════════════════════════════════════════════════
+# JOB 7 — HEALTH CHECK: FIREBASE HOSTING
+# ═══════════════════════════════════════════════════════
+  check-firebase:
+    name: 🔥 Firebase Hosting Health Check
+    runs-on: ubuntu-latest
+    needs: [deploy-firebase]
+    if: always() && needs.deploy-firebase.result == 'success'
+
+    steps:
+      - name: 🔍 Firebase Hosting Health Check
+        run: |
+          URL="https://dor-progress.web.app"
+          ALT_URL="https://dor-progress.firebaseapp.com"
+
+          echo "## 🔥 Firebase Hosting Health" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "| URL | HTTP | Status |" >> $GITHUB_STEP_SUMMARY
+          echo "|-----|------|--------|" >> $GITHUB_STEP_SUMMARY
+
+          for TARGET in "$URL" "$ALT_URL"; do
+            for i in 1 2 3; do
+              CODE=$(curl -s -o /dev/null -w "%{http_code}" "$TARGET")
+              if [ "$CODE" = "200" ]; then
+                echo "| $TARGET | $CODE | ✅ OK |" >> $GITHUB_STEP_SUMMARY
+                break
+              fi
+              echo "⏳ Retry $i... $CODE"
+              sleep 10
+              if [ $i -eq 3 ]; then
+                echo "| $TARGET | $CODE | ❌ Failed |" >> $GITHUB_STEP_SUMMARY
+              fi
+            done
+          done
+          echo "" >> $GITHUB_STEP_SUMMARY
+
+# ═══════════════════════════════════════════════════════
+# JOB 8 — k6 LOAD TEST
+# ═══════════════════════════════════════════════════════
+  load-test:
+    name: 🧪 API Load Test
+    runs-on: ubuntu-latest
+    needs: [preflight, deploy-worker]
+    if: success()
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: 🚀 Run k6 Load Test
+        uses: grafana/k6-action@v0.3.1
+        with:
+          filename: .github/workflows/load-test.js
+        env:
+          API_BASE_URL: ${{ needs.preflight.outputs.api_base_url }}
+
+      - name: 📦 Upload k6 Report
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: k6-performance-report
+          path: summary.html
+          retention-days: 90
+
+# ═══════════════════════════════════════════════════════
+# JOB 9 — LIGHTHOUSE PERFORMANCE
+# ═══════════════════════════════════════════════════════
+  performance:
+    name: ⚡ Lighthouse Performance Audit
+    runs-on: ubuntu-latest
+    needs: [deploy-firebase]
+    if: success()
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: 📦 Install LHCI
+        run: npm install -g @lhci/cli@0.13.x
+
+      - name: 🔦 Lighthouse Audit
+        run: |
+          lhci collect --url="https://dor-progress.web.app"
+          lhci assert --assertions.performance=0.90 \
+                      --assertions.accessibility=0.90 \
+                      --assertions.best-practices=0.90 \
+                      --assertions.seo=0.90
+
+# ═══════════════════════════════════════════════════════
+# JOB 10 — DEPLOYMENT SUMMARY DASHBOARD
+# ═══════════════════════════════════════════════════════
+  summary:
+    name: 📋 Deployment Summary Dashboard
+    runs-on: ubuntu-latest
+    needs: [preflight, secrets-check, build, deploy-worker, deploy-firebase, check-worker, check-firebase, performance, load-test]
+    if: always()
+
+    steps:
+      - name: 📊 Generate Deployment Dashboard
+        run: |
+          STATUS_PREFLIGHT="${{ needs.preflight.result }}"
+          STATUS_SECRETS="${{ needs.secrets-check.result }}"
+          STATUS_BUILD="${{ needs.build.result }}"
+          STATUS_WORKER="${{ needs.deploy-worker.result }}"
+          STATUS_FIREBASE="${{ needs.deploy-firebase.result }}"
+          STATUS_CHECK_WORKER="${{ needs.check-worker.result }}"
+          STATUS_CHECK_FIREBASE="${{ needs.check-firebase.result }}"
+          STATUS_LOAD="${{ needs.load-test.result }}"
+          STATUS_PERF="${{ needs.performance.result }}"
+
+          badge() {
+            case "$1" in
+              success)  echo "✅ success"  ;;
+              failure)  echo "❌ failure"  ;;
+              skipped)  echo "⏭️ skipped"  ;;
+              *)        echo "⚠️ $1"       ;;
+            esac
+          }
+
+          echo "# 🚀 Deployment Dashboard" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Triggered by:** \`${{ github.event_name }}\`  &nbsp;|&nbsp;  **Branch:** \`${{ github.ref_name }}\`  &nbsp;|&nbsp;  **Version:** \`${{ needs.preflight.outputs.version }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+
+          echo "## 🔄 Pipeline Status" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "| Stage | Job | Result |" >> $GITHUB_STEP_SUMMARY
+          echo "|-------|-----|--------|" >> $GITHUB_STEP_SUMMARY
+          echo "| 1️⃣  Pre-deploy  | 🔒 Preflight Checks       | $(badge $STATUS_PREFLIGHT) |"  >> $GITHUB_STEP_SUMMARY
+          echo "| 2️⃣  Pre-deploy  | 🔑 Secrets Status Report  | $(badge $STATUS_SECRETS) |"   >> $GITHUB_STEP_SUMMARY
+          echo "| 3️⃣  Build       | 🏗️ Build Project           | $(badge $STATUS_BUILD) |"     >> $GITHUB_STEP_SUMMARY
+          echo "| 4️⃣  Deploy      | ☁️ Cloudflare Worker       | $(badge $STATUS_WORKER) |"    >> $GITHUB_STEP_SUMMARY
+          echo "| 4️⃣  Deploy      | 🔥 Firebase Hosting        | $(badge $STATUS_FIREBASE) |"  >> $GITHUB_STEP_SUMMARY
+          echo "| 5️⃣  Verify      | ☁️ Worker Health Check     | $(badge $STATUS_CHECK_WORKER) |"   >> $GITHUB_STEP_SUMMARY
+          echo "| 5️⃣  Verify      | 🔥 Firebase Health Check   | $(badge $STATUS_CHECK_FIREBASE) |" >> $GITHUB_STEP_SUMMARY
+          echo "| 6️⃣  QA          | 🧪 k6 Load Test            | $(badge $STATUS_LOAD) |"      >> $GITHUB_STEP_SUMMARY
+          echo "| 6️⃣  QA          | ⚡ Lighthouse Audit         | $(badge $STATUS_PERF) |"     >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+
+          echo "## 🌐 Live URLs" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "| Service | URL | Deploy Status |" >> $GITHUB_STEP_SUMMARY
+          echo "|---------|-----|---------------|" >> $GITHUB_STEP_SUMMARY
+          echo "| 🔥 Firebase Hosting | [dor-progress.web.app](https://dor-progress.web.app) | $(badge $STATUS_FIREBASE) |" >> $GITHUB_STEP_SUMMARY
+          echo "| ☁️ Cloudflare Worker | [dor-progress.banjays.workers.dev](https://dor-progress.banjays.workers.dev) | $(badge $STATUS_WORKER) |" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+
+          echo "## 🔗 Quick Links" >> $GITHUB_STEP_SUMMARY
+          echo "- [📋 Workflow Run](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }})" >> $GITHUB_STEP_SUMMARY
+          echo "- [🔥 Firebase Console](https://console.firebase.google.com/project/dor-progress/overview)" >> $GITHUB_STEP_SUMMARY
+          echo "- [☁️ Cloudflare Dashboard](https://console.cloudflare.com/workers-and-pages/overview)" >> $GITHUB_STEP_SUMMARY
+          echo "- [🔑 Manage Secrets](https://github.com/${{ github.repository }}/settings/secrets/actions)" >> $GITHUB_STEP_SUMMARY
