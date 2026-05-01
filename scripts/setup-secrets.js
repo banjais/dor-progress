@@ -54,7 +54,7 @@ try {
   const output = execSync('wrangler secret list --format json 2>/dev/null', { encoding: 'utf8' });
   const secrets = JSON.parse(output);
   console.log(`   ✅ Connected to Cloudflare (${secrets.length} secrets)`);
-  for (const s of REQUIRED.github.filter(k => !['FIREBASE_TOKEN', 'GCP_SA_KEY'].includes(k))) {
+  for (const s of REQUIRED.github.filter(k => !['FIREBASE_TOKEN', 'FIREBASE_SERVICE_ACCOUNT'].includes(k))) {
     const found = secrets.find(ss => ss.name === s);
     console.log(`     ${found ? '✅' : '❌'} ${s}`);
   }

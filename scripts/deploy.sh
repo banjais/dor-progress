@@ -1,10 +1,19 @@
 #!/usr/bin/env bash
 set -e # Exit immediately if a command exits with a non-zero status
 
+# 0. Pre-flight Check: Ensure dependencies exist
+if [ ! -d "node_modules" ]; then
+    echo "📦 node_modules not found. Installing dependencies..."
+    npm install
+fi
+
+echo "📊 Running project diagnostics..."
+npx tsx scripts/project-info.ts
+
 # 1. Branch Safety Check
 CURRENT_BRANCH=$(git rev-parse --abbrev-ref HEAD 2>/dev/null || echo "UNKNOWN")
-if [ "$CURRENT_BRANCH" != "main" ]; then
-    echo "❌ Error: You must be on the main branch to deploy (current: $CURRENT_BRANCH)."
+if [[ "$CURRENT_BRANCH" != "main" && "$CURRENT_BRANCH" != "master" ]]; then
+    echo "❌ Error: You must be on the main or master branch to deploy (current: $CURRENT_BRANCH)."
     echo "   Switch to main: git checkout main"
     exit 1
 fi
@@ -18,7 +27,8 @@ esac
 
 # 3. Clean build artifacts, logs, and caches fully
 echo "🧹 Cleaning build artifacts and cache completely..."
-rm -rf dist .wrangler .firebase .build node_modules/.cache
+# We call the npm script to ensure consistency with package.json
+npm run clean || rm -rf dist .wrangler .firebase .build node_modules/.cache
 
 # 4. Load local secrets for validation
 if [ -f .dev.vars ]; then
@@ -31,19 +41,23 @@ if [ -f .dev.vars ]; then
     done < .dev.vars
 fi
 
+# 4.1 Validate Secrets via Assistant
+echo "🔑 Verifying secrets configuration..."
+node scripts/setup-secrets.js
+
 # 5. Validation Gates
 echo "🔒 Running security checks..."
 npm run security-check || echo "⚠️  Security check failed (non-blocking – see report above)"
 echo ""
 
 echo "🔍 Running type checks..."
-npm run lint
+npx tsc --noEmit
 
 echo "🧪 Running tests..."
 npm test
 
 # 6. Full Build (compile + copy + inject + verify)
-echo "🏗️  Rebuilding project completely..."
+echo "🏗️  Rebuilding project newly..."
 npm run build
 
 # 7. Real-Time Local Deployment
@@ -67,14 +81,40 @@ VERSION=$(node -p "require('./package.json').version")
 MSG="${2:-Manual deployment update}"
 
 # 9. Git Sync (Comparing Local is Source)
-echo "📤 Committing Local source changes and Pushing v${VERSION} to GitHub..."
+echo "📤 Committing Local source changes and Pushing v${VERSION} to GitHub branch: ${CURRENT_BRANCH}..."
 git add .
 git commit -m "v${VERSION}: ${MSG} (Local deployed version matching source)"
 git tag -a "v${VERSION}" -m "Release v${VERSION}"
-git push origin main --follow-tags
+git push origin "$CURRENT_BRANCH" --follow-tags
 
 # 10. CI/CD Auto-Deploy triggers
 echo "🤖 GitHub Auto Deploy & Cloudflare Auto Deploy will now trigger based on this push."
+
+# 11. Post-Deployment Health Check
+echo "📡 Running health checks on live endpoints..."
+MAX_RETRIES=3
+WAIT_SECONDS=5
+
+check_live() {
+    local URL=$1
+    local LABEL=$2
+    for ((i=1; i<=MAX_RETRIES; i++)); do
+        # Get HTTP status code
+        STATUS=$(curl -o /dev/null -s -L -w "%{http_code}" "$URL")
+        if [ "$STATUS" -eq 200 ]; then
+            echo "   ✅ $LABEL is LIVE ($STATUS)"
+            return 0
+        fi
+        echo "   ⚠️  $LABEL check failed ($STATUS). Retrying $i/$MAX_RETRIES in ${WAIT_SECONDS}s..."
+        sleep $WAIT_SECONDS
+    done
+    echo "   ❌ $LABEL is NOT responding as expected after $MAX_RETRIES attempts."
+    return 1
+}
+
+# Verify both Frontend and Backend
+check_live "https://dor-progress.web.app" "Frontend (Firebase)" || true
+check_live "https://dor-progress.banjays.workers.dev" "Backend (Cloudflare)" || true
 
 # 11. Diagnostic Output
 echo ""
