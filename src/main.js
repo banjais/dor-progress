@@ -13,21 +13,36 @@
       if (lbl) lbl.innerText = next.toUpperCase();
     };
 
-    const toggleFabMenu = () => {
+    const toggleGeminiMenu = () => {
+      const btn = document.getElementById('gemini-main-btn');
+      const menu = document.getElementById('gemini-menu');
+      const fabMenu = document.getElementById('fab-menu');
+      if (fabMenu) fabMenu.classList.remove('show');
+      menu.classList.toggle('show');
+    };
 
+    const toggleFabMenu = () => {
       const btn = document.getElementById('fab-main-btn');
       const menu = document.getElementById('fab-menu');
+      const geminiMenu = document.getElementById('gemini-menu');
+      if (geminiMenu) geminiMenu.classList.remove('show');
       btn.classList.toggle('active');
       menu.classList.toggle('show');
     };
 
-    // Global listener to close FAB if clicked outside
+    // Close on outside click
     document.addEventListener('click', (e) => {
-      const btn = document.getElementById('fab-main-btn');
-      const menu = document.getElementById('fab-menu');
-      if (menu?.classList.contains('show') && !btn.contains(e.target) && !menu.contains(e.target)) {
-        btn.classList.remove('active');
-        menu.classList.remove('show');
+      const fabBtn = document.getElementById('fab-main-btn');
+      const fabMenu = document.getElementById('fab-menu');
+      const geminiBtn = document.getElementById('gemini-main-btn');
+      const geminiMenu = document.getElementById('gemini-menu');
+
+      if (fabMenu && !fabMenu.contains(e.target) && e.target !== fabBtn) {
+        fabMenu.classList.remove('show');
+        fabBtn.classList.remove('active');
+      }
+      if (geminiMenu && !geminiMenu.contains(e.target) && e.target !== geminiBtn) {
+        geminiMenu.classList.remove('show');
       }
     });
 

@@ -218,8 +218,12 @@
 
   <header>
     <div class="header-top">
-      <img src="/logo.png" alt="logo" style="height: 40px;">
+      <div class="header-logo-group">
+        <img src="/logo.png" alt="Logo">
+        <span class="header-app-name">DoR Progress Dashboard</span>
+      </div>
       <div style="display:flex; align-items:center; gap:15px">
+
 
         <div style="display:flex; flex-direction:column; align-items:flex-end; gap:2px">
           <div style="display:flex; align-items:center; gap:8px">
@@ -259,8 +263,36 @@
     <div class="header-controls">
 
 
-      <div style="position:relative">
+      <div style="position:relative; display:flex; gap:10px;">
+        <button class="gemini-trigger" onclick="toggleGeminiMenu()" id="gemini-main-btn" title="AI Analyst">✨</button>
         <button class="fab-trigger" onclick="toggleFabMenu()" id="fab-main-btn" title="Actions">+</button>
+        
+        <!-- Gemini AI Menu -->
+        <div class="gemini-menu" id="gemini-menu">
+          <div class="fab-section">Gemini AI Assistant</div>
+          <button class="fab-item" onclick="startAiBriefing()">
+            <span class="fab-icon">🤖</span>
+            <div class="fab-text">
+              <div class="fab-label">AI Executive Briefing</div>
+              <div class="fab-sub">Summarize overall progress</div>
+            </div>
+          </button>
+          <button class="fab-item" onclick="window.readSummary()">
+            <span class="fab-icon">🎙️</span>
+            <div class="fab-text">
+              <div class="fab-label">Perspective Narration</div>
+              <div class="fab-sub">Voice-guided AI insights</div>
+            </div>
+          </button>
+          <button class="fab-item" onclick="analyzeActiveData()">
+            <span class="fab-icon">🧠</span>
+            <div class="fab-text">
+              <div class="fab-label">Deep Trend Analysis</div>
+              <div class="fab-sub">Find risks and delays</div>
+            </div>
+          </button>
+        </div>
+
         <div id="fab-menu" class="fab-menu">
           <div class="fab-section">VIEWING & READING</div>
           <button class="fab-item" id="nav-narration-btn" onclick="startNarration()">
