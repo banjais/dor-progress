@@ -36,7 +36,7 @@
       const fill = document.getElementById('loader-bar-fill');
       const text = document.getElementById('loader-percentage');
       const statusText = document.querySelector('.loader-status');
-      if (fill) fill.style.height = `${percent}%`;
+      if (fill) fill.style.width = `${percent}%`;
       if (text) text.innerText = `${percent}%`;
       if (statusText && status) statusText.innerText = status;
     };
