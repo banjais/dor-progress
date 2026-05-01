@@ -137,16 +137,17 @@
     /* Dynamic Splash Screen */
     #splash-screen {
       position: fixed;
-      inset: 0;
-      background: #000;
-      display: flex;
+      inset: 0 !important;
+      background: #000 !important;
+      display: flex !important;
       flex-direction: column;
       align-items: center;
       justify-content: center;
-      z-index: 2000;
+      z-index: 100000 !important;
       color: white;
       transition: opacity 0.8s ease;
     }
+
 
     .splash-center {
       flex: 1;
@@ -156,10 +157,13 @@
     }
 
     .splash-logo-mini {
-      height: 60px;
+      height: 50px !important;
+      max-width: 90%;
+      object-fit: contain;
       filter: drop-shadow(0 0 15px rgba(255, 255, 255, 0.2));
       animation: pulse-glow 2s infinite ease-in-out;
     }
+
 
     .splash-bottom {
       padding-bottom: 60px;
@@ -745,10 +749,11 @@
     }
 
     .header-logo-group img {
-      height: 32px;
-      width: auto;
+      max-height: 28px !important;
+      width: auto !important;
       filter: drop-shadow(0 2px 4px rgba(0, 0, 0, 0.1));
     }
+
 
     .header-app-name {
       font-size: 0.55rem;

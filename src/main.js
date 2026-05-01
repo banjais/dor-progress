@@ -1,7 +1,8 @@
 
-    const WORKER_BASE = "import.meta.env.VITE_API_BASE_URL || ''";
-    const BUILD_ID = "import.meta.env.VITE_BUILD_ID || 'dev'";
-    const COMMIT_SHA = "import.meta.env.VITE_COMMIT_SHA || 'dev'";
+    const WORKER_BASE = import.meta.env.VITE_API_BASE_URL || '';
+    const BUILD_ID = import.meta.env.VITE_BUILD_ID || 'dev';
+    const COMMIT_SHA = import.meta.env.VITE_COMMIT_SHA || 'dev';
+
 
     import { initializeApp } from "https://www.gstatic.com/firebasejs/11.0.1/firebase-app.js";
     import { initializeAppCheck, ReCaptchaV3Provider } from "https://www.gstatic.com/firebasejs/11.0.1/firebase-app-check.js";
