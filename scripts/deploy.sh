@@ -93,33 +93,6 @@ git push origin "$CURRENT_BRANCH" --follow-tags > /dev/null 2>&1 && echo "   ✅
 
 # 10. CI/CD Auto-Deploy triggers
 echo "🤖 GitHub Auto Deploy & Cloudflare Auto Deploy will now trigger based on this push."
-
-# 11. Post-Deployment Health Check
-echo "📡 Running health checks on live endpoints..."
-MAX_RETRIES=3
-WAIT_SECONDS=5
-
-check_live() {
-    local URL=$1
-    local LABEL=$2
-    for ((i=1; i<=MAX_RETRIES; i++)); do
-        # Get HTTP status code
-        STATUS=$(curl -o /dev/null -s -L -w "%{http_code}" "$URL")
-        if [ "$STATUS" -eq 200 ]; then
-            echo "   ✅ $LABEL is LIVE ($STATUS)"
-            return 0
-        fi
-        echo "   ⚠️  $LABEL check failed ($STATUS). Retrying $i/$MAX_RETRIES in ${WAIT_SECONDS}s..."
-        sleep $WAIT_SECONDS
-    done
-    echo "   ❌ $LABEL is NOT responding as expected after $MAX_RETRIES attempts."
-    return 1
-}
-
-# Verify both Frontend and Backend
-check_live "https://dor-progress.web.app" "Frontend (Firebase)" || true
-check_live "https://dor-progress.banjays.workers.dev" "Backend (Cloudflare)" || true
-
 # 11. Diagnostic Output
 echo ""
 echo "========================================="
