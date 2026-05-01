@@ -415,7 +415,26 @@ export default {
             // Future admin routes (idempotency, cache-purge, etc.) go here
         }
 
+        // Public API: Client Config (Firebase/Recaptcha keys)
+        if (normalizedPath === '/api/client-config') {
+            return new Response(JSON.stringify({
+                firebase: {
+                    apiKey: env.FIREBASE_API_KEY,
+                    authDomain: env.FIREBASE_AUTH_DOMAIN,
+                    projectId: env.FIREBASE_PROJECT_ID,
+                    storageBucket: env.FIREBASE_STORAGE_BUCKET,
+                    messagingSenderId: env.FIREBASE_MESSAGING_SENDER_ID,
+                    appId: env.FIREBASE_APP_ID,
+                    measurementId: env.FIREBASE_MEASUREMENT_ID
+                },
+                recaptchaSiteKey: env.RECAPTCHA_SITE_KEY
+            }), {
+                headers: { ...securityHeaders, "Content-Type": "application/json" }
+            });
+        }
+
         // Public API: Translation endpoint
+
         if (normalizedPath === '/api/translate') {
             // 1. Verify Firebase App Check token to prevent unauthorized API usage
             const appCheckToken = request.headers.get("X-Firebase-AppCheck");
