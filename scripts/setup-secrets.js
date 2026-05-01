@@ -49,13 +49,12 @@ if (fs.existsSync(devVarsPath)) {
 // Cloudflare Wrangler secrets
 console.log('\n2️⃣  Cloudflare Worker Secrets\n');
 console.log('   These are set via: wrangler secret put <NAME>');
-console.log('   Required: CLOUDFLARE_API_TOKEN, UPSTASH_*, GEMINI_API_KEY, ADMIN_SECRET\n');
+console.log('   Status in current environment:\n');
 try {
-  const { execSync } = await import('child_process');
   const output = execSync('wrangler secret list --format json 2>/dev/null', { encoding: 'utf8' });
   const secrets = JSON.parse(output);
   console.log(`   ✅ Connected to Cloudflare (${secrets.length} secrets)`);
-  for (const s of REQUIRED.github.filter(k => !k.includes('FIREBASE'))) {
+  for (const s of REQUIRED.github.filter(k => !['FIREBASE_TOKEN', 'GCP_SA_KEY'].includes(k))) {
     const found = secrets.find(ss => ss.name === s);
     console.log(`     ${found ? '✅' : '❌'} ${s}`);
   }
@@ -68,9 +67,18 @@ try {
 console.log('\n3️⃣  GitHub Actions Secrets\n');
 console.log('   Set via: gh secret set <NAME>');
 console.log('   Or via GitHub UI: Settings → Secrets and variables → Actions\n');
-console.log('   Required:');
+console.log('   Status in current environment (as passed to CI step):');
+
+let missingCount = 0;
 for (const secret of REQUIRED.github) {
-  console.log(`     • ${secret}`);
+  const isSet = !!process.env[secret];
+  if (!isSet) missingCount++;
+  console.log(`     ${isSet ? '✅' : '❌'} ${secret}`);
+}
+
+if (missingCount > 0 && process.env.GITHUB_ACTIONS) {
+  console.log(`\n❌ Failed: ${missingCount} GitHub secrets are not configured in this workflow run.`);
+  process.exit(1);
 }
 
 // Firebase config
