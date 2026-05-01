@@ -48,7 +48,15 @@ npm run build
 
 # 7. Real-Time Local Deployment
 echo "🔥 Deploying to Firebase Hosting..."
-npx firebase deploy --only hosting --project dor-progress --force --public .build
+if [ -n "$GCP_SA_KEY" ]; then
+    # Preferred: Use Service Account Key
+    echo "$GCP_SA_KEY" > sa_key.json
+    GOOGLE_APPLICATION_CREDENTIALS=sa_key.json npx firebase deploy --only hosting --project dor-progress --force --public .build
+    rm sa_key.json
+else
+    # Fallback: Use FIREBASE_TOKEN (Deprecated)
+    npx firebase deploy --only hosting --project dor-progress --force --public .build --token "$FIREBASE_TOKEN"
+fi
 
 echo "☁️ Deploying to Cloudflare Workers (Wrangler)..."
 npx wrangler deploy

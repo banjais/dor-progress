@@ -17,7 +17,8 @@ const REQUIRED = {
     'UPSTASH_REDIS_REST_TOKEN',
     'GEMINI_API_KEY',
     'ADMIN_SECRET',
-    'FIREBASE_TOKEN'
+    'FIREBASE_TOKEN',
+    'GCP_SA_KEY'
   ]
 };
 
@@ -66,7 +67,7 @@ try {
 // GitHub Actions secrets
 console.log('\n3️⃣  GitHub Actions Secrets\n');
 console.log('   Set via: gh secret set <NAME>');
-console.log('   Or via GitHub UI: Settings → Secrets → Actions\n');
+console.log('   Or via GitHub UI: Settings → Secrets and variables → Actions\n');
 console.log('   Required:');
 for (const secret of REQUIRED.github) {
   console.log(`     • ${secret}`);
