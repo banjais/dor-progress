@@ -31,10 +31,10 @@ console.log('\n1️⃣  Local Development (.dev.vars)\n');
 if (fs.existsSync(devVarsPath)) {
   console.log('   ✅ .dev.vars exists');
   const content = fs.readFileSync(devVarsPath, 'utf8');
-  console.log('   Contains:');
+  console.log('   Status: (Values masked for security)');
   content.split('\n')
     .filter(l => l && !l.startsWith('#'))
-    .forEach(l => console.log(`     • ${l.split('=')[0]}`));
+    .forEach(l => console.log(`     ✅ ${l.split('=')[0]}`));
 } else {
   console.log('   ❌ .dev.vars not found');
   console.log('   Create it:');
