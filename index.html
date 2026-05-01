@@ -182,9 +182,9 @@
     </div>
   </div>
 
-  <div id="splash-screen">
+  <div id="splash-screen" style="background: #000 !important; inset: 0 !important; z-index: 100000 !important;">
     <div class="splash-center">
-      <img src="/logo.png" alt="Logo" class="splash-logo-mini">
+      <img src="/logo.png" alt="Logo" class="splash-logo-mini" style="height: 50px !important;">
     </div>
     <div class="splash-bottom">
       <div class="splash-brand">
@@ -192,12 +192,13 @@
         <span class="dept-text">Department of Roads</span>
       </div>
       <div class="modern-loader">
-        <div id="loader-bar-fill"></div>
+        <div id="loader-bar-fill" style="width: 0%; height:100%; position:absolute; left:0; top:0; background:white;"></div>
         <div id="loader-percentage">0%</div>
       </div>
       <div class="loader-status">Initializing...</div>
     </div>
   </div>
+
 
 
   <div id="loader" style="display:none">
@@ -219,9 +220,10 @@
   <header>
     <div class="header-top">
       <div class="header-logo-group">
-        <img src="/logo.png" alt="Logo">
+        <img src="/logo.png" alt="Logo" style="height: 28px !important; width: auto !important;">
         <span class="header-app-name">DoR Progress Dashboard</span>
       </div>
+
       <div style="display:flex; align-items:center; gap:15px">
 
 
