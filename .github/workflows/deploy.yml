@@ -331,15 +331,20 @@ jobs:
         env:
           API_BASE_URL: ${{ needs.preflight.outputs.api_base_url }}
 
-      - name: 💉 Inject Placeholders
-        env:
-          API_URL: ${{ needs.preflight.outputs.api_base_url }}
-          BUILD_ID: ${{ github.run_id }}
-          COMMIT_SHA: ${{ github.sha }}
-        run: |
-          sed -i "s|__API_BASE_URL__|$API_URL|g" .build/index.html
-          sed -i "s|__BUILD_ID__|$BUILD_ID|g" .build/index.html
-          sed -i "s|__COMMIT_SHA__|$COMMIT_SHA|g" .build/sw.v2.js
+       - name: 💉 Inject Placeholders
+         env:
+           API_URL: ${{ needs.preflight.outputs.api_base_url }}
+           BUILD_ID: ${{ github.run_id }}
+           COMMIT_SHA: ${{ github.sha }}
+         run: |
+           # Replace placeholders in index.html (Vite defines are primary, this is backup/redundant)
+           sed -i "s|__API_BASE_URL__|$API_URL|g" .build/index.html
+           sed -i "s|__BUILD_ID__|$BUILD_ID|g" .build/index.html
+           sed -i "s|__COMMIT_SHA__|$COMMIT_SHA|g" .build/index.html
+           # Replace placeholders in service worker
+           sed -i "s|__API_BASE_URL__|$API_URL|g" .build/sw.v2.js
+           sed -i "s|__BUILD_ID__|$BUILD_ID|g" .build/sw.v2.js
+           sed -i "s|__COMMIT_SHA__|$COMMIT_SHA|g" .build/sw.v2.js
 
       - name: ✅ Verify Build Artifacts
         run: |
