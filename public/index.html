@@ -123,10 +123,12 @@
       box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
     }
 
-    [data-title]:hover::after {
-      opacity: 1;
-      visibility: visible;
-      transform: translateX(-50%) translateY(0);
+    @media (hover: hover) {
+      [data-title]:hover::after {
+        opacity: 1;
+        visibility: visible;
+        transform: translateX(-50%) translateY(0);
+      }
     }
 
     [data-theme="dark"] [data-title]::after {
@@ -1746,7 +1748,7 @@
         });
         console.log("[App Check Init] App Check initialized successfully.");
 
-        // Boot App
+        // Initialize
         setLang(initialLang);
         setView('table');
         handleVerification();
@@ -1764,7 +1766,7 @@
         }
       } catch (e) {
         console.error("Security Bootstrap Failed", e);
-        addToast("error", "Failed to initialize security handshake.");
+        addToast("error", currentLang === 'en' ? "Security init failed" : "प्रणाली असफल");
         // Ensure loader is removed so user can at least see the UI/Offline state
         const loader = document.getElementById('loader');
         if (loader) loader.style.display = 'none';
@@ -1805,7 +1807,7 @@
             if (isStale) {
               addToast("info", I18N[currentLang].dataSyncing, 2000);
             } else if (isFromCache) {
-              addToast("info", currentLang === 'en' ? "Offline: Viewing cached data" : "अफलाइन: क्यास गरिएको डाटा हेर्दै");
+              addToast("info", currentLang === 'en' ? "Using cache" : "क्यास प्रयोग");
             }
             return response;
           }
@@ -1852,14 +1854,14 @@
         if (res.ok) {
           statusEl.innerText = I18N[currentLang].live;
           statusEl.style.color = "#4ade80";
-          addToast("success", currentLang === 'en' ? `Pong! Response time: ${duration}ms` : `पङ्! प्रतिक्रिया समय: ${duration}ms`);
+          addToast("success", currentLang === 'en' ? `Pong! ${duration}ms` : `पङ्! ${duration}ms`);
         } else {
           throw new Error();
         }
       } catch (e) {
         statusEl.innerText = I18N[currentLang].offline;
         statusEl.style.color = "#f87171";
-        addToast("error", currentLang === 'en' ? "Ping failed." : "पिङ असफल भयो।");
+        addToast("error", currentLang === 'en' ? "Ping failed" : "पिङ असफल");
       } finally {
         btn.classList.remove('spinning');
         btn.disabled = false;
@@ -2080,7 +2082,7 @@
         const transcript = event.results[0][0].transcript;
         document.getElementById('search-input').value = transcript;
         handleSearch();
-        addToast("info", (currentLang === 'en' ? "Voice matched: " : "खोजिएको शब्द: ") + transcript);
+        addToast("info", (currentLang === 'en' ? "Search: " : "खोज: ") + transcript);
 
         // Auto-scroll to the first result after rendering
         setTimeout(() => {
@@ -2101,7 +2103,7 @@
       recognition.onerror = (event) => {
         if (btn) btn.classList.remove('listening');
         if (event.error === 'not-allowed') {
-          addToast("error", currentLang === 'en' ? "Microphone access denied." : "माइक्रोफोन अनुमति छैन।");
+          addToast("error", currentLang === 'en' ? "Mic denied" : "अनुमति छैन");
         }
       };
       recognition.start();
@@ -2152,7 +2154,7 @@
           typeText(document.getElementById("ai-brief-text"), json.aiSummary.brief, true);
         }
       } catch (e) {
-        addToast("error", currentLang === 'en' ? "Translation failed." : "अनुवाद असफल भयो।");
+        addToast("error", currentLang === 'en' ? "Failed" : "असफल");
       } finally {
         btn.classList.remove('spinning');
       }
@@ -2191,7 +2193,7 @@
         a.download = `DoR_Executive_Briefing_${new Date().toISOString().split('T')[0]}.mp3`;
         a.click();
       } catch (e) {
-        addToast("error", "Audio generation failed.");
+        addToast("error", "Audio failed");
       } finally {
         btn.disabled = false;
         btn.innerHTML = originalHtml;
@@ -2221,10 +2223,10 @@
             text: 'Official Department of Roads Audio Summary'
           });
         } else {
-          addToast("error", "Direct audio sharing not supported on this device.");
+          addToast("error", "Not supported");
         }
       } catch (e) {
-        addToast("error", "Sharing failed.");
+        addToast("error", "Share failed");
       } finally {
         btn.disabled = false;
         btn.innerHTML = originalHtml;
@@ -3919,9 +3921,9 @@
           localStorage.setItem('last-lat', pos.coords.latitude);
           localStorage.setItem('last-lon', pos.coords.longitude);
           syncAppTheme();
-          addToast("success", currentLang === 'en' ? "Location synced. Schedule active." : "स्थान सिङ्क गरियो। शेड्युल सक्रिय छ।");
+          addToast("success", currentLang === 'en' ? "Location synced" : "स्थान सिङ्क");
         }, () => {
-          addToast("info", currentLang === 'en' ? "Using default sunrise/sunset times." : "पूर्वनिर्धारित सूर्योदय/सूर्यास्त समय प्रयोग गर्दै।");
+          addToast("info", currentLang === 'en' ? "Default schedule" : "पूर्वनिर्धारित शेड्युल");
           syncAppTheme();
         });
       } else {
