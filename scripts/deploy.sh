@@ -77,18 +77,8 @@ npm version "$BUMP" --no-git-tag-version
 VERSION=$(node -p "require('./package.json').version")
 MSG="${2:-Manual deployment update}"
 
-# 9. Git Sync (Comparing Local is Source)
-echo "📤 Syncing Local to GitHub (Branch: ${CURRENT_BRANCH})..."
-git add .
-git commit -m "v${VERSION}: ${MSG} (Local deployed version matching source)"
-
-# Only tag if the tag doesn't exist yet to prevent errors
-if ! git rev-parse "v${VERSION}" >/dev/null 2>&1; then
-    git tag -a "v${VERSION}" -m "Release v${VERSION}"
-fi
-
-# Removed redirection to /dev/null so you can see why a push fails
-git push origin "$CURRENT_BRANCH" --follow-tags && echo "   ✅ GitHub push successful"
+# 8. Git Sync via Helper
+node scripts/git-deploy.js "$MSG"
 
 # 10. CI/CD Auto-Deploy triggers
 echo "🤖 GitHub Auto Deploy & Cloudflare Auto Deploy will now trigger based on this push."

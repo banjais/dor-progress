@@ -34,11 +34,14 @@ jobs:
         run: npm run security-check || echo "⚠️ Security check completed with warnings"
 
       - name: Run Build Preparations
-        env:
-          PUBLISHED_SHEET_ID: ${{ secrets.PUBLISHED_SHEET_ID }}
         run: |
           npx tsx scripts/project-info.ts
           node scripts/setup-secrets.js || true
+
+      - name: Sync Translations from Google Sheets
+        env:
+          PUBLISHED_SHEET_ID: ${{ secrets.PUBLISHED_SHEET_ID }}
+        run: |
           # Write credentials to file so scripts/sync-sheets.js can find them
           echo '${{ secrets.FIREBASE_SERVICE_ACCOUNT }}' > sa_key.json
           GOOGLE_APPLICATION_CREDENTIALS=sa_key.json npx tsx scripts/sync-sheets.js
