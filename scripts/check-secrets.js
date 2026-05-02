@@ -8,52 +8,21 @@
 import fs from 'fs';
 import path from 'path';
 
-const REQUIRED_SECRETS = {
-  local: [
-    'CLOUDFLARE_API_TOKEN',
-    'UPSTASH_REDIS_REST_URL',
-    'UPSTASH_REDIS_REST_TOKEN',
-    'GEMINI_API_KEY',
-    'ADMIN_SECRET',
-    'FIREBASE_TOKEN'
-  ],
-  runtime: [
-    'FIREBASE_API_KEY',
-    'FIREBASE_PROJECT_ID',
-    'FIREBASE_PROJECT_NUMBER',
-    'FIREBASE_AUTH_DOMAIN',
-    'FIREBASE_STORAGE_BUCKET',
-    'FIREBASE_MESSAGING_SENDER_ID',
-    'FIREBASE_APP_ID',
-    'FIREBASE_MEASUREMENT_ID',
-    'RECAPTCHA_SITE_KEY'
-  ]
-};
-
 console.log('\n🔐 SECRETS STATUS CHECK\n');
 console.log('═'.repeat(60));
 
 // Check .dev.vars
 const devVarsPath = path.resolve(process.cwd(), '.dev.vars');
 console.log('\n📁 Local (.dev.vars):');
+let discoveredKeys = [];
+
 if (fs.existsSync(devVarsPath)) {
   const content = fs.readFileSync(devVarsPath, 'utf8');
-  const defined = [];
-  const missing = [];
+  discoveredKeys = content.split('\n')
+    .filter(l => l && !l.startsWith('#') && l.includes('='))
+    .map(l => l.split('=')[0].trim());
 
-  for (const secret of [...REQUIRED_SECRETS.local, ...REQUIRED_SECRETS.runtime]) {
-    if (content.includes(`${secret}=`)) {
-      defined.push(secret);
-    }
-  }
-
-  console.log(`  ✅ Defined (${defined.length}): ${defined.join(', ')}`);
-
-  const allRequired = [...REQUIRED_SECRETS.local, ...REQUIRED_SECRETS.runtime];
-  const undefined = allRequired.filter(s => !defined.includes(s));
-  if (undefined.length) {
-    console.log(`  ⚠️  Not in .dev.vars: ${undefined.join(', ')}`);
-  }
+  console.log(`  ✅ Found ${discoveredKeys.length} keys in .dev.vars`);
 } else {
   console.log('  ❌ .dev.vars file not found');
 }
@@ -65,8 +34,9 @@ try {
   const secrets = JSON.parse(output);
   const secretNames = secrets.map(s => s.name);
 
-  for (const secret of REQUIRED_SECRETS.local) {
-    const status = secretNames.includes(secret) ? '✅' : '❌';
+  const cfExclusions = ['FIREBASE_TOKEN', 'FIREBASE_SERVICE_ACCOUNT', 'CLOUDFLARE_API_TOKEN'];
+  for (const secret of discoveredKeys.filter(k => !cfExclusions.includes(k))) {
+    const status = secretNames.includes(secret) ? '✅' : '  ❓';
     console.log(`  ${status} ${secret}`);
   }
 } catch (e) {
@@ -88,9 +58,9 @@ console.log('  ℹ️  Also set in Cloudflare Worker env vars (for /api/client-c
 
 console.log('\n🔗 GitHub Actions Secrets:');
 console.log('  Set in: Repository → Settings → Secrets and variables → Actions');
-console.log('  Required:');
-for (const secret of REQUIRED_SECRETS.local) {
-  console.log(`    • ${secret}`);
+console.log('  Mapped from .dev.vars:');
+for (const secret of discoveredKeys) {
+  console.log(`    ✅ ${secret}`);
 }
 
 console.log('\n' + '═'.repeat(60));

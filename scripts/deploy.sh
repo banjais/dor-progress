@@ -2,6 +2,10 @@
 set -e # Exit immediately if a command exits with a non-zero status
 
 # 0. Pre-flight Check: Ensure dependencies exist
+PROJECT_ID="${FIREBASE_PROJECT:-dor-progress}"
+APP_URL="${APP_URL:-https://dor-progress.web.app}"
+REPO_PATH=$(git remote get-url origin | sed -E 's/.*github.com[:\/](.*)(\.git)?/\1/' || echo "UNKNOWN")
+
 if [ ! -d "node_modules" ]; then
     echo "📦 node_modules not found. Installing dependencies..."
     npm install
@@ -69,11 +73,11 @@ echo "🔥 Deploying to Firebase Hosting..."
 if [ -n "$FIREBASE_SERVICE_ACCOUNT" ]; then
     # Preferred: Use Service Account Key
     echo "$FIREBASE_SERVICE_ACCOUNT" > sa_key.json
-    GOOGLE_APPLICATION_CREDENTIALS=sa_key.json npx firebase deploy --only hosting --project dor-progress --force --public .build
+    GOOGLE_APPLICATION_CREDENTIALS=sa_key.json npx -y firebase-tools@latest deploy --only hosting --project "$PROJECT_ID" --force --public .build --non-interactive
     rm sa_key.json
 else
     # Fallback: Use FIREBASE_TOKEN (Deprecated)
-    npx firebase deploy --only hosting --project dor-progress --force --public .build --token "$FIREBASE_TOKEN"
+    npx -y firebase-tools@latest deploy --only hosting --project "$PROJECT_ID" --force --public .build --token "$FIREBASE_TOKEN" --non-interactive
 fi
 
 echo "☁️ Deploying to Cloudflare Workers (Wrangler)..."
@@ -88,8 +92,14 @@ MSG="${2:-Manual deployment update}"
 echo "📤 Syncing Local to GitHub (Branch: ${CURRENT_BRANCH})..."
 git add .
 git commit -m "v${VERSION}: ${MSG} (Local deployed version matching source)"
-git tag -a "v${VERSION}" -m "Release v${VERSION}"
-git push origin "$CURRENT_BRANCH" --follow-tags > /dev/null 2>&1 && echo "   ✅ GitHub push successful"
+
+# Only tag if the tag doesn't exist yet to prevent errors
+if ! git rev-parse "v${VERSION}" >/dev/null 2>&1; then
+    git tag -a "v${VERSION}" -m "Release v${VERSION}"
+fi
+
+# Removed redirection to /dev/null so you can see why a push fails
+git push origin "$CURRENT_BRANCH" --follow-tags && echo "   ✅ GitHub push successful"
 
 # 10. CI/CD Auto-Deploy triggers
 echo "🤖 GitHub Auto Deploy & Cloudflare Auto Deploy will now trigger based on this push."
@@ -98,8 +108,11 @@ echo ""
 echo "========================================="
 echo "✅ DEPLOYMENT DIAGNOSTICS & SUMMARY"
 echo "========================================="
+if [ "$REPO_PATH" == "UNKNOWN" ]; then
+    echo "⚠️  Warning: Remote repository path could not be detected."
+fi
 echo "   Release Version: v${VERSION}"
-REPO_PATH=$(git remote get-url origin | sed -E 's/.*github.com[:\/](.*)(\.git)?/\1/' || echo "banjais/dor-progress")
+echo "   Project ID     : ${PROJECT_ID}"
 echo "   GitHub Actions : https://github.com/${REPO_PATH}/actions"
 echo ""
 echo "📋 Project Info (diag):"

@@ -1,5 +1,6 @@
-const VERSION = '2.2.5';
+const VERSION = '2.3.0';
 const CHANGELOG = {
+  '2.3.0': ['Shared Gemini Summary caching: Results are reused across users if data hash is identical'],
   '2.2.5': ['Added automated UI refresh when background data revalidation completes'],
   '2.2.4': ['Implemented Stale-While-Revalidate (SWR) for API data with background refresh'],
   '2.2.3': ['Added cryptographic integrity verification for cached API data'],
@@ -31,7 +32,7 @@ const CHANGELOG = {
 const STATIC_CACHE_NAME = 'dor-static-v2';
 const DATA_CACHE_NAME = 'dor-data-v2';
 const OFFLINE_URL = '/offline.html';
-const API_BASE = '__API_BASE_URL__';
+const API_PREFIX = '/api';
 const BUILD_ID = '__BUILD_ID__';
 const COMMIT_SHA = '__COMMIT_SHA__';
 const MAX_DATA_ITEMS = 50; // Limit cached API responses
@@ -45,6 +46,7 @@ const ASSETS_TO_CACHE = [
   '/ambient-focus.mp3', // New track
   '/ambient-calm.mp3',   // New track
   // Add more ambient tracks here
+  '/locales/translations.json',
   '/manifest.json',
   OFFLINE_URL,
 ];
@@ -140,7 +142,7 @@ self.addEventListener('fetch', (event) => {
   if (event.request.method !== 'GET') return;
 
   const url = event.request.url;
-  const isApiRequest = url.startsWith(API_BASE);
+  const isApiRequest = new URL(url).pathname.startsWith(API_PREFIX);
 
   // 1. CSS - Cache-First (Prioritize instant UI rendering)
   if (url.endsWith('.css') || url.includes('fonts.googleapis.com/css')) {
@@ -198,7 +200,8 @@ self.addEventListener('fetch', (event) => {
         // The revalidation logic: Fetch from network and update cache
         const fetchPromise = fetch(event.request).then(async (networkResponse) => {
           if (networkResponse.ok) {
-            // Security check: Only cache if the new data is valid
+            // If X-Content-SHA256 is present, it means Gemini found an existing 
+            // shared summary in Redis for this data state.
             if (await verifyIntegrity(networkResponse.clone())) {
               await cache.put(event.request, networkResponse.clone());
 

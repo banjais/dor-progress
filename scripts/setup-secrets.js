@@ -9,41 +9,28 @@ import fs from 'fs';
 import path from 'path';
 import { execSync } from 'child_process';
 
-const REQUIRED = {
-  local: ['CLOUDFLARE_API_TOKEN'],
-  github: [
-    'CLOUDFLARE_API_TOKEN',
-    'UPSTASH_REDIS_REST_URL',
-    'UPSTASH_REDIS_REST_TOKEN',
-    'GEMINI_API_KEY',
-    'ADMIN_SECRET',
-    'FIREBASE_TOKEN',
-    'FIREBASE_SERVICE_ACCOUNT'
-  ]
-};
-
 console.log('\n🔧 SECRETS SETUP ASSISTANT\n');
 console.log('═'.repeat(60));
 
 // Check .dev.vars
 const devVarsPath = path.resolve(process.cwd(), '.dev.vars');
+let activeSecretNames = [];
+
 console.log('\n1️⃣  Local Development (.dev.vars)\n');
 if (fs.existsSync(devVarsPath)) {
   console.log('   ✅ .dev.vars exists');
   const content = fs.readFileSync(devVarsPath, 'utf8');
+  const vars = content.split('\n')
+    .filter(l => l && !l.startsWith('#') && l.includes('='));
+
+  activeSecretNames = vars.map(l => l.split('=')[0].trim());
+
   console.log('   Status: (Values masked for security)');
-  content.split('\n')
-    .filter(l => l && !l.startsWith('#'))
-    .forEach(l => console.log(`     ✅ ${l.split('=')[0]}`));
+  activeSecretNames.forEach(name => console.log(`     ✅ ${name}`));
 } else {
   console.log('   ❌ .dev.vars not found');
-  console.log('   Create it:');
-  console.log('   ```bash');
-  console.log('   touch .dev.vars');
-  for (const secret of [...REQUIRED.local, ...REQUIRED.github]) {
-    console.log(`   echo "${secret}=your_value_here" >> .dev.vars`);
-  }
-  console.log('   ```');
+  console.log('   Please create .dev.vars with your secrets first.');
+  process.exit(1);
 }
 
 // Cloudflare Wrangler secrets
@@ -54,7 +41,9 @@ try {
   const output = execSync('wrangler secret list --format json 2>/dev/null', { encoding: 'utf8' });
   const secrets = JSON.parse(output);
   console.log(`   ✅ Connected to Cloudflare (${secrets.length} secrets)`);
-  for (const s of REQUIRED.github.filter(k => !['FIREBASE_TOKEN', 'FIREBASE_SERVICE_ACCOUNT'].includes(k))) {
+  // Exclude deployment-only tokens from worker runtime check
+  const runtimeExclusions = ['FIREBASE_TOKEN', 'FIREBASE_SERVICE_ACCOUNT', 'CLOUDFLARE_API_TOKEN'];
+  for (const s of activeSecretNames.filter(k => !runtimeExclusions.includes(k))) {
     const found = secrets.find(ss => ss.name === s);
     console.log(`     ${found ? '✅' : '❌'} ${s}`);
   }
@@ -70,7 +59,7 @@ console.log('   Or via GitHub UI: Settings → Secrets and variables → Actions
 console.log('   Status in current environment (as passed to CI step):');
 
 let missingCount = 0;
-for (const secret of REQUIRED.github) {
+for (const secret of activeSecretNames) {
   const isSet = !!process.env[secret];
   if (!isSet) missingCount++;
   console.log(`     ${isSet ? '✅' : '❌'} ${secret}`);

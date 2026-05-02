@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # Standalone Post-Deployment Health Check
 
+BASE_URL="${APP_URL:-https://dor-progress.web.app}"
 echo "📡 Running health checks on live endpoints..."
 MAX_RETRIES=3
 WAIT_SECONDS=5
@@ -23,5 +24,6 @@ check_live() {
 }
 
 # Verify both Frontend and Backend
-check_live "https://dor-progress.web.app" "Frontend (Firebase)" || true
-check_live "https://dor-progress.banjays.workers.dev" "Backend (Cloudflare)" || true
+echo "🔍 Checking endpoints via ${BASE_URL}..."
+check_live "${BASE_URL}" "Frontend UI" || true
+check_live "${BASE_URL}/api/health" "Backend API (via Proxy)" || true

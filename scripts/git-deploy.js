@@ -1,6 +1,19 @@
 import { execSync } from 'child_process';
 
 try {
+  // Stage all changes
+  execSync('git add .', { stdio: 'inherit' });
+  console.log('✅ Staged all changes');
+
+  // Create commit with message "New Updates"
+  try {
+    execSync('git commit -m "New Updates"', { stdio: 'inherit' });
+    console.log('✅ Created commit: New Updates');
+  } catch (e) {
+    // Commit may fail if nothing to commit
+    console.log('⚠️  No changes to commit');
+  }
+
   // Get current branch
   let currentBranch = execSync('git rev-parse --abbrev-ref HEAD', { encoding: 'utf8' }).trim();
   

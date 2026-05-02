@@ -12,6 +12,11 @@ on:
         required: true
         default: 'production'
 
+env:
+  FIREBASE_PROJECT: "dor-progress"
+  REPO_NAME: ${{ github.repository }}
+  APP_URL: "https://dor-progress.web.app"
+
 jobs:
   security-and-validation:
     runs-on: ubuntu-latest
@@ -26,16 +31,47 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Secrets Check
-        run: node scripts/setup-secrets.js
-        env:
-          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          UPSTASH_REDIS_REST_URL: ${{ secrets.UPSTASH_REDIS_REST_URL }}
-          UPSTASH_REDIS_REST_TOKEN: ${{ secrets.UPSTASH_REDIS_REST_TOKEN }}
-          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
-          ADMIN_SECRET: ${{ secrets.ADMIN_SECRET }}
-          FIREBASE_TOKEN: ${{ secrets.FIREBASE_TOKEN }}
-          FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+      - name: 🛡️ Scan for Hardcoded Secrets
+        run: |
+          # Check for common patterns that shouldn't be in code (e.g., API keys, Private Keys)
+          if grep -rE "AIzaSy[A-Za-z0-9_-]{35}|[0-9a-fA-F]{32}|-----BEGIN PRIVATE KEY-----" ./src ./scripts; then
+            echo "::error::Potential hardcoded secrets found in source or scripts!" && exit 1
+          fi
+
+      - name: 🔑 Validate Environment Secrets
+        run: |
+          echo "### 🔐 Secret Validation Summary" >> $GITHUB_STEP_SUMMARY
+          echo "| Secret | Status | Impact |" >> $GITHUB_STEP_SUMMARY
+          echo "| :--- | :--- | :--- |" >> $GITHUB_STEP_SUMMARY
+          
+          check_val() {
+            if [ -z "$2" ]; then
+              echo "| $1 | ❌ FAIL | $3 |" >> $GITHUB_STEP_SUMMARY
+              return 1
+            fi
+            echo "| $1 | ✅ OK | Ready |" >> $GITHUB_STEP_SUMMARY
+            return 0
+          }
+
+          ERR=0
+          check_val "PUBLISHED_SHEET_ID" "${{ secrets.PUBLISHED_SHEET_ID }}" "UI translations & Gemini fingerprinting will fail" || ERR=1
+          check_val "CLOUDFLARE_API_TOKEN" "${{ secrets.CLOUDFLARE_API_TOKEN }}" "Cloudflare Worker deployment will fail" || ERR=1
+          check_val "UPSTASH_REDIS_REST_URL" "${{ secrets.UPSTASH_REDIS_REST_URL }}" "Redis/Cache features will fail" || ERR=1
+          check_val "UPSTASH_REDIS_REST_TOKEN" "${{ secrets.UPSTASH_REDIS_REST_TOKEN }}" "Redis/Cache features will fail" || ERR=1
+          check_val "GEMINI_API_KEY" "${{ secrets.GEMINI_API_KEY }}" "AI Summary generation will be disabled" || ERR=1
+          check_val "ADMIN_SECRET" "${{ secrets.ADMIN_SECRET }}" "Security/Admin routes will be inaccessible" || ERR=1
+          
+          if [ -n "${{ secrets.FIREBASE_TOKEN }}" ] || [ -n "${{ secrets.FIREBASE_SERVICE_ACCOUNT }}" ]; then
+            echo "| FIREBASE_AUTH | ✅ OK | |" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "| FIREBASE_AUTH | ❌ FAIL | Firebase Hosting deployment fails" >> $GITHUB_STEP_SUMMARY
+            ERR=1
+          fi
+
+          if [ $ERR -eq 1 ]; then
+            echo "::error title=Missing Secrets::One or more secrets are missing. Deployment stopped. View the Workflow Summary for details."
+            exit 1
+          fi
 
       - name: Security Audit
         run: npm run security-check || echo "Security check failed"
@@ -74,6 +110,12 @@ jobs:
           node-version: '20'
       - name: Install dependencies
         run: npm ci
+      
+      - name: 🌐 Sync Translations
+        run: node scripts/sync-sheets.js
+        env:
+          PUBLISHED_SHEET_ID: ${{ secrets.PUBLISHED_SHEET_ID }}
+
       - name: Build Frontend
         run: npm run build
 
@@ -104,7 +146,7 @@ jobs:
       - name: Deploy to Firebase (Frontend)
         run: |
           if [ -n "${{ secrets.FIREBASE_SERVICE_ACCOUNT }}" ]; then
-            npx firebase deploy --only hosting --project dor-progress --non-interactive
+            npx -y firebase-tools@latest deploy --only hosting --project ${{ env.FIREBASE_PROJECT }} --non-interactive
           else
-            npx firebase deploy --only hosting --project dor-progress --non-interactive --token "${{ secrets.FIREBASE_TOKEN }}"
+            npx -y firebase-tools@latest deploy --only hosting --project ${{ env.FIREBASE_PROJECT }} --non-interactive --token "${{ secrets.FIREBASE_TOKEN }}"
           fi

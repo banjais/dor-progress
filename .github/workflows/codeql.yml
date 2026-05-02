@@ -1,9 +1,9 @@
-name: "Scheduled Security Analysis"
+name: "CodeQL Security Analysis"
 
 on:
   schedule:
-    - cron: '0 0 * * 0' # Every Sunday at 00:00 UTC
-  workflow_dispatch: # Allows manual triggering
+    - cron: '0 0 * * 0'
+  workflow_dispatch:
 
 permissions:
   actions: read
@@ -12,35 +12,13 @@ permissions:
 
 jobs:
   analyze:
-    name: 🛡️ CodeQL Analysis
     runs-on: ubuntu-latest
-
     steps:
-      - name: ⬇️ Checkout repository
-        uses: actions/checkout@v4
-
+      - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
-        with:
-          node-version: 20
-
-      - name: 📂 Cache node_modules
-        id: node-modules-cache
-        uses: actions/cache@v4
-        with:
-          path: node_modules
-          key: ${{ runner.os }}-node-modules-${{ hashFiles('package-lock.json') }}
-
-      - name: 📦 Install Dependencies
-        if: steps.node-modules-cache.outputs.cache-hit != 'true'
-        run: npm ci --prefer-offline --no-audit
-
-      - name: ⚙️ Initialize CodeQL
-        uses: github/codeql-action/init@v3
+        with: { node-version: 20 }
+      - uses: github/codeql-action/init@v3
         with:
           languages: javascript-typescript
-
-      - name: 🏗️ Autobuild
-        uses: github/codeql-action/autobuild@v3
-
-      - name: 🔍 Perform CodeQL Analysis
-        uses: github/codeql-action/analyze@v3
+      - uses: github/codeql-action/autobuild@v3
+      - uses: github/codeql-action/analyze@v3

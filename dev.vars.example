@@ -1,0 +1,49 @@
+# ============================================================
+# LOCAL DEVELOPMENT SECRETS — never commit this file
+# Copy this to .dev.vars and fill in real values
+# Run: wrangler secret put <KEY_NAME> for production
+# ============================================================
+
+# Google Gemini AI
+GEMINI_API_KEY=
+
+# Firebase / App Check
+FIREBASE_API_KEY=
+FIREBASE_AUTH_DOMAIN=
+FIREBASE_PROJECT_ID=
+FIREBASE_PROJECT_NUMBER=
+FIREBASE_APP_ID=
+FIREBASE_STORAGE_BUCKET=
+FIREBASE_MESSAGING_SENDER_ID=
+FIREBASE_MEASUREMENT_ID=
+# Path to your downloaded service account JSON (local dev only)
+GOOGLE_APPLICATION_CREDENTIALS=
+
+# Upstash Redis
+UPSTASH_REDIS_REST_URL=
+UPSTASH_REDIS_REST_TOKEN=
+
+# Google reCAPTCHA
+RECAPTCHA_SITE_KEY=
+RECAPTCHA_SECRET_KEY=
+
+# Google Sheets (Published CSV URL)
+PUBLISHED_SHEET_ID=
+
+# VAPID Keys (Web Push)
+VAPID_PUBLIC_KEY=
+VAPID_PRIVATE_KEY=
+
+# SMTP (for alerts)
+SMTP_SERVER=smtp.gmail.com
+SMTP_USER=
+SMTP_PASSWORD=
+ALERT_RECIPIENT_EMAIL=
+
+# Admin access (min 32 chars)
+ADMIN_SECRET=
+
+# Cloudflare (for scripts, not needed by wrangler itself)
+CLOUDFLARE_API_TOKEN=
+
+# Note: TRANSLATION_KV is bound via wrangler.toml — not needed here

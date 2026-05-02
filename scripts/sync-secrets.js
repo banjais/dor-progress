@@ -6,22 +6,11 @@ import { spawnSync } from 'child_process';
 
 const devVarsPath = path.resolve(process.cwd(), '.dev.vars');
 
-const REQUIRED_GITHUB = [
+// Tokens used strictly for CI/CD that should NOT be put into the Worker runtime
+const CLOUDFLARE_RUNTIME_EXCLUSIONS = [
     'CLOUDFLARE_API_TOKEN',
-    'UPSTASH_REDIS_REST_URL',
-    'UPSTASH_REDIS_REST_TOKEN',
-    'GEMINI_API_KEY',
-    'ADMIN_SECRET',
     'FIREBASE_TOKEN',
     'FIREBASE_SERVICE_ACCOUNT'
-];
-
-const FOR_CLOUDFLARE = [
-    'CLOUDFLARE_API_TOKEN',
-    'UPSTASH_REDIS_REST_URL',
-    'UPSTASH_REDIS_REST_TOKEN',
-    'GEMINI_API_KEY',
-    'ADMIN_SECRET'
 ];
 
 if (!fs.existsSync(devVarsPath)) {
@@ -42,8 +31,8 @@ const vars = Object.fromEntries(
 );
 
 for (const [key, value] of Object.entries(vars)) {
-    // 1. Sync to Cloudflare Wrangler
-    if (FOR_CLOUDFLARE.includes(key)) {
+    // 1. Sync to Cloudflare Wrangler (Runtime Secrets)
+    if (!CLOUDFLARE_RUNTIME_EXCLUSIONS.includes(key)) {
         console.log(`☁️  Pushing ${key} to Cloudflare...`);
         const wr = spawnSync('npx', ['wrangler', 'secret', 'put', key], { input: value, encoding: 'utf8' });
         if (wr.status === 0) {
@@ -53,16 +42,13 @@ for (const [key, value] of Object.entries(vars)) {
         }
     }
 
-    // 2. Sync to GitHub Actions
-    if (REQUIRED_GITHUB.includes(key)) {
-        console.log(`🐙 Pushing ${key} to GitHub...`);
-        // Using --stdin avoids exposing the secret in command line arguments/history
-        const gh = spawnSync('gh', ['secret', 'set', key], { input: value, encoding: 'utf8' });
-        if (gh.status === 0) {
-            console.log(`   ✅ ${key} synced to GitHub.`);
-        } else {
-            console.error(`   ❌ Failed to sync ${key} to GitHub. Ensure 'gh' CLI is authenticated.`);
-        }
+    // 2. Sync to GitHub Actions (All secrets in .dev.vars)
+    console.log(`🐙 Pushing ${key} to GitHub...`);
+    const gh = spawnSync('gh', ['secret', 'set', key], { input: value, encoding: 'utf8' });
+    if (gh.status === 0) {
+        console.log(`   ✅ ${key} synced to GitHub.`);
+    } else {
+        console.error(`   ❌ Failed to sync ${key} to GitHub. Ensure 'gh' CLI is authenticated.`);
     }
 }
 

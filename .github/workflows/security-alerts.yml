@@ -11,45 +11,17 @@ jobs:
   email-on-high-severity:
     if: github.event.alert && (github.event.alert.security_severity_level == 'high' || github.event.alert.security_severity_level == 'critical')
     runs-on: ubuntu-latest
-    env:
-      SMTP_PASSWORD: ${{ secrets['SMTP_PASSWORD'] }}
     steps:
-      - name: ⬇️ Checkout Code
-        uses: actions/checkout@v4
-
-      - name: 📝 Extract Vulnerable Code Snippet
-        id: extract_code
-        run: |
-          FILE_PATH="${{ github.event.alert.most_recent_instance.location.path }}"
-          START_LINE="${{ github.event.alert.most_recent_instance.location.start_line }}"
-          if [ -f "$FILE_PATH" ]; then
-            # Extract the line and trim leading whitespace for better email formatting
-            CODE_SNIPPET=$(sed -n "${START_LINE}p" "$FILE_PATH" | sed 's/^[[:space:]]*//')
-            echo "snippet=$CODE_SNIPPET" >> "$GITHUB_OUTPUT"
-          else
-            echo "snippet=Code snippet unavailable" >> "$GITHUB_OUTPUT"
-          fi
-
-      - name: Send Email Notification
-        uses: dawidd6/action-send-mail@v3
+      - uses: actions/checkout@v4
+      - uses: dawidd6/action-send-mail@v3
         with:
-          # You must configure these secrets in your GitHub Repository Settings
           server_address: ${{ secrets.SMTP_SERVER }}
           server_port: 465
           username: ${{ secrets.SMTP_USERNAME }}
-          password: ${{ env.SMTP_PASSWORD }}
-          subject: "⚠️ High Severity Security Alert: ${{ github.event.alert.rule.description }}"
+          password: ${{ secrets.SMTP_PASSWORD }}
+          subject: "⚠️ High Severity Security Alert"
           to: ${{ secrets.ALERT_RECIPIENT_EMAIL }}
-          from: "GitHub Security Alerts <${{ secrets.SMTP_USERNAME }}>"
-          priority: high
           body: |
-            A high-severity security vulnerability was detected during a CodeQL scan.
-            
-            Repository: ${{ github.repository }}
             Rule: ${{ github.event.alert.rule.description }}
             Severity: ${{ github.event.alert.security_severity_level }}
-            File: ${{ github.event.alert.most_recent_instance.location.path }}
-            Line: ${{ github.event.alert.most_recent_instance.location.start_line }}
-            Code: ${{ steps.extract_code.outputs.snippet }}
-            
-            View the full alert details here: ${{ github.event.alert.html_url }}
+            Link: ${{ github.event.alert.html_url }}
