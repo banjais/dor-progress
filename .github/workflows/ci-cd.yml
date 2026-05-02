@@ -6,31 +6,13 @@ on:
   pull_request:
     branches: [main]
   workflow_dispatch:
-    inputs:
-      bump-type:
-        description: '📦 Version bump'
-        required: false
-        default: 'patch'
-        type: choice
-        options: [patch, minor, major]
-      skip-tests:
-        description: '⏭️ Skip tests?'
-        required: false
-        default: false
-        type: boolean
 
 permissions:
   contents: write
-  id-token: write
-  security-events: write
-
-concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
 
 jobs:
   preflight:
-    name: 🔒 Preflight + Security
+    name: 🔒 Preflight
     runs-on: ubuntu-latest
     outputs:
       version: ${{ steps.version.outputs.version }}
@@ -61,24 +43,10 @@ jobs:
             echo "❌ Firebase service account committed!" && exit 1
           fi
 
-      - name: Validate Secrets
-        run: |
-          if [ -z "${{ secrets.CLOUDFLARE_API_TOKEN }}" ]; then
-            echo "::warning::CLOUDFLARE_API_TOKEN is not set, Cloudflare deploy will fail"
-          fi
-          if [ -z "${{ secrets.FIREBASE_TOKEN }}" ]; then
-            echo "::warning::FIREBASE_TOKEN is not set, Firebase deploy will fail"
-          fi
-          if [ -z "${{ secrets.CLOUDFLARE_ZONE_ID }}" ]; then
-            echo "::notice::CLOUDFLARE_ZONE_ID is not set, cache purge will be skipped"
-          fi
-        shell: bash
-
       - name: Lint
         run: npm run lint
 
       - name: Test
-        if: ${{ github.event.inputs.skip-tests != 'true' }}
         run: npm test
 
       - name: Get Version
@@ -111,16 +79,6 @@ jobs:
         with: { node-version: 20 }
       - run: npm ci
       - run: npx wrangler deploy
-        env:
-          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-
-      - name: Trigger Cloudflare Cache Purge
-        if: github.ref == 'refs/heads/main' && secrets.CLOUDFLARE_ZONE_ID != ''
-        run: |
-          curl -X POST "https://api.cloudflare.com/client/v4/zones/${{ secrets.CLOUDFLARE_ZONE_ID }}/purge_cache" \
-            -H "Authorization: Bearer ${{ secrets.CLOUDFLARE_API_TOKEN }}" \
-            -H "Content-Type: application/json" \
-            --data '{"purge_everything":true}'
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
 
