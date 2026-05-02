@@ -137,16 +137,16 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Authenticate to Google Cloud
-        if: ${{ secrets.FIREBASE_SERVICE_ACCOUNT != '' }}
-        uses: google-github-actions/auth@v2
-        with:
-          credentials_json: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+       - name: Authenticate to Google Cloud
+         if: ${{ secrets.FIREBASE_SERVICE_ACCOUNT != '' }}
+         uses: google-github-actions/auth@v2
+         with:
+           credentials_json: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
 
-       - name: Deploy to Firebase (Frontend)
-         run: |
-           if [ -n "${{ secrets.FIREBASE_SERVICE_ACCOUNT }}" ]; then
-             npx -y firebase-tools@latest deploy --only hosting --project ${{ env.FIREBASE_PROJECT }} --public .build --non-interactive
-           else
-             npx -y firebase-tools@latest deploy --only hosting --project ${{ env.FIREBASE_PROJECT }} --public .build --non-interactive --token "${{ secrets.FIREBASE_TOKEN }}"
-           fi
+      - name: Deploy to Firebase (Frontend)
+        run: |
+          if [ -n "${{ secrets.FIREBASE_SERVICE_ACCOUNT }}" ]; then
+            npx -y firebase-tools@latest deploy --only hosting --project ${{ env.FIREBASE_PROJECT }} --public .build --non-interactive
+          else
+            npx -y firebase-tools@latest deploy --only hosting --project ${{ env.FIREBASE_PROJECT }} --public .build --non-interactive --token "${{ secrets.FIREBASE_TOKEN }}"
+          fi
