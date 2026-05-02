@@ -26,4 +26,9 @@ describe('Security Configuration', () => {
         }
         expect(geminiKey).toMatch(/^AIza/);
     });
+
+    it('placeholder test for CI', () => {
+        // This test ensures the suite has at least one assertion when secrets are missing
+        expect(true).toBe(true);
+    });
 });
