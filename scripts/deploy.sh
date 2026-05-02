@@ -77,11 +77,11 @@ echo "🔥 Deploying to Firebase Hosting..."
 if [ -n "$FIREBASE_SERVICE_ACCOUNT" ]; then
     # Preferred: Use Service Account Key
     echo "$FIREBASE_SERVICE_ACCOUNT" > sa_key.json
-    GOOGLE_APPLICATION_CREDENTIALS=sa_key.json npx -y firebase-tools@latest deploy --only hosting --project "$PROJECT_ID" --force --public .build --non-interactive
+    GOOGLE_APPLICATION_CREDENTIALS=sa_key.json npx -y firebase-tools@latest deploy --only hosting --project "$PROJECT_ID" --force --public .build --non-interactive || echo "⚠️ Local Firebase deploy failed, but proceeding to Git Sync..."
     rm sa_key.json
 else
     # Fallback: Use FIREBASE_TOKEN (Deprecated)
-    npx -y firebase-tools@latest deploy --only hosting --project "$PROJECT_ID" --force --public .build --token "$FIREBASE_TOKEN" --non-interactive
+    npx -y firebase-tools@latest deploy --only hosting --project "$PROJECT_ID" --force --public .build --token "$FIREBASE_TOKEN" --non-interactive || echo "⚠️ Local Firebase deploy failed, but proceeding to Git Sync..."
 fi
 
 echo "☁️ Deploying to Cloudflare Workers (Wrangler)..."
