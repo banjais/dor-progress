@@ -11,17 +11,17 @@ describe('Security Configuration', () => {
         const adminSecret = process.env.ADMIN_SECRET;
         if (!adminSecret) {
             console.log('ADMIN_SECRET not set, skipping test');
-            return;
+        } else {
+            expect(adminSecret.length).toBeGreaterThanOrEqual(32);
         }
-        expect(adminSecret?.length).toBeGreaterThanOrEqual(32);
     });
 
     it('GEMINI_API_KEY should start with the correct Google API prefix (AIza)', () => {
         const geminiKey = process.env.GEMINI_API_KEY;
         if (!geminiKey) {
             console.log('GEMINI_API_KEY not set, skipping test');
-            return;
+        } else {
+            expect(geminiKey).toMatch(/^AIza/);
         }
-        expect(geminiKey).toMatch(/^AIza/);
     });
 });
