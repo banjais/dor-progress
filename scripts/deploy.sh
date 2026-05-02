@@ -53,6 +53,10 @@ fi
 # 4.1 Validate Secrets via Assistant
 node scripts/setup-secrets.js | grep -v "=" # Extra filter to ensure no accidental value leak
 
+# 4.2 Sync Translations from Google Sheets
+echo "🌐 Syncing UI translations..."
+node scripts/sync-sheets.js
+
 # 5. Validation Gates
 echo "🔒 Running security checks..."
 npm run security-check > /dev/null 2>&1 || echo "⚠️  Security check completed with warnings"
