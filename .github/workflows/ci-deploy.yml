@@ -8,8 +8,8 @@ on:
   workflow_dispatch:
 
 jobs:
-  deploy:
-    name: Build, Deploy and Health Check
+  validate-translations:
+    name: Translation Integrity Check
     runs-on: ubuntu-latest
     steps:
       - name: Checkout Repository
@@ -21,6 +21,49 @@ jobs:
           node-version: '20'
           cache: 'npm'
 
+      - name: Install Dependencies
+        run: npm ci --prefer-offline --no-audit
+
+      - name: Upload node_modules Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: node-modules-cache
+          path: node_modules
+          retention-days: 1
+
+      - name: Sync and Verify Translations
+        env:
+          PUBLISHED_SHEET_ID: ${{ secrets.PUBLISHED_SHEET_ID }}
+        run: |
+          echo '${{ secrets.FIREBASE_SERVICE_ACCOUNT }}' > sa_key.json
+          GOOGLE_APPLICATION_CREDENTIALS=sa_key.json npx tsx scripts/sync-sheets.js
+          rm sa_key.json
+          npm test -- translations
+
+      - name: Build Application
+        run: npm run build
+
+      - name: Upload Build Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-output
+          path: .build
+          retention-days: 1
+
+  deploy:
+    name: Build, Deploy and Health Check
+    needs: validate-translations
+    if: github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
       - name: Verify Secrets Presence
         run: |
           if [ -z "${{ secrets.FIREBASE_SERVICE_ACCOUNT }}" ]; then echo "❌ FIREBASE_SERVICE_ACCOUNT is missing"; exit 1; fi
@@ -28,8 +71,11 @@ jobs:
           if [ -z "${{ secrets.PUBLISHED_SHEET_ID }}" ]; then echo "❌ PUBLISHED_SHEET_ID is missing"; exit 1; fi
           echo "✅ All required secrets are present."
 
-      - name: Install Dependencies
-        run: npm ci
+      - name: Download node_modules Artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: node-modules-cache
+          path: node_modules
 
       - name: Security Audit
         run: npm run security-check || echo "⚠️ Security check completed with warnings"
@@ -48,13 +94,16 @@ jobs:
           GOOGLE_APPLICATION_CREDENTIALS=sa_key.json npx tsx scripts/sync-sheets.js
           rm sa_key.json
 
+      - name: Download Build Artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: build-output
+          path: .build
+
       - name: Quality Gates (Type Check & Test)
         run: |
           npx tsc --noEmit
           npm test
-
-      - name: Build Application
-        run: npm run build
 
       - name: Deploy to Firebase Hosting
         uses: FirebaseExtended/action-hosting-deploy@v0

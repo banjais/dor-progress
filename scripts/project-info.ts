@@ -10,7 +10,7 @@ import path from 'path';
 import { execSync } from 'child_process';
 // import { formatTimestamp, VERSION } from '../shared/utils.js';
 const VERSION = '1.0.80'; // Fallback
-const formatTimestamp = (d: any) => new Date(d).toLocaleString(); 
+const formatTimestamp = (d: any) => new Date(d).toLocaleString();
 
 import { fileURLToPath } from 'url';
 
@@ -132,14 +132,30 @@ if (fs.existsSync(devVarsPath)) {
     const keys = content.split('\n')
         .filter(l => l && !l.startsWith('#'))
         .map(l => l.split('=')[0]);
-    console.log(`Loaded: ${keys.join(', ')}`);
+
+    const sheetLine = content.split('\n').find(l => l.startsWith('PUBLISHED_SHEET_ID='));
+    const rawId = sheetLine?.split('=')[1]?.trim();
+    const parsedId = rawId?.includes('/d/e/') ? rawId.split('/d/e/')[1].split('/')[0] : rawId;
+
+    console.log(`Loaded:  ${keys.join(', ')}`);
+    if (parsedId) console.log(`SheetID: ${parsedId.substring(0, 8)}...${parsedId.substring(parsedId.length - 8)}`);
+
 } else {
     console.log('No .dev.vars file found (local secrets)');
 }
 
 section('✅ Pre-deploy Checks');
 const issues: string[] = [];
-if (!fs.existsSync(devVarsPath)) issues.push('No .dev.vars (local secrets configured)');
+
+const hasDevVars = fs.existsSync(devVarsPath);
+const devVarsContent = hasDevVars ? fs.readFileSync(devVarsPath, 'utf8') : '';
+
+if (!hasDevVars) {
+    issues.push('No .dev.vars (local secrets file is missing)');
+} else if (!devVarsContent.includes('PUBLISHED_SHEET_ID')) {
+    issues.push('PUBLISHED_SHEET_ID is missing from .dev.vars (required for translations)');
+}
+
 if (!fs.existsSync(buildDir)) issues.push('Firebase not built (run: npm run build)');
 if (issues.length) {
     for (const issue of issues) console.log(`  ⚠️  ${issue}`);

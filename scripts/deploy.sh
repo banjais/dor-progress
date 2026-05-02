@@ -2,6 +2,15 @@
 set -e # Exit immediately if a command exits with a non-zero status
 
 # 0. Pre-flight Check: Ensure dependencies exist
+# Detect --dry-run flag anywhere in arguments
+DRY_RUN_FLAG=""
+for arg in "$@"; do
+    if [ "$arg" == "--dry-run" ]; then
+        DRY_RUN_FLAG="--dry-run"
+        echo "🧪 DRY RUN MODE ENABLED: No files will be written or pushed."
+    fi
+done
+
 PROJECT_ID="${FIREBASE_PROJECT:-dor-progress}"
 APP_URL="${APP_URL:-https://dor-progress.web.app}"
 REPO_PATH=$(git remote get-url origin | sed -E 's/.*github.com[:\/](.*)(\.git)?/\1/' || echo "UNKNOWN")
@@ -55,7 +64,7 @@ node scripts/setup-secrets.js | grep -v "=" # Extra filter to ensure no accident
 
 # 4.2 Sync Translations from Google Sheets
 echo "🌐 Syncing UI translations..."
-node scripts/sync-sheets.js
+npx tsx scripts/sync-sheets.js $DRY_RUN_FLAG
 
 # 5. Validation Gates
 echo "🔒 Running security checks..."
@@ -64,6 +73,9 @@ echo ""
 
 echo "🔍 Running type checks..."
 npx tsc --noEmit
+
+echo "🧪 Running translation integrity tests..."
+npm test -- translations
 
 echo "🧪 Running tests..."
 npm test
@@ -78,10 +90,13 @@ VERSION=$(node -p "require('./package.json').version")
 MSG="${2:-Manual deployment update}"
 
 # 8. Git Sync via Helper
-node scripts/git-deploy.js "$MSG"
+if [ "$DRY_RUN_FLAG" == "--dry-run" ]; then
+    echo "⏭️  Dry run: Skipping Git push and version tagging."
+else
+    node scripts/git-deploy.js "$MSG"
+    echo "🤖 GitHub Auto Deploy & Cloudflare Auto Deploy will now trigger based on this push."
+fi
 
-# 10. CI/CD Auto-Deploy triggers
-echo "🤖 GitHub Auto Deploy & Cloudflare Auto Deploy will now trigger based on this push."
 # 11. Diagnostic Output
 echo ""
 echo "========================================="
