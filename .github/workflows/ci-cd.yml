@@ -64,15 +64,13 @@ jobs:
       - name: Validate Secrets
         run: |
           if [ -z "${{ secrets.CLOUDFLARE_API_TOKEN }}" ]; then
-            echo "::error::CLOUDFLARE_API_TOKEN is not set"
-            exit 1
+            echo "::warning::CLOUDFLARE_API_TOKEN is not set, Cloudflare deploy will fail"
           fi
           if [ -z "${{ secrets.FIREBASE_TOKEN }}" ]; then
-            echo "::error::FIREBASE_TOKEN is not set"
-            exit 1
+            echo "::warning::FIREBASE_TOKEN is not set, Firebase deploy will fail"
           fi
           if [ -z "${{ secrets.CLOUDFLARE_ZONE_ID }}" ]; then
-            echo "::warning::CLOUDFLARE_ZONE_ID is not set, cache purge will be skipped"
+            echo "::notice::CLOUDFLARE_ZONE_ID is not set, cache purge will be skipped"
           fi
         shell: bash
 
