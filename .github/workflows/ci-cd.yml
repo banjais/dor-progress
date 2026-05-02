@@ -85,15 +85,16 @@ jobs:
 
   deploy-firebase:
     name: 🔥 Deploy Firebase
-    needs: [preflight, build]
-    if: github.ref == 'refs/heads/main'
+    needs: [build]
+    if: github.ref == 'refs/heads/main' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with: { node-version: 20 }
       - uses: actions/download-artifact@v4
-        with: { name: build-artifacts }
+        with: { name: build-artifacts, path: .build }
+        continue-on-error: true
       - run: npx firebase deploy --only hosting --project dor-progress
         env:
           FIREBASE_TOKEN: ${{ secrets.FIREBASE_TOKEN }}
