@@ -1,4 +1,9 @@
 #!/usr/bin/env node
+/**
+ * Translation Synchronization Script
+ * Downloads CSV from Google Sheets, parses it into JSON, 
+ * and performs an integrity check using SHA-256 fingerprinting.
+ */
 import fs from 'fs';
 import path from 'path';
 import crypto from 'crypto';
@@ -22,13 +27,14 @@ if (!process.env.PUBLISHED_SHEET_ID) {
     }
 }
 
-/**
- * Extract Sheet ID from a full URL if provided, otherwise use as is
- */
 const rawId = process.env.PUBLISHED_SHEET_ID;
+
+// Helper: Extract Sheet ID from a full URL if provided, otherwise use as is
 const PUBLISHED_SHEET_ID = rawId?.includes('/d/e/')
     ? rawId.split('/d/e/')[1].split('/')[0]
-    : rawId;
+    : rawId?.includes('/d/')
+        ? rawId.split('/d/')[1].split('/')[0]
+        : rawId;
 
 const PUBLISHED_URL = `https://docs.google.com/spreadsheets/d/e/${PUBLISHED_SHEET_ID}/pub?output=csv`;
 
@@ -36,9 +42,7 @@ const OUTPUT_PATH = path.resolve(process.cwd(), 'src/locales/translations.json')
 const PUBLIC_PATH = path.resolve(process.cwd(), 'public/translations.json');
 const BUILD_PATH = path.resolve(process.cwd(), '.build/translations.json');
 
-/**
- * Helper to sort object keys alphabetically
- */
+// Helper to sort object keys alphabetically for consistent diffs
 function sortObject(obj) {
     return Object.keys(obj).sort().reduce((acc, key) => {
         acc[key] = obj[key];
@@ -52,25 +56,48 @@ async function syncTranslations() {
         return;
     }
 
-    console.log('🌐 Fetching published translations from Google Sheets...');
+    console.log(`🌐 Syncing translations for Sheet ID: ${PUBLISHED_SHEET_ID.substring(0, 8)}...`);
 
     let baseline = null;
     if (fs.existsSync(OUTPUT_PATH)) {
         try {
+            // Load existing file to check fingerprint before writing
             baseline = JSON.parse(fs.readFileSync(OUTPUT_PATH, 'utf8'));
-        } catch (e) { /* ignore baseline if file is missing or invalid */ }
+        } catch (e) { /* ignore baseline if file is missing or invalid JSON */ }
     }
 
     try {
-        const response = await fetch(PUBLISHED_URL);
-        if (!response.ok) throw new Error(`Failed to fetch: ${response.statusText}`);
+        let response;
+        const maxRetries = 3;
+        for (let i = 0; i <= maxRetries; i++) {
+            try {
+                response = await fetch(PUBLISHED_URL);
+                if (response.ok) break; // Success, exit loop
+
+                // If not OK, but not a hard error (e.g., 404, 403), retry
+                if (response.status >= 400 && response.status < 500 && response.status !== 429) {
+                    throw new Error(`Non-retryable HTTP error: ${response.status} ${response.statusText}`);
+                }
+                throw new Error(`Failed to fetch (status: ${response.status} ${response.statusText})`);
+            } catch (error) {
+                if (i < maxRetries) {
+                    const delay = Math.pow(2, i) * 1000; // Exponential backoff: 1s, 2s, 4s
+                    console.warn(`⚠️ Attempt ${i + 1}/${maxRetries + 1} failed. Retrying in ${delay / 1000}s... (${error.message})`);
+                    await new Promise(resolve => setTimeout(resolve, delay));
+                } else {
+                    throw error; // Last attempt failed, re-throw
+                }
+            }
+        }
+
+        if (!response || !response.ok) throw new Error(`Failed to fetch after ${maxRetries + 1} attempts.`);
 
         const csvText = await response.text();
-        // Handle potential CSV quoting and line endings
+        // Regex to handle CSV quoting (escaped commas)
         const rows = csvText.split(/\r?\n/).map(row => row.split(/,(?=(?:(?:[^"]*"){2})*[^"]*$)/));
 
         // Single Tab Logic: Columns are [Key, English, Nepali]
-        const translations = {
+        const newContent = {
             en: {},
             ne: {},
             _metadata: { syncAt: new Date().toISOString() }
@@ -83,17 +110,19 @@ async function syncTranslations() {
 
         rows.slice(1).forEach(row => {
             if (row && row.length >= 3) {
+                // Clean quotes and trim whitespace
                 const key = row[0]?.replace(/^"|"$/g, '').trim();
                 const enVal = row[1]?.replace(/^"|"$/g, '').trim();
                 const neVal = row[2]?.replace(/^"|"$/g, '').trim();
 
                 if (key) {
-                    // Prevent keys with dots to ensure a strictly flat translation structure
+                    // Validation: Flat structure only (no dots allowed in keys)
+                    // This keeps the i18n implementation simple and predictable
                     if (key.includes('.')) {
                         nestedKeys.push(key);
                     }
 
-                    if (key in translations.en) {
+                    if (key in newContent.en) {
                         duplicates.push(key);
                     }
 
@@ -105,12 +134,13 @@ async function syncTranslations() {
                     if (!enVal || !neVal) {
                         missing.push({ key, en: !enVal, ne: !neVal });
                     }
-                    translations.en[key] = enVal;
-                    translations.ne[key] = neVal;
+                    newContent.en[key] = enVal;
+                    newContent.ne[key] = neVal;
                 }
             }
         });
 
+        // Critical Validation Phase
         let hasErrors = false;
         if (duplicates.length > 0) {
             console.error(`❌ Error: Found ${duplicates.length} duplicate key(s) in the Google Sheet:`);
@@ -135,33 +165,27 @@ async function syncTranslations() {
             hasErrors = true;
         }
 
+        // Fail fast in CI if translations are corrupted
         if (hasErrors) process.exit(1);
 
-        // 1. Sort keys for consistency and cleaner diffs
-        const sortedEn = sortObject(translations.en);
-        const sortedNe = sortObject(translations.ne);
+        const sortedEn = sortObject(newContent.en);
+        const sortedNe = sortObject(newContent.ne);
 
-        // Generate fingerprint based ONLY on translation content
-        // This ensures the fingerprint ignores the 'syncAt' timestamp in _metadata
+        // FINGERPRINT CHECK: Check if content actually changed
         const fingerprint = crypto.createHash('sha256')
             .update(JSON.stringify({ en: sortedEn, ne: sortedNe }))
             .digest('hex');
-        translations._metadata.fingerprint = fingerprint;
+        newContent._metadata.fingerprint = fingerprint;
 
-        if (isVerbose && unchanged.length > 0) {
-            console.log(`ℹ️ Unchanged keys (${unchanged.length}):`);
-            unchanged.forEach(k => console.log(`   - ${k}`));
-        }
-
-        // Skip write if fingerprint matches the baseline
         if (baseline && baseline._metadata?.fingerprint === fingerprint) {
-            console.log(`✨ No changes detected (fingerprint: ${fingerprint}). Skipping write operation.`);
+            console.log(`✨ Already up to date (fingerprint: ${fingerprint.substring(0, 8)}).`);
             return;
         }
 
+        // Execution Phase
         if (isDryRun) {
             console.log(`\n--- DRY RUN: No files were written ---`);
-            console.log(`Would sync ${Object.keys(translations.en).length} keys.`);
+            console.log(`Would sync ${Object.keys(newContent.en).length} keys.`);
             console.log(`New Fingerprint: ${fingerprint}`);
             return;
         }
@@ -169,13 +193,13 @@ async function syncTranslations() {
         const finalOutput = {
             en: sortedEn,
             ne: sortedNe,
-            _metadata: translations._metadata
+            _metadata: newContent._metadata
         };
         const jsonContent = JSON.stringify(finalOutput, null, 2);
 
-        // 1. Write to src (for application code imports)
+        // Atomic Write Operations
         fs.mkdirSync(path.dirname(OUTPUT_PATH), { recursive: true });
-        fs.writeFileSync(OUTPUT_PATH, jsonContent);
+        fs.writeFileSync(OUTPUT_PATH, jsonContent); // Source code baseline
 
         // 2. Write to public (Ensures it is bundled into the final build artifact)
         fs.mkdirSync(path.dirname(PUBLIC_PATH), { recursive: true });
@@ -188,12 +212,12 @@ async function syncTranslations() {
         // 4. Post-sync Formatting Step
         try {
             console.log('✨ Formatting generated files...');
-            execSync(`npx prettier --write "${OUTPUT_PATH}" "${PUBLIC_PATH}"`, { stdio: 'ignore' });
+            execSync(`pnpm exec prettier --write "${OUTPUT_PATH}" "${PUBLIC_PATH}"`, { stdio: 'ignore' });
         } catch (e) {
             console.warn('⚠️  Note: Prettier formatting skipped (not installed or failed).');
         }
 
-        console.log(`✅ Successfully synced ${Object.keys(finalOutput.en).length} keys (${unchanged.length} unchanged from baseline).`);
+        console.log(`✅ Successfully synced ${Object.keys(finalOutput.en).length} keys.`);
     } catch (error) {
         console.error('❌ Error syncing translations:', error.message);
         process.exit(1);

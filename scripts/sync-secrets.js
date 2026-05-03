@@ -34,7 +34,7 @@ for (const [key, value] of Object.entries(vars)) {
     // 1. Sync to Cloudflare Wrangler (Runtime Secrets)
     if (!CLOUDFLARE_RUNTIME_EXCLUSIONS.includes(key)) {
         console.log(`☁️  Pushing ${key} to Cloudflare...`);
-        const wr = spawnSync('npx', ['wrangler', 'secret', 'put', key], { input: value, encoding: 'utf8' });
+        const wr = spawnSync('pnpm', ['exec', 'wrangler', 'secret', 'put', key], { input: value, encoding: 'utf8' });
         if (wr.status === 0) {
             console.log(`   ✅ ${key} synced to Cloudflare.`);
         } else {

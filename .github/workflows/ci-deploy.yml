@@ -15,36 +15,42 @@ jobs:
       - name: Checkout Repository
         uses: actions/checkout@v4
 
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9
+
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
           node-version: '20'
-          cache: 'npm'
+      - name: Get pnpm store directory
+        shell: bash
+        run: |
+          echo "STORE_PATH=$(pnpm store path --silent)" >> $GITHUB_ENV
+      - name: Cache pnpm store
+        uses: actions/cache@v4
+        with:
+          path: ${{ env.STORE_PATH }}
+          key: pnpm-store-${{ runner.os }}-${{ hashFiles('**/pnpm-lock.yaml') }}
+          restore-keys: pnpm-store-${{ runner.os }}-
 
       - name: Install Dependencies
-        run: npm ci --prefer-offline --no-audit
-
-      - name: Upload node_modules Artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: node-modules-cache
-          path: node_modules
-          retention-days: 1
+        run: pnpm install --frozen-lockfile
 
       - name: Sync and Verify Translations
         env:
           PUBLISHED_SHEET_ID: ${{ secrets.PUBLISHED_SHEET_ID }}
         run: |
           echo '${{ secrets.FIREBASE_SERVICE_ACCOUNT }}' > sa_key.json
-          GOOGLE_APPLICATION_CREDENTIALS=sa_key.json npx tsx scripts/sync-sheets.js
+          GOOGLE_APPLICATION_CREDENTIALS=sa_key.json pnpm exec tsx scripts/sync-sheets.js
           rm sa_key.json
-          npm test -- translations
+          pnpm test -- translations
 
       - name: Build Application
-        run: npm run build
+        run: pnpm build
 
       - name: Verify Build Output
-        run: npx tsx scripts/verify-build.js
+        run: pnpm exec tsx scripts/verify-build.js
 
       - name: Upload Build Artifact
         uses: actions/upload-artifact@v4
@@ -61,31 +67,30 @@ jobs:
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v4
-
       - name: Setup Node.js
         uses: actions/setup-node@v4
-        with:
-          node-version: '20'
-
-      - name: Verify Secrets Presence
+        with: { node-version: '20' }
+      - uses: pnpm/action-setup@v4
+        with: { version: 9 }
+      - name: Get pnpm store directory
+        shell: bash
         run: |
-          if [ -z "${{ secrets.FIREBASE_SERVICE_ACCOUNT }}" ]; then echo "❌ FIREBASE_SERVICE_ACCOUNT is missing"; exit 1; fi
-          if [ -z "${{ secrets.CLOUDFLARE_API_TOKEN }}" ]; then echo "❌ CLOUDFLARE_API_TOKEN is missing"; exit 1; fi
-          if [ -z "${{ secrets.PUBLISHED_SHEET_ID }}" ]; then echo "❌ PUBLISHED_SHEET_ID is missing"; exit 1; fi
-          echo "✅ All required secrets are present."
-
-      - name: Download node_modules Artifact
-        uses: actions/download-artifact@v4
+          echo "STORE_PATH=$(pnpm store path --silent)" >> $GITHUB_ENV
+      - name: Cache pnpm store
+        uses: actions/cache@v4
         with:
-          name: node-modules-cache
-          path: node_modules
+          path: ${{ env.STORE_PATH }}
+          key: pnpm-store-${{ runner.os }}-${{ hashFiles('**/pnpm-lock.yaml') }}
+          restore-keys: pnpm-store-${{ runner.os }}-
+      - name: Install Dependencies
+        run: pnpm install --frozen-lockfile
 
       - name: Security Audit
-        run: npm run security-check || echo "⚠️ Security check completed with warnings"
+        run: pnpm run security-check || echo "⚠️ Security check completed with warnings"
 
       - name: Run Build Preparations
         run: |
-          npx tsx scripts/project-info.ts
+          pnpm exec tsx scripts/project-info.ts
           node scripts/setup-secrets.js || true
 
       - name: Sync Translations from Google Sheets
@@ -94,7 +99,7 @@ jobs:
         run: |
           # Write credentials to file so scripts/sync-sheets.js can find them
           echo '${{ secrets.FIREBASE_SERVICE_ACCOUNT }}' > sa_key.json
-          GOOGLE_APPLICATION_CREDENTIALS=sa_key.json npx tsx scripts/sync-sheets.js
+          GOOGLE_APPLICATION_CREDENTIALS=sa_key.json pnpm exec tsx scripts/sync-sheets.js
           rm sa_key.json
 
       - name: Download Build Artifact
@@ -105,8 +110,8 @@ jobs:
 
       - name: Quality Gates (Type Check & Test)
         run: |
-          npx tsc --noEmit
-          npm test
+          pnpm exec tsc --noEmit
+          pnpm test
 
       - name: Deploy to Firebase Hosting
         uses: FirebaseExtended/action-hosting-deploy@v0
@@ -132,4 +137,4 @@ jobs:
         run: |
           echo "✅ Deployment Summary"
           echo "Release Version: $(node -p "require('./package.json').version")"
-          npm run info || true
+          pnpm run info || true

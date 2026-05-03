@@ -213,12 +213,8 @@ for (const key of firebaseKeys) {
 console.log("\n" + "═".repeat(60));
 console.log("\n📋 Quick Commands:\n");
 console.log("   # Check status");
-console.log("   npm run secrets\n");
+console.log("   pnpm run secrets\n");
 console.log("   # Set Cloudflare secret");
 console.log("   wrangler secret put CLOUDFLARE_API_TOKEN\n");
 console.log("   # Set GitHub secret (using GitHub CLI)");
-console.log("   gh secret set CLOUDFLARE_API_TOKEN\n");
-console.log("   # View Worker logs");
-console.log("   npm run logs\n");
-
-console.log("");
+console.log("   gh secret set <NAME>\n");
