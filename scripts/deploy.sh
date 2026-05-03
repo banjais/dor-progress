@@ -60,7 +60,7 @@ if [ -f .dev.vars ]; then
 fi
 
 # 4.1 Validate Secrets via Assistant
-node scripts/setup-secrets.js | grep -v "=" # Extra filter to ensure no accidental value leak
+npx tsx scripts/setup-secrets.js | grep -v "=" # Extra filter to ensure no accidental value leak
 
 # 4.2 Sync Translations from Google Sheets
 echo "🌐 Syncing UI translations..."
@@ -83,6 +83,9 @@ npm test
 # 6. Full Build (compile + copy + inject + verify)
 echo "🏗️  Starting Fresh Build..."
 npm run build
+
+echo "🧹 Pruning non-asset files from public..."
+npx tsx scripts/prune-public.ts
 
 # 7. Versioning
 npm version "$BUMP" --no-git-tag-version

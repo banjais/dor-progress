@@ -1,9 +1,9 @@
 {
-  "*.ts": [
-    "eslint --fix",
-    "bash -c 'npx tsc --build'"
+  "**/*.{yml,yaml}": [
+    "npx prettier --check"
   ],
-  "*.js": [
-    "eslint --fix"
+  "**/*.{js,css}": [
+    "npx prettier --check",
+    "npx eslint --max-warnings 0 --no-warn-ignored"
   ]
 }
