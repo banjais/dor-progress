@@ -14,7 +14,14 @@ console.log('═'.repeat(60));
 
 // Check .dev.vars
 const devVarsPath = path.resolve(process.cwd(), '.dev.vars');
-let activeSecretNames = [];
+// Define core required secrets for CI validation if .dev.vars is missing
+const REQUIRED_SECRETS = [
+  'CLOUDFLARE_API_TOKEN',
+  'FIREBASE_TOKEN',
+  'PUBLISHED_SHEET_ID'
+];
+
+let activeSecretNames = [...REQUIRED_SECRETS];
 
 console.log('\n1️⃣  Local Development (.dev.vars)\n');
 if (fs.existsSync(devVarsPath)) {
@@ -23,14 +30,19 @@ if (fs.existsSync(devVarsPath)) {
   const vars = content.split('\n')
     .filter(l => l && !l.startsWith('#') && l.includes('='));
 
-  activeSecretNames = vars.map(l => l.split('=')[0].trim());
+  // Merge unique secret names found in local vars
+  const foundNames = vars.map(l => l.split('=')[0].trim());
+  activeSecretNames = Array.from(new Set([...activeSecretNames, ...foundNames]));
 
   console.log('   Status: (Values masked for security)');
   activeSecretNames.forEach(name => console.log(`     ✅ ${name}`));
 } else {
   console.log('   ❌ .dev.vars not found');
-  console.log('   Please create .dev.vars with your secrets first.');
-  process.exit(1);
+  if (!process.env.GITHUB_ACTIONS) {
+    console.log('   Please create .dev.vars with your secrets first.');
+    process.exit(1);
+  }
+  console.log('   (Using required core list for CI validation)');
 }
 
 // Cloudflare Wrangler secrets
@@ -66,8 +78,12 @@ for (const secret of activeSecretNames) {
 }
 
 if (missingCount > 0 && process.env.GITHUB_ACTIONS) {
-  console.log(`\n❌ Failed: ${missingCount} GitHub secrets are not configured in this workflow run.`);
-  // Do not exit with 1, allow the workflow to continue for graph visibility.
+  // GitHub Actions Annotation: Creates the "Reason" visible in the UI summary
+  console.error(`\n::error title=Secrets Validation Failed::${missingCount} required secrets are missing from the environment.`);
+  console.error('Check your GitHub Repository Settings > Secrets > Actions mapping.');
+
+  // Hard error to fail the job
+  process.exit(1);
 }
 
 // Firebase config

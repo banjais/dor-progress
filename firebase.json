@@ -1,54 +1,45 @@
 {
   "hosting": {
-    "site": "dor-progress",
-    "public": "public",
+    "public": ".build",
     "ignore": [
       "firebase.json",
-      ".firebaserc",
       "**/.*",
-      "**/node_modules/**",
-      "package.json",
-      "package-lock.json"
+      "**/node_modules/**"
     ],
     "headers": [
-      {
-        "source": "/",
-        "headers": [
-          {
-            "key": "Cache-Control",
-            "value": "no-cache, no-store, must-revalidate"
-          }
-        ]
-      },
-      {
-        "source": "**/*.html",
-        "headers": [
-          {
-            "key": "Cache-Control",
-            "value": "no-cache, no-store, must-revalidate"
-          }
-        ]
-      },
       {
         "source": "/sw.v2.js",
         "headers": [
           {
             "key": "Cache-Control",
-            "value": "no-cache, no-store, must-revalidate, max-age=0"
+            "value": "no-cache, no-store, must-revalidate"
+          },
+          {
+            "key": "Service-Worker-Allowed",
+            "value": "/"
           }
         ]
       },
       {
-        "source": "/manifest.json",
+        "source": "/index.html",
         "headers": [
           {
             "key": "Cache-Control",
-            "value": "no-cache, no-store, must-revalidate, max-age=0"
+            "value": "no-cache"
           }
         ]
       },
       {
-        "source": "**/*.@(js|css|png|jpg|svg|ico|woff2)",
+        "source": "/(manifest.json|translations.json)",
+        "headers": [
+          {
+            "key": "Cache-Control",
+            "value": "no-cache"
+          }
+        ]
+      },
+      {
+        "source": "/assets/**",
         "headers": [
           {
             "key": "Cache-Control",
@@ -58,10 +49,6 @@
       }
     ],
     "rewrites": [
-      {
-        "source": "/api/**",
-        "destination": "https://dor-progress.banjays.workers.dev"
-      },
       {
         "source": "**",
         "destination": "/index.html"

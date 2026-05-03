@@ -1,0 +1,106 @@
+name: CI/CD Pipeline
+
+on:
+  push:
+    branches: [ main, master ]
+  pull_request:
+    branches: [ main, master ]
+
+jobs:
+  secrets_check:
+    name: 🔐 Secrets Validation
+    runs-on: ubuntu-latest
+    continue-on-error: true # Shows failure in graph but doesn't block 'frontend' or 'backend'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+      - name: Install dependencies
+        run: npm install
+      - name: Verify GitHub & Cloudflare Secrets
+        run: node scripts/setup-secrets.js
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          FIREBASE_TOKEN: ${{ secrets.FIREBASE_TOKEN }}
+          PUBLISHED_SHEET_ID: ${{ secrets.PUBLISHED_SHEET_ID }}
+          # Pass other required secrets here to let setup-secrets.js verify them
+
+  system_health:
+    name: 🏥 System Health & Diagnostics
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - name: Run Project Diagnostics
+        run: npx tsx scripts/project-info.ts
+      - name: Infrastructure Health Check
+        run: npm run info
+
+  frontend:
+    name: 🎨 Frontend (Build & Localization)
+    needs: [secrets_check]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+      - name: Install dependencies
+        run: npm install
+      - name: Sync Translations (Google Sheets)
+        run: npx tsx scripts/sync-sheets.js
+        env:
+          PUBLISHED_SHEET_ID: ${{ secrets.PUBLISHED_SHEET_ID }}
+      - name: Verify Translation Integrity
+        run: npm test -- translations
+      - name: Run Frontend Type Checks
+        run: npx tsc --noEmit
+      - name: Build Frontend Assets
+        run: npm run build
+
+  backend:
+    name: ⚙️ Backend (Security & Workers)
+    needs: [secrets_check]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+      - name: Install dependencies
+        run: npm install
+      - name: Security Vulnerability Scan
+        run: npm run security-check
+      - name: Build & Finalize Service Worker
+        run: |
+          npm run build
+          node scripts/finalize-build.js
+        env:
+          API_BASE_URL: ${{ secrets.API_BASE_URL }}
+      - name: Verify Build Artifacts
+        run: node scripts/verify-build.js
+
+  deploy:
+    name: 🚀 Production Deploy
+    needs: [frontend, backend, system_health]
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master')
+    steps:
+      - uses: actions/checkout@v4
+      - name: Deploy to Cloudflare & Firebase
+        run: |
+          echo "Deploying version $(node -p "require('./package.json').version")"
+          # Add your actual wrangler/firebase deploy commands here
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          FIREBASE_TOKEN: ${{ secrets.FIREBASE_TOKEN }}
+      - name: Tag Release
+        run: node scripts/commit-version.js
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

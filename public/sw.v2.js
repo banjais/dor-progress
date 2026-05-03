@@ -1,5 +1,6 @@
-const VERSION = '2.3.0';
+const VERSION = '2.4.0';
 const CHANGELOG = {
+  '2.4.0': ['Optimized Translation sync: Background Sync support and fingerprint-based revalidation'],
   '2.3.0': ['Shared Gemini Summary caching: Results are reused across users if data hash is identical'],
   '2.2.5': ['Added automated UI refresh when background data revalidation completes'],
   '2.2.4': ['Implemented Stale-While-Revalidate (SWR) for API data with background refresh'],
@@ -46,7 +47,7 @@ const ASSETS_TO_CACHE = [
   '/ambient-focus.mp3', // New track
   '/ambient-calm.mp3',   // New track
   // Add more ambient tracks here
-  '/locales/translations.json',
+  '/translations.json',
   '/manifest.json',
   OFFLINE_URL,
 ];
@@ -115,8 +116,14 @@ self.addEventListener('install', (event) => {
   }
 
   event.waitUntil(
-    caches.open(STATIC_CACHE_NAME).then((cache) => {
-      return cache.addAll(ASSETS_TO_CACHE);
+    caches.open(STATIC_CACHE_NAME).then(async (cache) => {
+      console.log('[SW] Pre-caching assets...');
+      // Use a more resilient approach: cache what we can, log errors for the rest
+      return Promise.allSettled(
+        ASSETS_TO_CACHE.map(url =>
+          cache.add(url).catch(err => console.warn(`[SW] Failed to cache ${url}:`, err))
+        )
+      );
     })
   );
   // We no longer skipWaiting automatically to allow the user to trigger the update via the UI banner.
@@ -168,6 +175,35 @@ self.addEventListener('fetch', (event) => {
           return networkResponse;
         });
       }).catch(() => caches.match(event.request))
+    );
+    return;
+  }
+
+  // 2.5 Translations - Stale-While-Revalidate with Content Fingerprint Check
+  if (url.endsWith('/translations.json')) {
+    event.respondWith(
+      caches.open(STATIC_CACHE_NAME).then(async (cache) => {
+        const cachedResponse = await cache.match(event.request);
+
+        const fetchPromise = fetch(event.request).then(async (networkResponse) => {
+          if (networkResponse.ok) {
+            const freshData = await networkResponse.clone().json();
+            const cachedData = cachedResponse ? await cachedResponse.clone().json() : null;
+
+            // Only update cache and notify clients if the content fingerprint has actually changed
+            if (!cachedData || freshData._metadata?.fingerprint !== cachedData._metadata?.fingerprint) {
+              await cache.put(event.request, networkResponse.clone());
+              notifyClients({
+                action: 'translations-updated',
+                fingerprint: freshData._metadata?.fingerprint
+              });
+            }
+          }
+          return networkResponse;
+        });
+
+        return cachedResponse || fetchPromise;
+      })
     );
     return;
   }
@@ -258,8 +294,34 @@ self.addEventListener('fetch', (event) => {
 self.addEventListener('sync', (event) => {
   if (event.tag === 'send-analytics') {
     event.waitUntil(processAnalyticsQueue());
+  } else if (event.tag === 'sync-translations') {
+    event.waitUntil(refreshTranslations());
   }
 });
+
+async function refreshTranslations() {
+  const cache = await caches.open(STATIC_CACHE_NAME);
+  const request = new Request('/translations.json');
+  try {
+    const response = await fetch(request);
+    if (response.ok) {
+      const freshData = await response.clone().json();
+      const cachedResponse = await cache.match(request);
+      const cachedData = cachedResponse ? await cachedResponse.json() : null;
+
+      if (!cachedData || freshData._metadata?.fingerprint !== cachedData._metadata?.fingerprint) {
+        await cache.put(request, response);
+        await notifyClients({
+          action: 'translations-updated',
+          sync: true,
+          fingerprint: freshData._metadata?.fingerprint
+        });
+      }
+    }
+  } catch (err) {
+    console.warn('[SW Sync] Translation background refresh failed:', err);
+  }
+}
 
 async function processAnalyticsQueue() {
   await notifyClients({ action: 'bg-sync-start' });
