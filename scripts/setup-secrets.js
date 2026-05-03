@@ -21,7 +21,36 @@ const REQUIRED_SECRETS = [
   'PUBLISHED_SHEET_ID'
 ];
 
+// Purpose map for "Why" explanation
+const SECRET_PURPOSES = {
+  'CLOUDFLARE_API_TOKEN': 'Deployment of Cloudflare Workers and API management.',
+  'FIREBASE_TOKEN': 'Authentication for Firebase Hosting and Firestore rules deployment.',
+  'PUBLISHED_SHEET_ID': 'Accessing Google Sheets for UI translation synchronization.',
+  'API_BASE_URL': 'Connecting the Frontend to the correct Backend environment.'
+};
+
 let activeSecretNames = [...REQUIRED_SECRETS];
+
+/**
+ * Writes a formatted table to GitHub Job Summary
+ */
+const writeGithubSummary = (results) => {
+  const summaryPath = process.env.GITHUB_STEP_SUMMARY;
+  if (!summaryPath) return;
+
+  let markdown = '### 🔐 Secrets Validation Report\n\n';
+  markdown += '| Status | Secret Name | Description / Why | Result |\n';
+  markdown += '| :---: | :--- | :--- | :--- |\n';
+
+  results.forEach(res => {
+    const statusIcon = res.passed ? '✅' : '❌';
+    const description = SECRET_PURPOSES[res.name] || 'Required for application runtime/build.';
+    const resultText = res.passed ? 'Available' : '**MISSING**';
+    markdown += `| ${statusIcon} | \`${res.name}\` | ${description} | ${resultText} |\n`;
+  });
+
+  fs.appendFileSync(summaryPath, markdown);
+};
 
 console.log('\n1️⃣  Local Development (.dev.vars)\n');
 if (fs.existsSync(devVarsPath)) {
@@ -71,11 +100,16 @@ console.log('   Or via GitHub UI: Settings → Secrets and variables → Actions
 console.log('   Status in current environment (as passed to CI step):');
 
 let missingCount = 0;
+const summaryResults = [];
+
 for (const secret of activeSecretNames) {
   const isSet = !!process.env[secret];
   if (!isSet) missingCount++;
+  summaryResults.push({ name: secret, passed: isSet });
   console.log(`     ${isSet ? '✅' : '❌'} ${secret}`);
 }
+
+if (process.env.GITHUB_ACTIONS) writeGithubSummary(summaryResults);
 
 if (missingCount > 0 && process.env.GITHUB_ACTIONS) {
   // GitHub Actions Annotation: Creates the "Reason" visible in the UI summary
