@@ -216,4 +216,12 @@ console.log("   pnpm run secrets\n");
 console.log("   # Set Cloudflare secret");
 console.log("   wrangler secret put CLOUDFLARE_API_TOKEN\n");
 console.log("   # Set GitHub secret (using GitHub CLI)");
-console.log("   gh secre
+console.log("   gh secret set <NAME>\n");
+console.log("=" .repeat(60));
+console.log("   🌐 UI Translations: pnpm exec vitest run scripts/translations.test.ts");
+console.log("   📝 Update from Sheets: pnpm exec tsx scripts/sync-sheets.js");
+console.log("\n" + "═".repeat(60));
+console.log("   🎯 Dashboard: https://dor-progress.web.app");
+console.log("   🔧 Worker: https://dor-progress.banjays.workers.dev");
+console.log("   📊 Project: https://console.firebase.google.com/project/dor-progress/overview");
+console.log("═".repeat(60));
