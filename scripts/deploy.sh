@@ -1,6 +1,9 @@
 #!/usr/bin/env bash
 set -e # Exit immediately if a command exits with a non-zero status
 
+# Add failure notification
+trap 'echo "❌ Deployment failed at line $LINENO. Check the output above for errors."' ERR
+
 # 0. Pre-flight Check: Ensure dependencies exist
 # Detect --dry-run flag anywhere in arguments
 DRY_RUN_FLAG=""
@@ -96,7 +99,12 @@ MSG="${2:-Manual deployment update}"
 if [ "$DRY_RUN_FLAG" == "--dry-run" ]; then
     echo "⏭️  Dry run: Skipping Git push and version tagging."
 else
-    node scripts/git-deploy.js "$MSG"
+    if [ -f scripts/git-deploy.js ]; then
+        node scripts/git-deploy.js "$MSG"
+    else
+        echo "⚠️  Error: scripts/git-deploy.js not found. Attempting manual push..."
+        git add . && git commit -m "$MSG" && git push origin "$CURRENT_BRANCH"
+    fi
     echo "🤖 GitHub Auto Deploy & Cloudflare Auto Deploy will now trigger based on this push."
 fi
 

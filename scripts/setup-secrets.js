@@ -77,7 +77,6 @@ if (fs.existsSync(devVarsPath)) {
   console.log("   ❌ .dev.vars not found");
   if (!process.env.GITHUB_ACTIONS) {
     console.log("   Please create .dev.vars with your secrets first.");
-    process.exit(1);
   }
   console.log("   (Using required core list for CI validation)");
 }
@@ -217,4 +216,4 @@ console.log("   pnpm run secrets\n");
 console.log("   # Set Cloudflare secret");
 console.log("   wrangler secret put CLOUDFLARE_API_TOKEN\n");
 console.log("   # Set GitHub secret (using GitHub CLI)");
-console.log("   gh secret set <NAME>\n");
+console.log("   gh secre
