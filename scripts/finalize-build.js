@@ -1,6 +1,7 @@
 import fs from "fs";
 import path from "path";
 import crypto from "crypto";
+import { execSync } from "child_process";
 
 const buildDir = path.resolve(".build");
 const swPath = path.join(buildDir, "sw.v2.js");
@@ -21,13 +22,22 @@ if (fs.existsSync(swPath)) {
   const buildId = contentHash;
   const versionIdentifier = pkg.version;
 
+  // Get the actual Git commit SHA
+  let commitSha = "unknown";
+  try {
+    commitSha = execSync("git rev-parse --short HEAD", { encoding: "utf8" }).trim();
+  } catch (e) {
+    console.warn("⚠️  Could not determine Git commit SHA, using fallback");
+  }
+
   sw = sw
     .replace(/__API_BASE_URL__/g, apiBase)
     .replace(/__BUILD_ID__/g, buildId)
-    .replace(/__COMMIT_SHA__/g, versionIdentifier);
+    .replace(/__COMMIT_SHA__/g, commitSha);  // Use actual Git SHA, not version
 
   fs.writeFileSync(swPath, sw);
   console.log("✅ Service Worker environment variables injected");
+  console.log(`   Build ID: ${buildId}, Commit: ${commitSha}, Version: ${versionIdentifier}`);
 } else {
   console.warn("⚠️ sw.v2.js not found in .build");
 }
