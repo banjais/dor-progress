@@ -1,211 +1,216 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="ne">
-
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Offline - सडक विभाग</title>
     <style>
-        :root {
-            --primary: #8D1B1B;
-            /* DoR Crimson Red */
-            --secondary: #003893;
-            /* DoR Navy Blue */
-            --accent: #FFD700;
-            /* Gold Accent */
-            --bg: #F4F7F9;
-            /* Branded Off-white */
-            --surface: #FFFFFF;
-            --text: #1A1A1A;
-            --text-muted: #455A64;
+      :root {
+        --primary: #8d1b1b;
+        /* DoR Crimson Red */
+        --secondary: #003893;
+        /* DoR Navy Blue */
+        --accent: #ffd700;
+        /* Gold Accent */
+        --bg: #f4f7f9;
+        /* Branded Off-white */
+        --surface: #ffffff;
+        --text: #1a1a1a;
+        --text-muted: #455a64;
+      }
+
+      body {
+        font-family:
+          -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica,
+          Arial, sans-serif;
+        background: var(--bg);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        height: 100vh;
+        margin: 0;
+        text-align: center;
+        color: var(--text);
+        padding: 20px;
+      }
+
+      .card {
+        background: var(--surface);
+        padding: 0;
+        border-radius: 20px;
+        box-shadow: 0 10px 25px rgba(0, 0, 0, 0.08);
+        max-width: 400px;
+        width: 100%;
+        overflow: hidden;
+        border: 1px solid rgba(0, 0, 0, 0.05);
+      }
+
+      .card-header {
+        background: var(--primary);
+        padding: 30px 20px;
+        position: relative;
+      }
+
+      .gold-line {
+        height: 4px;
+        background: var(--accent);
+        width: 100%;
+      }
+
+      .logo-container {
+        background: white;
+        width: 80px;
+        height: 80px;
+        border-radius: 50%;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        margin: 0 auto -40px;
+        position: relative;
+        z-index: 2;
+        box-shadow: 0 4px 10px rgba(0, 0, 0, 0.1);
+      }
+
+      .logo-container img {
+        width: 55px;
+        height: auto;
+      }
+
+      .content {
+        padding: 60px 30px 40px;
+      }
+
+      h1 {
+        font-size: 1.4rem;
+        margin-bottom: 10px;
+        color: var(--primary);
+        font-weight: 800;
+      }
+
+      p {
+        font-size: 0.9rem;
+        color: var(--text-muted);
+        line-height: 1.6;
+        margin-bottom: 25px;
+      }
+
+      .status-badge {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        background: #fff5f5;
+        color: var(--primary);
+        padding: 6px 16px;
+        border-radius: 20px;
+        font-size: 0.75rem;
+        font-weight: 700;
+        text-transform: uppercase;
+        margin-bottom: 20px;
+        border: 1px solid rgba(141, 27, 27, 0.1);
+      }
+
+      .status-badge::before {
+        content: "";
+        width: 8px;
+        height: 8px;
+        background: var(--primary);
+        border-radius: 50%;
+        animation: pulse 1.5s infinite;
+      }
+
+      @keyframes pulse {
+        0% {
+          opacity: 1;
+          transform: scale(1);
         }
 
-        body {
-            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
-            background: var(--bg);
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            height: 100vh;
-            margin: 0;
-            text-align: center;
-            color: var(--text);
-            padding: 20px;
+        50% {
+          opacity: 0.4;
+          transform: scale(1.2);
         }
 
-        .card {
-            background: var(--surface);
-            padding: 0;
-            border-radius: 20px;
-            box-shadow: 0 10px 25px rgba(0, 0, 0, 0.08);
-            max-width: 400px;
-            width: 100%;
-            overflow: hidden;
-            border: 1px solid rgba(0, 0, 0, 0.05);
+        100% {
+          opacity: 1;
+          transform: scale(1);
         }
+      }
 
-        .card-header {
-            background: var(--primary);
-            padding: 30px 20px;
-            position: relative;
-        }
+      button {
+        background: var(--secondary);
+        color: white;
+        border: none;
+        padding: 14px 30px;
+        border-radius: 12px;
+        font-weight: 800;
+        cursor: pointer;
+        transition: all 0.2s ease;
+        width: 100%;
+        letter-spacing: 0.05em;
+        box-shadow: 0 4px 12px rgba(0, 56, 147, 0.2);
+      }
 
-        .gold-line {
-            height: 4px;
-            background: var(--accent);
-            width: 100%;
-        }
+      button:hover {
+        background: #002d75;
+        transform: translateY(-1px);
+        box-shadow: 0 6px 15px rgba(0, 56, 147, 0.3);
+      }
 
-        .logo-container {
-            background: white;
-            width: 80px;
-            height: 80px;
-            border-radius: 50%;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            margin: 0 auto -40px;
-            position: relative;
-            z-index: 2;
-            box-shadow: 0 4px 10px rgba(0, 0, 0, 0.1);
-        }
+      .secondary-button {
+        background: var(--bg);
+        color: var(--secondary);
+        border: 1px solid var(--secondary);
+        padding: 14px 30px;
+        border-radius: 12px;
+        font-weight: 800;
+        cursor: pointer;
+        transition: all 0.2s ease;
+        width: 100%;
+        letter-spacing: 0.05em;
+        margin-top: 15px;
+      }
 
-        .logo-container img {
-            width: 55px;
-            height: auto;
-        }
+      .secondary-button:hover {
+        background: var(--secondary);
+        color: white;
+      }
 
-        .content {
-            padding: 60px 30px 40px;
-        }
-
-        h1 {
-            font-size: 1.4rem;
-            margin-bottom: 10px;
-            color: var(--primary);
-            font-weight: 800;
-        }
-
-        p {
-            font-size: 0.9rem;
-            color: var(--text-muted);
-            line-height: 1.6;
-            margin-bottom: 25px;
-        }
-
-        .status-badge {
-            display: inline-flex;
-            align-items: center;
-            gap: 8px;
-            background: #FFF5F5;
-            color: var(--primary);
-            padding: 6px 16px;
-            border-radius: 20px;
-            font-size: 0.75rem;
-            font-weight: 700;
-            text-transform: uppercase;
-            margin-bottom: 20px;
-            border: 1px solid rgba(141, 27, 27, 0.1);
-        }
-
-        .status-badge::before {
-            content: "";
-            width: 8px;
-            height: 8px;
-            background: var(--primary);
-            border-radius: 50%;
-            animation: pulse 1.5s infinite;
-        }
-
-        @keyframes pulse {
-            0% {
-                opacity: 1;
-                transform: scale(1);
-            }
-
-            50% {
-                opacity: 0.4;
-                transform: scale(1.2);
-            }
-
-            100% {
-                opacity: 1;
-                transform: scale(1);
-            }
-        }
-
-        button {
-            background: var(--secondary);
-            color: white;
-            border: none;
-            padding: 14px 30px;
-            border-radius: 12px;
-            font-weight: 800;
-            cursor: pointer;
-            transition: all 0.2s ease;
-            width: 100%;
-            letter-spacing: 0.05em;
-            box-shadow: 0 4px 12px rgba(0, 56, 147, 0.2);
-        }
-
-        button:hover {
-            background: #002d75;
-            transform: translateY(-1px);
-            box-shadow: 0 6px 15px rgba(0, 56, 147, 0.3);
-        }
-
-        .secondary-button {
-            background: var(--bg);
-            color: var(--secondary);
-            border: 1px solid var(--secondary);
-            padding: 14px 30px;
-            border-radius: 12px;
-            font-weight: 800;
-            cursor: pointer;
-            transition: all 0.2s ease;
-            width: 100%;
-            letter-spacing: 0.05em;
-            margin-top: 15px;
-        }
-
-        .secondary-button:hover {
-            background: var(--secondary);
-            color: white;
-        }
-
-        .footer-note {
-            margin-top: 20px;
-            font-size: 0.7rem;
-            color: var(--text-muted);
-            opacity: 0.7;
-        }
+      .footer-note {
+        margin-top: 20px;
+        font-size: 0.7rem;
+        color: var(--text-muted);
+        opacity: 0.7;
+      }
     </style>
-</head>
+  </head>
 
-<body>
+  <body>
     <div class="card">
-        <div class="card-header"></div>
-        <div class="gold-line"></div>
-        <div class="logo-container">
-            <img src="/logo.png" alt="DoR Logo">
-        </div>
-        <div class="content">
-            <div id="status-badge" class="status-badge">Offline / अफलाइन</div>
-            <h1 id="title">इन्टरनेट जडान छैन</h1>
-            <p id="msg">तपाईं अहिले अफलाइन हुनुहुन्छ। कृपया आफ्नो नेटवर्क जडान जाँच गर्नुहोस् र पुन: प्रयास गर्नुहोस्।
-            </p>
-            <button onclick="window.location.reload()">RETRY / पुनः प्रयास गर्नुहोस्</button>
-            <div class="footer-note">© 2026 Department of Roads (DoR)</div>
-        </div>
+      <div class="card-header"></div>
+      <div class="gold-line"></div>
+      <div class="logo-container">
+        <img src="/logo.png" alt="DoR Logo" />
+      </div>
+      <div class="content">
+        <div id="status-badge" class="status-badge">Offline / अफलाइन</div>
+        <h1 id="title">इन्टरनेट जडान छैन</h1>
+        <p id="msg">
+          तपाईं अहिले अफलाइन हुनुहुन्छ। कृपया आफ्नो नेटवर्क जडान जाँच गर्नुहोस्
+          र पुन: प्रयास गर्नुहोस्।
+        </p>
+        <button onclick="window.location.reload()">
+          RETRY / पुनः प्रयास गर्नुहोस्
+        </button>
+        <div class="footer-note">© 2026 Department of Roads (DoR)</div>
+      </div>
     </div>
     <script>
-        // Dynamic text for system locale
-        if (navigator.language.startsWith('en')) {
-            document.getElementById('title').innerText = "No Internet Connection";
-            document.getElementById('msg').innerText = "You are currently offline. Please check your network connection and try again.";
-            document.getElementById('status-badge').innerText = "Offline Mode";
-        }
+      // Dynamic text for system locale
+      if (navigator.language.startsWith("en")) {
+        document.getElementById("title").innerText = "No Internet Connection";
+        document.getElementById("msg").innerText =
+          "You are currently offline. Please check your network connection and try again.";
+        document.getElementById("status-badge").innerText = "Offline Mode";
+      }
     </script>
-</body>
-
+  </body>
 </html>

@@ -1,9 +1,5 @@
 {
-  "**/*.{yml,yaml}": [
-    "npx prettier --check"
-  ],
-  "**/*.{js,css}": [
-    "npx prettier --check",
-    "npx eslint --max-warnings 0 --no-warn-ignored"
-  ]
+  "src/**/*.{js,ts,css}": ["prettier --write"],
+  "public/**/*.{html,json}": ["prettier --write"],
+  "index.html": ["prettier --write"]
 }

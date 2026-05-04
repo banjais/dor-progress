@@ -8,35 +8,45 @@ on:
   workflow_dispatch:
 
 jobs:
-  validate-translations:
-    name: Translation Integrity Check
+  check-secrets:
+    name: 🔐 Secrets Gate
     runs-on: ubuntu-latest
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v4
-
       - uses: pnpm/action-setup@v4
         with:
           version: 9
-
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: '20'
-      - name: Get pnpm store directory
-        shell: bash
-        run: |
-          echo "STORE_PATH=$(pnpm store path --silent)" >> $GITHUB_ENV
-      - name: Cache pnpm store
-        uses: actions/cache@v4
-        with:
-          path: ${{ env.STORE_PATH }}
-          key: pnpm-store-${{ runner.os }}-${{ hashFiles('**/pnpm-lock.yaml') }}
-          restore-keys: pnpm-store-${{ runner.os }}-
-
+          node-version: "20"
+          cache: "pnpm"
       - name: Install Dependencies
         run: pnpm install --frozen-lockfile
+      - name: Validate Environment Secrets
+        run: pnpm exec tsx scripts/setup-secrets.js
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          PUBLISHED_SHEET_ID: ${{ secrets.PUBLISHED_SHEET_ID }}
+          FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
 
+  frontend-verification:
+    name: 🎨 Frontend Check
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "pnpm"
+      - name: Install Dependencies
+        run: pnpm install --frozen-lockfile
       - name: Sync and Verify Translations
         env:
           PUBLISHED_SHEET_ID: ${{ secrets.PUBLISHED_SHEET_ID }}
@@ -45,13 +55,59 @@ jobs:
           GOOGLE_APPLICATION_CREDENTIALS=sa_key.json pnpm exec tsx scripts/sync-sheets.js
           rm sa_key.json
           pnpm test -- translations
+      - name: Upload Synced Translations
+        uses: actions/upload-artifact@v4
+        with:
+          name: translations-json
+          path: src/locales/translations.json
+          retention-days: 1
+
+  backend-verification:
+    name: 🤖 Backend Check
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "pnpm"
+      - name: Install Dependencies
+        run: pnpm install --frozen-lockfile
+      - name: Verify AI Registry
+        run: pnpm exec tsx scripts/index.ts
+
+  build:
+    name: 🏗️ Build App
+    needs: [frontend-verification, backend-verification]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "pnpm"
+      - name: Install Dependencies
+        run: pnpm install --frozen-lockfile
+      - name: Download Translations
+        uses: actions/download-artifact@v4
+        with:
+          name: translations-json
+          path: src/locales
 
       - name: Build Application
         run: pnpm build
-
       - name: Verify Build Output
         run: pnpm exec tsx scripts/verify-build.js
-
       - name: Upload Build Artifact
         uses: actions/upload-artifact@v4
         with:
@@ -61,7 +117,7 @@ jobs:
 
   deploy:
     name: Build, Deploy and Health Check
-    needs: validate-translations
+    needs: [build, check-secrets]
     if: github.event_name != 'pull_request'
     runs-on: ubuntu-latest
     steps:
@@ -69,38 +125,18 @@ jobs:
         uses: actions/checkout@v4
       - name: Setup Node.js
         uses: actions/setup-node@v4
-        with: { node-version: '20' }
-      - uses: pnpm/action-setup@v4
-        with: { version: 9 }
-      - name: Get pnpm store directory
-        shell: bash
-        run: |
-          echo "STORE_PATH=$(pnpm store path --silent)" >> $GITHUB_ENV
-      - name: Cache pnpm store
-        uses: actions/cache@v4
         with:
-          path: ${{ env.STORE_PATH }}
-          key: pnpm-store-${{ runner.os }}-${{ hashFiles('**/pnpm-lock.yaml') }}
-          restore-keys: pnpm-store-${{ runner.os }}-
+          node-version: "20"
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "pnpm"
       - name: Install Dependencies
         run: pnpm install --frozen-lockfile
-
-      - name: Security Audit
-        run: pnpm run security-check || echo "⚠️ Security check completed with warnings"
-
-      - name: Run Build Preparations
-        run: |
-          pnpm exec tsx scripts/project-info.ts
-          node scripts/setup-secrets.js || true
-
-      - name: Sync Translations from Google Sheets
-        env:
-          PUBLISHED_SHEET_ID: ${{ secrets.PUBLISHED_SHEET_ID }}
-        run: |
-          # Write credentials to file so scripts/sync-sheets.js can find them
-          echo '${{ secrets.FIREBASE_SERVICE_ACCOUNT }}' > sa_key.json
-          GOOGLE_APPLICATION_CREDENTIALS=sa_key.json pnpm exec tsx scripts/sync-sheets.js
-          rm sa_key.json
 
       - name: Download Build Artifact
         uses: actions/download-artifact@v4

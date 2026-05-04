@@ -1,16 +1,13 @@
 {
-    "compilerOptions": {
-        "target": "ESNext",
-        "lib": ["ESNext"],
-        "module": "ESNext",
-        "moduleResolution": "Bundler",
-        "strict": true,
-        "skipLibCheck": true,
-        "composite": true,
-        "types": ["@cloudflare/workers-types"]
-    },
-    "include": [
-        "index.ts",
-        "shared/**/*.ts"
-    ]
+  "compilerOptions": {
+    "target": "ESNext",
+    "lib": ["ESNext"],
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "strict": true,
+    "skipLibCheck": true,
+    "composite": true,
+    "types": ["@cloudflare/workers-types"]
+  },
+  "include": ["index.ts", "shared/**/*.ts"]
 }

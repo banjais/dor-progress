@@ -1,24 +1,15 @@
 {
-    "compilerOptions": {
-        "target": "ESNext",
-        "lib": ["ESNext", "DOM"],
-        "module": "NodeNext",
-        "moduleResolution": "NodeNext",
-        "types": ["node"],
-        "strict": false,
-        "noImplicitAny": false,
-        "skipLibCheck": true,
-        "composite": true
-    },
-    "include": [
-        "src/**/*",
-        "scripts/**/*",
-        "shared/**/*.ts"
-    ],
-    "exclude": [
-        "node_modules",
-        ".build",
-        "index.ts",
-        "scripts/index.ts"
-    ]
+  "compilerOptions": {
+    "target": "ESNext",
+    "lib": ["ESNext", "DOM"],
+    "module": "NodeNext",
+    "moduleResolution": "NodeNext",
+    "types": ["node"],
+    "strict": false,
+    "noImplicitAny": false,
+    "skipLibCheck": true,
+    "composite": true
+  },
+  "include": ["src/**/*", "scripts/**/*", "shared/**/*.ts"],
+  "exclude": ["node_modules", ".build", "index.ts", "scripts/index.ts"]
 }

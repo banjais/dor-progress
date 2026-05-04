@@ -1,0 +1,14 @@
+# Ignore AI/tooling folders
+.agents/
+
+# Ignore dependencies
+node_modules/
+
+# Ignore build output
+dist/
+
+# Ignore lock file
+pnpm-lock.yaml
+
+# Ignore scripts if needed
+scripts/deploy.yml

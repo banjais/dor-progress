@@ -2,9 +2,12 @@
  * Backend Registry Validator
  * This script is called by GitHub Actions to ensure all AI flows/tools load correctly.
  */
-import '../ai/flows/index.js';
-import { ai } from '../ai/genkit.js';
+import { getAi } from "../ai-service";
 
-console.log('🔍 Checking AI Registry Status...');
-const actions = ai.registry.listActions();
+// Initialize with dummy key or env for registry check
+const ai = getAi(process.env.GEMINI_API_KEY || "dummy-key");
+if (!ai) throw new Error("Failed to initialize Genkit");
+
+console.log("🔍 Checking AI Registry Status...");
+const actions = await ai.registry.listActions();
 console.log(`✅ Registered ${actions.length} AI actions (flows/tools).`);
