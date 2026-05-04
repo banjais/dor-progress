@@ -158,6 +158,7 @@ jobs:
         uses: cloudflare/wrangler-action@v3
         with:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: "052a34d4627b5c02d0bff84ff1c0f906"
 
       - name: Post-Deployment Health Check
         env:
