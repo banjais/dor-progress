@@ -4,8 +4,6 @@ main = "index.ts"
 compatibility_date = "2026-04-23"
 minify = true
 
-compatibility_flags = ["nodejs_compat"]
-
 [[kv_namespaces]]
 binding = "TRANSLATION_KV"
 id = "d032e134adec47ab85ea1b5a8c18caab"
@@ -18,7 +16,6 @@ id = "d032e134adec47ab85ea1b5a8c18caab"
 [[migrations]]
 tag = "v3"
 deleted_classes = ["RateLimiter"]
-
 
 [triggers]
 crons = ["0 * * * *"]
