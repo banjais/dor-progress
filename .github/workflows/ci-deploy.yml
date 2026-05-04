@@ -155,7 +155,7 @@ jobs:
           projectId: dor-progress
 
       - name: Deploy to Cloudflare Workers
-        uses: cloudflare/wrangler-action@v4
+        uses: cloudflare/wrangler-action@v3
         with:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           accountId: "052a34d4627b5c02d0bff84ff1c0f906"
