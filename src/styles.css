@@ -1344,6 +1344,23 @@ tr {
   animation: spin 1s linear infinite;
 }
 
+#voice-volume-bar {
+  position: absolute;
+  bottom: 1px;
+  left: 12px;
+  right: 12px;
+  height: 3px;
+  background: var(--good);
+  width: 0%;
+  border-radius: 2px;
+  transition:
+    width 0.05s ease,
+    opacity 0.3s;
+  z-index: 10;
+  pointer-events: none;
+  opacity: 0;
+}
+
 /* Toast Notifications */
 #toast-container {
   position: fixed;

@@ -1,4 +1,4 @@
-/// <reference types="vite/client" />
+import translationsData from "./locales/translations.json";
 
 const WORKER_BASE = import.meta.env.VITE_API_BASE_URL || "";
 const BUILD_ID = import.meta.env.VITE_BUILD_ID || "dev";
@@ -10,17 +10,12 @@ import {
   ReCaptchaV3Provider,
 } from "https://www.gstatic.com/firebasejs/11.0.1/firebase-app-check.js";
 
-import * as PDFLib from "pdf-lib";
-
-/* global setLang, setTheme, updateVolume, updatePitch, setSoundPack, triggerDatabaseRestore, listSnapshots */
-
 const toggleLang = () => {
   const next = currentLang === "en" ? "ne" : "en";
   setLang(next);
   const lbl = document.getElementById("lang-current-label");
   if (lbl) lbl.innerText = next.toUpperCase();
 };
-window.toggleLang = toggleLang;
 
 const toggleGeminiMenu = () => {
   const btn = document.getElementById("gemini-main-btn");
@@ -29,7 +24,6 @@ const toggleGeminiMenu = () => {
   if (fabMenu) fabMenu.classList.remove("show");
   menu.classList.toggle("show");
 };
-window.toggleGeminiMenu = toggleGeminiMenu;
 
 const toggleFabMenu = () => {
   const btn = document.getElementById("fab-main-btn");
@@ -39,7 +33,6 @@ const toggleFabMenu = () => {
   btn.classList.toggle("active");
   menu.classList.toggle("show");
 };
-window.toggleFabMenu = toggleFabMenu;
 
 // Close on outside click
 document.addEventListener("click", (e) => {
@@ -518,7 +511,7 @@ const playSound = (id, checkMute = true) => {
     gain.connect(audioCtx.destination);
     osc.start();
     osc.stop(audioCtx.currentTime + p.d);
-  } catch (e) {} // eslint-disable-line no-empty
+  } catch (e) {}
 };
 
 const playPing = () => playSound("ping");
@@ -569,7 +562,7 @@ function toArabicNumerals(str) {
 }
 
 window.startVoiceSearch = startVoiceSearch;
-function startVoiceSearch() {
+async function startVoiceSearch() {
   const SpeechRecognition =
     window.SpeechRecognition || window.webkitSpeechRecognition;
   if (!SpeechRecognition) {
@@ -588,12 +581,63 @@ function startVoiceSearch() {
   recognition.maxAlternatives = 1;
 
   const btn = document.getElementById("voice-search-btn");
-  if (btn) btn.classList.add("listening");
+  const container = document.querySelector(".search-container");
+
+  // Ensure the volume bar exists in the DOM
+  let volumeBar = document.getElementById("voice-volume-bar");
+  if (!volumeBar && container) {
+    volumeBar = document.createElement("div");
+    volumeBar.id = "voice-volume-bar";
+    container.appendChild(volumeBar);
+  }
+
+  let audioStream = null;
+  let audioCtx = null;
+  let animationId = null;
+
+  const cleanup = () => {
+    if (animationId) cancelAnimationFrame(animationId);
+    if (audioStream) audioStream.getTracks().forEach((t) => t.stop());
+    if (audioCtx) audioCtx.close();
+    if (btn) btn.classList.remove("listening");
+    if (volumeBar) {
+      volumeBar.style.width = "0%";
+      volumeBar.style.opacity = "0";
+    }
+  };
+
+  try {
+    audioStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    const source = audioCtx.createMediaStreamSource(audioStream);
+    const analyser = audioCtx.createAnalyser();
+    analyser.fftSize = 256;
+    source.connect(analyser);
+
+    const dataArray = new Uint8Array(analyser.frequencyBinCount);
+    if (btn) btn.classList.add("listening");
+    if (volumeBar) volumeBar.style.opacity = "1";
+
+    const draw = () => {
+      analyser.getByteFrequencyData(dataArray);
+      let sum = 0;
+      for (let i = 0; i < dataArray.length; i++) sum += dataArray[i];
+      const average = sum / dataArray.length;
+      // Map average amplitude (0-128 typically) to percentage width
+      const volumePercent = Math.min(100, (average / 64) * 100);
+      if (volumeBar) volumeBar.style.width = `${volumePercent}%`;
+      animationId = requestAnimationFrame(draw);
+    };
+    draw();
+  } catch (err) {
+    console.warn("Audio visualization failed:", err);
+  }
 
   recognition.onresult = (event) => {
     const transcript = event.results[0][0].transcript;
     document.getElementById("search-input").value = transcript;
     handleSearch();
+    cleanup();
     addToast(
       "info",
       (currentLang === "en" ? "Search: " : "खोज: ") + transcript,
@@ -612,11 +656,11 @@ function startVoiceSearch() {
 
   recognition.onspeechend = () => {
     recognition.stop();
-    if (btn) btn.classList.remove("listening");
+    cleanup();
   };
 
   recognition.onerror = (event) => {
-    if (btn) btn.classList.remove("listening");
+    cleanup();
     if (event.error === "not-allowed") {
       addToast("error", currentLang === "en" ? "Mic denied" : "अनुमति छैन");
     }
@@ -943,7 +987,7 @@ async function exportHealthReport() {
 
   // Generate Bikram Sambat date string using I18N months and Nepali numerals
   const bsYear = parseInt(year) + 57;
-  const bsMonthName = I18N[currentLang].months[parseInt(month) - 1];
+  const bsMonthName = t(months[parseInt(month) - 1]);
   const displayYear = currentLang === "ne" ? toNepaliNumerals(bsYear) : bsYear;
   const formattedDate =
     currentLang === "en"
@@ -1052,6 +1096,7 @@ const I18N = {
     exportPdf: "पीडीएफ",
     downloadOfficialPdf: "डाउनलोड",
     muteUnmute: "ध्वनि",
+    settings: "सेटिङ",
     translateBrief: "अनुवाद",
     readAloud: "वाचन",
     shareAudio: "साझा",
@@ -1084,6 +1129,7 @@ const I18N = {
     verificationTitle: "प्रतिवेदन प्रमाणीकरण",
     verifiedSuccess: "✅ प्रमाणित",
     invalidReport: "❌ अमान्य",
+    settings: "सेटिङहरू",
     theme: "थिम प्राथमिकता",
     themeLight: "लाइट मोड",
     themeDark: "डार्क मोड",
@@ -1093,8 +1139,9 @@ const I18N = {
     resetConfirm: "सबै डेटा मेटिनेछ। निश्चित हुनुहुन्छ?",
     totalCache: "कुल पीवाइई (PWA) क्यास",
     downloadOffline: "अफलाइन डाउनलोड",
+    downloading: "डाउनलोड",
     downloadComplete: "डाउनलोड सम्पन्न",
-    forceThrottled: "पुनः लोड सीमा पुग्यो। हालैको डाटा प्रयोग गर्दै।",
+    forceThrottled: "पुनः लोड सीमा पुग्यो। हालैको डेटा प्रयोग गर्दै।",
     cacheCleared: "क्यास सफा",
     qualifying: "योग्यता जाँच्दै...",
     storageUsage: "भण्डारण उपयोग",
@@ -1107,7 +1154,10 @@ const I18N = {
     dbRestore: "रिस्टोर",
     dbRestoreDesc: "क्लाउडबाट डाटा रिकभर गर्नुहोस्",
     dataSyncing: "डाटा सिङ्क हुँदैछ...",
+    readAloud: "वाचन",
     stopReading: "रोक्नुहोस्",
+    downloadAudio: "डाउनलोड",
+    shareAudio: "साझा",
     preparingAudio: "तयारी...",
     voiceSelection: "आवाज चयन",
     voiceDesc: "पढ्नको लागि आवाज छान्नुहोस्",
@@ -1214,9 +1264,9 @@ const I18N = {
     exportPdf: "PDF",
     downloadOfficialPdf: "Download",
     muteUnmute: "Sound",
+    settings: "Settings",
     translateBrief: "Translate",
     readAloud: "Narration",
-    stopReading: "Stop",
     shareAudio: "Share",
     downloadAudio: "Download",
     shareBrief: "Share",
@@ -1224,6 +1274,7 @@ const I18N = {
     tableView: "Table",
     chartsView: "Charts",
     cardsView: "Cards",
+    settings: "Settings",
     theme: "Theme Preference",
     themeLight: "Light Mode",
     themeDark: "Dark Mode",
@@ -1233,6 +1284,7 @@ const I18N = {
     resetConfirm: "All data will be deleted. Proceed?",
     totalCache: "Total PWA Cache",
     downloadOffline: "Offline Download",
+    downloading: "Downloading",
     downloadComplete: "Download Complete",
     forceThrottled: "Refresh limit reached. Using cache.",
     cacheCleared: "Cache cleared",
@@ -1247,6 +1299,10 @@ const I18N = {
     dbRestore: "Restore",
     dbRestoreDesc: "Recover data from a cloud snapshot",
     dataSyncing: "Syncing...",
+    readAloud: "Narration",
+    stopReading: "Stop",
+    downloadAudio: "Download",
+    shareAudio: "Share",
     preparingAudio: "Preparing...",
     voiceSelection: "Voice Selection",
     voiceDesc: "Choose a voice for reading",
@@ -1346,32 +1402,57 @@ let deferredPrompt;
 let systemRiskLevel = 0;
 let refreshCounter = 60;
 let intentTimer = null;
-let translations = null;
 let lastSnapshotUpdate = null; // Track lastUpdate for automatic snapshot creation
 
-// Global translation helper: get key from current language, fallback to English
-function t(key, fallback) {
-  const dict = I18N[currentLang] || I18N.en;
-  if (arguments.length === 1) {
-    return dict[key] || I18N.en[key] || "";
-  }
-  return dict[key] || fallback;
-}
+/**
+ * Translation Helper
+ * Priority: Dynamic JSON from Sheet > Hardcoded I18N fallback > Key name
+ */
+const t = (key, count) => {
+  let finalKey = key;
 
-// Fetch translations asynchronously
-async function loadTranslations() {
-  try {
-    const res = await fetch(`${WORKER_BASE}/api/translations`);
-    if (res.ok) {
-      translations = await res.json();
+  if (count !== undefined) {
+    const rule = new Intl.PluralRules(currentLang).select(count);
+    const pKey = `${key}_${rule}`;
+    // Check if the specific plural key exists, otherwise fallback to base key
+    if (translationsData?.[currentLang]?.[pKey] || I18N[currentLang]?.[pKey]) {
+      finalKey = pKey;
     }
-  } catch (e) {
-    console.warn("Failed to load translations, using critical labels only");
   }
-}
 
-// Start loading translations in background
-loadTranslations();
+  let text =
+    translationsData?.[currentLang]?.[finalKey] ||
+    I18N[currentLang]?.[finalKey] ||
+    translationsData?.[currentLang]?.[key] ||
+    I18N[currentLang]?.[key] ||
+    key;
+
+  if (count !== undefined) {
+    const displayCount = currentLang === "ne" ? toNepaliNumerals(count) : count;
+    return text.replace("{{count}}", displayCount);
+  }
+  return text;
+};
+
+/**
+ * Scans the DOM for elements with data-i18n attributes and updates them.
+ */
+function applyTranslations() {
+  // Translate standard text content
+  document.querySelectorAll("[data-i18n]").forEach((el) => {
+    const key = el.getAttribute("data-i18n");
+    const countAttr = el.getAttribute("data-i18n-count");
+    const count = countAttr !== null ? parseFloat(countAttr) : undefined;
+    el.innerText = t(key, count);
+  });
+
+  // Generic attribute translation: title, placeholder, aria-label
+  ["title", "placeholder", "aria-label"].forEach((attr) => {
+    document.querySelectorAll(`[data-i18n-${attr}]`).forEach((el) => {
+      el.setAttribute(attr, t(el.getAttribute(`data-i18n-${attr}`)));
+    });
+  });
+}
 
 // AI Intent Sensing (Mind-Reading Effect)
 document.addEventListener("mousemove", (e) => {
@@ -1491,90 +1572,23 @@ window.setLang = async function (l) {
   const lbl = document.getElementById("lang-current-label");
   if (lbl) lbl.innerText = l.toUpperCase();
 
-  // Reset sort key because headers change per language
+  // UI Sync
+  applyTranslations();
   currentSort = { key: null, dir: 1 };
 
-  const labels = I18N[l] || I18N.en;
-
   // Total UI Update
-  document.getElementById("main-title").innerText = labels.mainTitle;
-  document.getElementById("h-govt").innerText = labels.govt;
-  document.getElementById("h-min").innerText = labels.ministry;
-  document.getElementById("h-dept").innerText = labels.dept;
-  document.getElementById("h-city").innerText = labels.city;
-
-  const uiMap = {
-    status: t("connecting", labels.loading),
-    "search-input": {
-      prop: "placeholder",
-      val: t("search_placeholder", labels.search),
-    },
-    "chart-text": t("target_progress", labels.progress),
-    "hist-weekly-btn": t("weekly_archives", "Weekly"),
-    "hist-cumulative-btn": t("cumulative_summary", "Summary"),
-    "btn-current-week": t("view_latest", "Latest"),
-    "print-btn": { prop: "title", val: t("print", "Print") },
-    "share-app-btn": { prop: "title", val: t("shareApp", "Share") },
-    "theme-icon": { prop: "title", val: t("toggleTheme", "Theme") },
-    "generate-client-pdf-btn": { prop: "title", val: t("exportPdf", "PDF") },
-    "official-pdf-btn": {
-      prop: "title",
-      val: t("downloadOfficialPdf", "Download"),
-    },
-    "toggle-history-btn": { prop: "title", val: t("reportHistory", "History") },
-    "header-mute-btn": { prop: "title", val: t("muteUnmute", "Sound") },
-    "settings-btn": { prop: "title", val: t("settings", "Settings") },
-    "ai-translate-btn": {
-      prop: "title",
-      val: t("translateBrief", "Translate"),
-    },
-    "ai-read-btn": { prop: "title", val: t("readAloud", "Narration") },
-    "ai-share-audio-btn": { prop: "title", val: t("shareAudio", "Share") },
-    "ai-download-audio-btn": {
-      prop: "title",
-      val: t("downloadAudio", "Download"),
-    },
-    "ai-share-brief-btn": { prop: "title", val: t("shareBrief", "Share") },
-    "ai-print-brief-btn": { prop: "title", val: t("printMemo", "Print") },
-    "btn-table": { prop: "title", val: t("tableView", "Table") },
-    "btn-charts": { prop: "title", val: t("chartsView", "Charts") },
-    "btn-cards": { prop: "title", val: t("cardsView", "Cards") },
-  };
-
-  // Update dynamic labels
-  if (document.getElementById("lbl-year"))
-    document.getElementById("lbl-year").innerText = labels.year;
-  if (document.getElementById("lbl-month"))
-    document.getElementById("lbl-month").innerText = labels.selectMonth;
-  if (document.getElementById("lbl-diag-period"))
-    document.getElementById("lbl-diag-period").innerText = labels.diagPeriod;
-
-  Object.entries(uiMap).forEach(([id, config]) => {
-    const el = document.getElementById(id);
-    if (!el) return;
-    if (typeof config === "string") el.innerText = config;
-    else if (config.prop === "title") {
-      el.title = config.val;
-    }
-  });
+  document.getElementById("main-title").innerText = t("mainTitle");
 
   // Update Gemini badge text
-  document.getElementById("gemini-badge").innerHTML =
-    `${labels.poweredBy} <span>Gemini</span>`;
-  document.getElementById("h-report").innerText = labels.reportTitle;
-  document.getElementById("aura-text").innerText = labels.auraText;
-
-  if (document.getElementById("ai-brief-card").style.display !== "none") {
-    document.getElementById("ai-brief-header-text").innerText =
-      labels.briefTitle;
-  }
+  const gBadge = document.getElementById("gemini-badge");
+  if (gBadge) gBadge.innerHTML = `${t("poweredBy")} <span>Gemini</span>`;
 
   renderDropdowns();
 
   // Trigger data reload if language changed or first load
   if (prevLang !== l) {
     document.getElementById("loader").style.display = "flex";
-    document.getElementById("loading-msg").innerText = labels.loading;
+    document.getElementById("loading-msg").innerText = t("loading");
     await loadData();
   } else if (store) {
     render(store);
@@ -1654,7 +1668,7 @@ function renderDropdowns() {
   const savedM = mSelect.value;
   const savedY = ySelect.value;
 
-  // Populate Months from I18N
+  // Populate Months from I18N Fallback
   mSelect.innerHTML = I18N[currentLang].months
     .map(
       (m, i) =>
@@ -2997,18 +3011,6 @@ window.toggleDarkSchedule = (enabled) => {
   }
 };
 
-// Sync theme based on schedule/location (stub implementation)
-function syncAppTheme() {
-  const enabled = localStorage.getItem("theme-schedule") === "true";
-  if (!enabled) return;
-  // Simple: Apply theme based on system preference if no location
-  const prefersDark =
-    window.matchMedia &&
-    window.matchMedia("(prefers-color-scheme: dark)").matches;
-  const theme = prefersDark ? "dark" : "light";
-  setTheme(theme, false);
-}
-
 window.toggleGrayscale = (enabled) => {
   localStorage.setItem("grayscale", enabled);
   document.body.setAttribute("data-grayscale", enabled);
@@ -3517,8 +3519,9 @@ function render(json) {
   if (rows.length === 0 && searchText) {
     tbody = `<tr><td colspan="${headers.length + 1}" style="text-align:center; padding:3rem; opacity:0.7">
           <div style="font-size:2.5rem; margin-bottom:10px">🔍</div>
-          <div style="font-weight:bold; margin-bottom:15px; color:var(--text)">${t.noResults} "${searchText}"</div>
-          <button onclick="clearSearch()" class="retry-btn" style="margin:0">${t.retrySearch}</button>
+          <div style="font-weight:bold; color:var(--text)" data-i18n="noResults"></div>
+          <div style="font-size:0.9rem; margin-bottom:15px; opacity:0.8">"${searchText}"</div>
+          <button onclick="clearSearch()" class="retry-btn" style="margin:0" data-i18n="retrySearch"></button>
         </td></tr>`;
   } else {
     rows.forEach((r) => {
@@ -3528,7 +3531,7 @@ function render(json) {
       tbody += `<td>
             <div style="display:flex; align-items:center; gap:8px;">
               ${renderMiniChart(annualPerc, true)} 
-              <button class="icon-btn" onclick="event.stopPropagation(); showInChartView('${name.replace(/'/g, "\\'")}')" data-title="${t.showInChartView}" style="width:24px; height:24px; font-size:0.7rem; padding:0; border-radius:6px; flex-shrink:0;">📊</button>
+              <button class="icon-btn" onclick="event.stopPropagation(); showInChartView('${name.replace(/'/g, "\\'")}')" data-i18n-title="showInChartView" style="width:24px; height:24px; font-size:0.7rem; padding:0; border-radius:6px; flex-shrink:0;">📊</button>
               <button class="icon-btn" onclick="event.stopPropagation(); copyDeepLink('${name.replace(/'/g, "\\'")}')" data-title="${t.copyDeepLink}" style="width:24px; height:24px; font-size:0.7rem; padding:0; border-radius:6px; flex-shrink:0;">🔗</button>
             </div>
           </td>`;
@@ -3563,11 +3566,12 @@ function render(json) {
     if (searchText) {
       cards = `<div class="chart-card" style="text-align:center; grid-column: 1 / -1; padding: 4rem;">
             <div style="font-size:3rem; margin-bottom:10px">🔎</div>
-            <p style="font-weight:bold; font-size:1.1rem; color:var(--text)">${t.noResults} "${searchText}"</p>
-            <button onclick="clearSearch()" class="retry-btn">${t.retrySearch}</button>
+            <p style="font-weight:bold; font-size:1.1rem; color:var(--text)" data-i18n="noResults"></p>
+            <p style="margin-bottom:15px; opacity:0.8">"${searchText}"</p>
+            <button onclick="clearSearch()" class="retry-btn" data-i18n="retrySearch"></button>
           </div>`;
     } else {
-      cards = `<p style='padding:2rem;text-align:center;opacity:0.5'>${t.noDataToVisualize}</p>`;
+      cards = `<p style='padding:2rem;text-align:center;opacity:0.5' data-i18n="noDataToVisualize"></p>`;
     }
   } else {
     rows.forEach((r) => {
@@ -3685,6 +3689,9 @@ function render(json) {
     });
   }
   document.getElementById("view-charts").innerHTML = chartHtml;
+
+  // Final Sync: Ensure all data-i18n elements (including results-count) are refreshed
+  applyTranslations();
 }
 
 /**
@@ -3704,42 +3711,61 @@ window.generateClientPDF = async () => {
     const { PDFDocument, rgb, StandardFonts } = PDFLib;
     const pdfDoc = await PDFDocument.create();
 
-    // 1. Embed Fonts (Fetch Nepali font if needed)
-    let customFont;
+    // 1. Optimized Font Embedding
+    let mainFont;
     if (currentLang === "ne") {
       const fontUrl = `https://fonts.gstatic.com/s/notosansdevanagari/v28/wf5m9WB_V9fNqbfVp-9ueS5mF-X_S-zY.ttf`;
       const fontBytes = await fetch(fontUrl).then((res) => res.arrayBuffer());
-      customFont = await pdfDoc.embedFont(fontBytes);
+      mainFont = await pdfDoc.embedFont(fontBytes);
+    } else {
+      mainFont = await pdfDoc.embedFont(StandardFonts.Helvetica);
     }
+
     const helveticaBold = await pdfDoc.embedFont(StandardFonts.HelveticaBold);
-    const helvetica = await pdfDoc.embedFont(StandardFonts.Helvetica);
-    const mainFont = customFont || helvetica;
 
     // 2. Embed Logo
     const logoUrl = `${window.location.origin}/logo.png`;
-    const logoBytes = await fetch(logoUrl).then((res) => res.arrayBuffer());
-    const logoImg = await pdfDoc.embedPng(logoBytes);
-    const logoDims = logoImg.scale(0.3);
-
-    // Critical Fix: Helper to detect Devanagari and switch fonts to prevent WinAnsi encoding errors
-    const getFont = (text) => {
-      const hasNepali = /[\u0900-\u097F]/.test(text);
-      return hasNepali && customFont ? customFont : mainFont;
-    };
+    const logoBytes = await fetch(logoUrl).then((res) =>
+      res.ok ? res.arrayBuffer() : null,
+    );
+    let logoImg = null;
+    if (logoBytes) logoImg = await pdfDoc.embedPng(logoBytes);
 
     const page = pdfDoc.addPage([595.28, 841.89]); // A4 Size
     const { width, height } = page.getSize();
     let yOffset = height - 50;
 
+    const colWidth = (width - 100) / store.headers.length;
+
+    const drawTableHeader = (currentPage) => {
+      store.headers.forEach((h, i) => {
+        currentPage.drawText(h, {
+          x: 50 + i * colWidth,
+          y: yOffset,
+          size: 9,
+          font: mainFont,
+        });
+      });
+      currentPage.drawLine({
+        start: { x: 50, y: yOffset - 5 },
+        end: { x: width - 50, y: yOffset - 5 },
+        thickness: 1,
+        color: rgb(0.8, 0.8, 0.8),
+      });
+      yOffset -= 20;
+    };
+
     // 3. Draw Header
-    // Center Logo
-    page.drawImage(logoImg, {
-      x: width / 2 - logoDims.width / 2,
-      y: yOffset - logoDims.height,
-      width: logoDims.width,
-      height: logoDims.height,
-    });
-    yOffset -= logoDims.height + 20;
+    if (logoImg) {
+      const logoDims = logoImg.scale(0.3);
+      page.drawImage(logoImg, {
+        x: width / 2 - logoDims.width / 2,
+        y: yOffset - logoDims.height,
+        width: logoDims.width,
+        height: logoDims.height,
+      });
+      yOffset -= logoDims.height + 20;
+    }
 
     // Center Title
     const title = I18N[currentLang].reportTitle;
@@ -3768,35 +3794,24 @@ window.generateClientPDF = async () => {
       x: 60,
       y: yOffset,
       size: 10,
-      font: getFont(kpiText),
+      font: mainFont,
       color: rgb(0.2, 0.2, 0.2),
     });
     yOffset -= 60;
 
-    // 4. Draw Table Headers
-    const headers = store.headers;
-    const colWidth = (width - 100) / headers.length;
-    headers.forEach((h, i) => {
-      page.drawText(h, {
-        x: 50 + i * colWidth,
-        y: yOffset,
-        size: 9,
-        font: getFont(h),
-      });
-    });
-
-    page.drawLine({
-      start: { x: 50, y: yOffset - 5 },
-      end: { x: width - 50, y: yOffset - 5 },
-      thickness: 1,
-      color: rgb(0.8, 0.8, 0.8),
-    });
-    yOffset -= 20;
+    // 4. Draw Initial Headers
+    drawTableHeader(page);
 
     // 5. Draw Table Rows
     store.rows.forEach((row, rowIndex) => {
-      if (yOffset < 50) return; // Basic pagination check
-      headers.forEach((h, i) => {
+      // Pagination Check: If we are near the bottom, add a new page
+      if (yOffset < 50) {
+        page = pdfDoc.addPage([595.28, 841.89]);
+        yOffset = height - 50;
+        drawTableHeader(page);
+      }
+
+      store.headers.forEach((h, i) => {
         let text = String(row[h] || "");
         if (currentLang === "ne") text = toNepaliNumerals(text);
 
@@ -3804,7 +3819,7 @@ window.generateClientPDF = async () => {
           x: 50 + i * colWidth,
           y: yOffset,
           size: 8,
-          font: getFont(text),
+          font: mainFont,
           color:
             row._status === "critical" && i === 0
               ? rgb(0.9, 0, 0)

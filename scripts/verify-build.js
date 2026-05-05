@@ -68,6 +68,27 @@ for (const check of checks) {
   }
 }
 
+// Dynamic check for Public Folder assets
+const publicDir = path.resolve(process.cwd(), "public");
+if (fs.existsSync(publicDir)) {
+  console.log("\n📁 Verifying Public folder assets...");
+  const publicFiles = fs.readdirSync(publicDir);
+
+  for (const file of publicFiles) {
+    // Ignore hidden files like .gitkeep
+    if (file.startsWith('.')) continue;
+
+    const buildFilePath = path.resolve(process.cwd(), ".build", file);
+    if (fs.existsSync(buildFilePath)) {
+      const size = fs.statSync(buildFilePath).size;
+      console.log(`   ✅ ${file} (copied to root): ${size} bytes`);
+    } else {
+      console.log(`   ❌ ${file} - MISSING in .build/`);
+      errors++;
+    }
+  }
+}
+
 console.log("");
 
 if (errors > 0) {
