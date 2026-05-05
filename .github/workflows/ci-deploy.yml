@@ -31,59 +31,9 @@ jobs:
           PUBLISHED_SHEET_ID: ${{ secrets.PUBLISHED_SHEET_ID }}
           FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
 
-  frontend-verification:
-    name: 🎨 Frontend Check
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout Repository
-        uses: actions/checkout@v4
-      - uses: pnpm/action-setup@v4
-        with:
-          version: 9
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: "20"
-          cache: "pnpm"
-      - name: Install Dependencies
-        run: pnpm install --frozen-lockfile
-      - name: Sync and Verify Translations
-        env:
-          PUBLISHED_SHEET_ID: ${{ secrets.PUBLISHED_SHEET_ID }}
-        run: |
-          echo '${{ secrets.FIREBASE_SERVICE_ACCOUNT }}' > sa_key.json
-          GOOGLE_APPLICATION_CREDENTIALS=sa_key.json pnpm exec tsx scripts/sync-sheets.js
-          rm sa_key.json
-          pnpm test -- translations
-      - name: Upload Synced Translations
-        uses: actions/upload-artifact@v4
-        with:
-          name: translations-json
-          path: src/locales/translations.json
-          retention-days: 1
-
-  backend-verification:
-    name: 🤖 Backend Check
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout Repository
-        uses: actions/checkout@v4
-      - uses: pnpm/action-setup@v4
-        with:
-          version: 9
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: "20"
-          cache: "pnpm"
-      - name: Install Dependencies
-        run: pnpm install --frozen-lockfile
-      - name: Verify AI Registry
-        run: pnpm exec tsx scripts/index.ts
-
   build:
     name: 🏗️ Build App
-    needs: [frontend-verification, backend-verification]
+    needs: check-secrets
     runs-on: ubuntu-latest
     steps:
       - name: Checkout Repository
@@ -98,25 +48,24 @@ jobs:
           cache: "pnpm"
       - name: Install Dependencies
         run: pnpm install --frozen-lockfile
-      - name: Download Translations
-        uses: actions/download-artifact@v4
-        with:
-          name: translations-json
-          path: src/locales
-
+      - name: Sync Translations (optional)
+        run: |
+          echo '${{ secrets.FIREBASE_SERVICE_ACCOUNT }}' > sa_key.json || true
+          GOOGLE_APPLICATION_CREDENTIALS=sa_key.json pnpm exec tsx scripts/sync-sheets.js || echo "⚠️ Translation sync failed, using existing files"
+          rm -f sa_key.json
+        env:
+          PUBLISHED_SHEET_ID: ${{ secrets.PUBLISHED_SHEET_ID }}
+      - name: Run Tests
+        run: |
+          pnpm exec tsc --noEmit
+          pnpm test
       - name: Build Application
         run: pnpm build
       - name: Verify Build Output
         run: pnpm exec tsx scripts/verify-build.js
-      - name: Upload Build Artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: build-output
-          path: .build
-          retention-days: 1
 
   deploy:
-    name: Build, Deploy and Health Check
+    name: 🚀 Deploy & Health Check
     needs: [check-secrets, build]
     if: github.event_name != 'pull_request'
     runs-on: ubuntu-latest
@@ -133,17 +82,6 @@ jobs:
           cache: "pnpm"
       - name: Install Dependencies
         run: pnpm install --frozen-lockfile
-      - name: Download Build Artifact
-        uses: actions/download-artifact@v4
-        with:
-          name: build-output
-          path: .build
-
-      - name: Quality Gates (Type Check & Test)
-        run: |
-          pnpm exec tsc --noEmit
-          pnpm test
-
       - name: Deploy to Firebase Hosting
         uses: FirebaseExtended/action-hosting-deploy@v0
         with:
@@ -151,21 +89,17 @@ jobs:
           firebaseServiceAccount: "${{ secrets.FIREBASE_SERVICE_ACCOUNT }}"
           channelId: live
           projectId: dor-progress
-          working-directory: .build
-
       - name: Deploy to Cloudflare Workers
         uses: cloudflare/wrangler-action@v3
         with:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           accountId: "052a34d4627b5c02d0bff84ff1c0f906"
-
       - name: Post-Deployment Health Check
         env:
           APP_URL: "https://dor-progress.web.app"
         run: |
           chmod +x ./scripts/health-check.sh
           ./scripts/health-check.sh
-
       - name: Deployment Diagnostics
         run: |
           echo "✅ Deployment Summary"

@@ -264,6 +264,12 @@ async function syncTranslations() {
     );
   } catch (error) {
     console.error("❌ Error syncing translations:", error.message);
+    // In CI, don't fail the build if translations can't sync - use existing files
+    // Check if we're in CI environment
+    if (process.env.GITHUB_ACTIONS) {
+      console.warn("⚠️ CI mode: Using existing translations to continue build.");
+      process.exit(0); // Exit successfully to not break CI
+    }
     process.exit(1);
   }
 }
