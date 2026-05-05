@@ -131,6 +131,8 @@ jobs:
         with:
           node-version: "20"
           cache: "pnpm"
+      - name: Install Dependencies
+        run: pnpm install --frozen-lockfile
       - name: Download Build Artifact
         uses: actions/download-artifact@v4
         with:
