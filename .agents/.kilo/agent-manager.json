@@ -5,5 +5,6 @@
     "local": [
       "pending:1"
     ]
-  }
+  },
+  "defaultBaseBranch": "main"
 }

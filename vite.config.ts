@@ -8,11 +8,11 @@ export default defineConfig({
   build: {
     outDir: ".build",
     emptyOutDir: true,
-    rollupOptions: {
-      input: {
-        main: path.resolve(__dirname, "public/index.html"),
-      },
-    },
+rollupOptions: {
+       input: {
+         main: path.resolve(__dirname, "index.html"),
+       },
+     },
   },
   server: {
     port: 3000,
