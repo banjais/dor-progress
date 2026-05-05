@@ -333,7 +333,8 @@ self.addEventListener("fetch", (event) => {
             headers.set("X-From-Cache", "true");
             headers.set("X-Is-Stale", "true");
             return new Response(cachedResponse.body, {
-              ...cachedResponse,
+              status: cachedResponse.status,
+              statusText: cachedResponse.statusText,
               headers,
             });
           }

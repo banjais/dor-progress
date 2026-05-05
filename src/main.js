@@ -1350,6 +1350,7 @@ let systemRiskLevel = 0;
 let refreshCounter = 60;
 let intentTimer = null;
 let translations = null;
+let lastSnapshotUpdate = null; // Track lastUpdate for automatic snapshot creation
 
 // Fetch translations asynchronously
 async function loadTranslations() {
@@ -2151,6 +2152,147 @@ async function getActiveSwVersion() {
   });
 }
 
+// PDF Snapshot Code// PDF Snapshot Management Functions
+let snapshotList = [];
+window.createSnapshotManual = async () => {
+  var btn = event.target;
+  var originalText = btn.innerText;
+  btn.innerText = "Creating...";
+  btn.disabled = true;
+  try {
+    var adminKey = prompt("Enter Admin Secret to create snapshot:");
+    if (!adminKey) {
+      btn.innerText = originalText;
+      btn.disabled = false;
+      return;
+    }
+    if (!store) {
+      addToast("error", "No data");
+      btn.innerText = originalText;
+      btn.disabled = false;
+      return;
+    }
+    var response = await fetch(WORKER_BASE + "/api/snapshot", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "X-Admin-Secret": adminKey,
+      },
+      body: JSON.stringify({
+        records: store.rows || [],
+        meta: {
+          lastUpdate:
+            store.lastUpdate || new Date().toISOString().split("T")[0],
+          total: store.rows?.length || 0,
+        },
+      }),
+    });
+    if (response.ok) {
+      await response.json();
+      addToast("success", "Snapshot created!");
+      listSnapshots(true);
+    } else {
+      addToast("error", "Failed");
+    }
+  } catch (e) {
+    addToast("error", "Failed");
+  } finally {
+    btn.innerText = originalText;
+    btn.disabled = false;
+  }
+};
+window.listSnapshots = async (force) => {
+  var container = document.getElementById("snapshot-list-container");
+  var listEl = document.getElementById("snapshot-list");
+  if (container.style.display !== "none" && !force) {
+    container.style.display = "none";
+    return;
+  }
+  try {
+    var adminKey = prompt("Enter Admin Secret:");
+    if (!adminKey) return;
+    var response = await fetch(WORKER_BASE + "/api/snapshots", {
+      headers: { "X-Admin-Secret": adminKey },
+    });
+    if (!response.ok) {
+      addToast("error", "Failed");
+      return;
+    }
+    var data = await response.json();
+    snapshotList = data.snapshots || [];
+    if (snapshotList.length === 0) {
+      listEl.innerHTML = "<p style='font-size: 0.7rem;'>No snapshots</p>";
+    } else {
+      listEl.innerHTML = snapshotList
+        .map(function (s) {
+          return (
+            "<div style='background: var(--bg); border-radius: 8px; padding: 10px; border: 1px solid var(--border); margin-bottom: 8px;'>" +
+            "<div style='display: flex; justify-content: space-between; margin-bottom: 5px;'><span style='font-size: 0.75rem; font-weight: 800; color: var(--primary);'>" +
+            s.date +
+            "</span></div>" +
+            "<div style='font-size: 0.65rem; color: var(--text-light);'>Records: " +
+            s.recordCount +
+            "</div>" +
+            "<div style='display: flex; gap: 5px;'>" +
+            "<button onclick='downloadSnapshot(\"" +
+            s.date +
+            "\")' class='toggle-btn' style='flex: 1; padding: 5px; font-size: 0.65rem; border: 1px solid var(--primary); background: transparent; color: var(--primary); cursor: pointer;'>Download</button>" +
+            "<button onclick='deleteSnapshot(\"" +
+            s.date +
+            "\")' class='toggle-btn' style='flex: 1; padding: 5px; font-size: 0.65rem; border: 1px solid var(--critical); background: transparent; color: var(--critical); cursor: pointer;'>Delete</button>" +
+            "</div></div>"
+          );
+        })
+        .join("");
+    }
+    container.style.display = "block";
+  } catch (e) {
+    addToast("error", "Failed");
+  }
+};
+window.downloadSnapshot = async (date) => {
+  var adminKey = prompt("Enter Admin Secret:");
+  if (!adminKey) return;
+  try {
+    var response = await fetch(WORKER_BASE + "/api/snapshot?date=" + date, {
+      headers: { "X-Admin-Secret": adminKey },
+    });
+    if (!response.ok) {
+      addToast("error", "Failed");
+      return;
+    }
+    var blob = await response.blob();
+    var url = window.URL.createObjectURL(blob);
+    var a = document.createElement("a");
+    a.href = url;
+    a.download = "DoR_Snapshot_" + date + ".pdf";
+    a.click();
+    window.URL.revokeObjectURL(url);
+    addToast("success", "Downloaded");
+  } catch (e) {
+    addToast("error", "Failed");
+  }
+};
+window.deleteSnapshot = async (date) => {
+  if (!confirm("Delete " + date + "?")) return;
+  var adminKey = prompt("Enter Admin Secret:");
+  if (!adminKey) return;
+  try {
+    var response = await fetch(WORKER_BASE + "/api/snapshot?date=" + date, {
+      method: "DELETE",
+      headers: { "X-Admin-Secret": adminKey },
+    });
+    if (response.ok) {
+      addToast("success", "Deleted");
+      listSnapshots(true);
+    } else {
+      addToast("error", "Failed");
+    }
+  } catch (e) {
+    addToast("error", "Failed");
+  }
+};
+
 window.showSettings = async () => {
   const t = I18N[currentLang];
   originalTheme = document.body.getAttribute("data-theme") || "light";
@@ -2401,11 +2543,26 @@ window.showSettings = async () => {
             <button onclick="showFactoryResetConfirmation()" class="toggle-btn" style="width: 100%; border: 1px solid var(--critical); color: var(--critical); display: flex; align-items: center; justify-content: center; gap: 10px;">
               ⚠️ ${t.resetAll}
             </button>
-          </div>
+         </div>
         </div>
-      `;
-  document.getElementById("modal-overlay").style.display = "flex";
-  updateStorageUsageDisplay();
+           <hr style="margin: 15px 0; border: none; border-top: 1px solid var(--border);">
+           <div style="margin-top: 15px;">
+             <label style="font-size: 0.7rem; font-weight: 800; text-transform: uppercase; color: var(--text-light); margin-bottom: 10px; display: block;">PDF Snapshots</label>
+             <p style="font-size: 0.65rem; color: var(--text-light); margin-bottom: 10px;">Create and manage PDF snapshots of report data with date-based versioning.</p>
+             <div style="display:flex; flex-direction:column; gap:8px;">
+               <button onclick="createSnapshotManual()" class="toggle-btn" style="width: 100%; border: 1px solid var(--primary); display: flex; align-items: center; justify-content: center; gap: 10px; padding: 10px;">
+                 Create Snapshot Now
+               </button>
+               <button onclick="listSnapshots()" class="toggle-btn" style="width: 100%; border: 1px solid var(--primary); display: flex; align-items: center; justify-content: center; gap: 10px; padding: 10px;">
+                 List Available Snapshots
+               </button>
+             </div>
+<div id="snapshot-list-container" style="margin-top: 10px; display: none;">
+                <div style="font-size: 0.7rem; font-weight: 800; color: var(--text-light); margin-bottom: 8px;">Snapshot History:</div>
+                <div id="snapshot-list" style="max-height: 300px; overflow-y: auto; display: flex; flex-direction: column; gap: 8px;"></div>
+              </div>
+            </div>
+            `;
 };
 
 /**

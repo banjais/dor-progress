@@ -592,7 +592,7 @@ export default {
       });
     }
 
-    // Public API: Translation endpoint
+// Public API: Translation endpoint
 
     if (normalizedPath === "/api/translate") {
       // 1. Verify Firebase App Check token to prevent unauthorized API usage
@@ -665,10 +665,10 @@ export default {
       // Perform translation
       const result = await translateWithGemini(text, targetLang, env, lowData);
 
-      // Set rate limit cache (1 minute) — only if not circuit-broken
-      if (result.source !== "circuit-breaker") {
-        await this.setRedisCache(translateKey, "active", env, 60);
-      }
+// Set rate limit cache (1 minute) — only if not circuit-broken
+       if (result.source !== "circuit-breaker") {
+         await this.setRedisCache(translateKey, "active", env, 60);
+       }
 
       return new Response(
         JSON.stringify({
@@ -684,9 +684,83 @@ export default {
       );
     }
 
-    // Default fallback
-    return new Response("DoR API Operational", { headers: securityHeaders });
-  },
+     // Snapshot API routes (require admin auth)
+      if (normalizedPath.startsWith("/api/snapshot")) {
+        const adminSecret = request.headers.get("X-Admin-Secret");
+        if (
+          !adminSecret ||
+          !env.ADMIN_SECRET ||
+          !secureCompare(adminSecret, env.ADMIN_SECRET)
+        ) {
+          return new Response(
+            JSON.stringify({ error: "Unauthorized" }),
+            { status: 401, headers: { ...securityHeaders, "Content-Type": "application/json" } },
+          );
+        }
+
+        // GET /api/snapshots - list all snapshots
+        if (request.method === "GET" && normalizedPath === "/api/snapshots") {
+          const list = await env.TRANSLATION_KV.get<SnapshotMetadata[]>(SNAPSHOT_LIST_KEY, "json") || [];
+          return new Response(JSON.stringify({ snapshots: list }), {
+            headers: { ...securityHeaders, "Content-Type": "application/json" },
+          });
+        }
+
+        // GET /api/snapshot?date=YYYY-MM-DD - get specific snapshot PDF
+        if (request.method === "GET" && normalizedPath === "/api/snapshot") {
+          const date = url.searchParams.get("date");
+          if (!date) {
+            return new Response(
+              JSON.stringify({ error: "Missing 'date' parameter" }),
+              { status: 400, headers: { ...securityHeaders, "Content-Type": "application/json" } },
+            );
+          }
+          const pdf = await env.TRANSLATION_KV.get(`snapshot:pdf:${date}`, "arrayBuffer");
+          if (!pdf) {
+            return new Response(
+              JSON.stringify({ error: "Snapshot not found" }),
+              { status: 404, headers: { ...securityHeaders, "Content-Type": "application/json" } },
+            );
+          }
+          return new Response(pdf, {
+            headers: { ...securityHeaders, "Content-Type": "application/pdf" },
+          });
+        }
+
+        // POST /api/snapshot - trigger manual snapshot
+        if (request.method === "POST" && normalizedPath === "/api/snapshot") {
+          const data = (await request.json().catch(() => ({ records: [], meta: {} }))) as ProjectData;
+          const metadata = await createSnapshot(env, ctx, data);
+          return new Response(
+            JSON.stringify({ success: true, metadata }),
+            { status: 201, headers: { ...securityHeaders, "Content-Type": "application/json" } },
+          );
+        }
+
+        // DELETE /api/snapshot?date=YYYY-MM-DD - delete snapshot
+        if (request.method === "DELETE" && normalizedPath === "/api/snapshot") {
+          const date = url.searchParams.get("date");
+          if (!date) {
+            return new Response(
+              JSON.stringify({ error: "Missing 'date' parameter" }),
+              { status: 400, headers: { ...securityHeaders, "Content-Type": "application/json" } },
+            );
+          }
+          await env.TRANSLATION_KV.delete(`snapshot:pdf:${date}`);
+          await env.TRANSLATION_KV.delete(`snapshot:meta:${date}`);
+          const list = await env.TRANSLATION_KV.get<SnapshotMetadata[]>(SNAPSHOT_LIST_KEY, "json") || [];
+          const updated = list.filter((s) => s.date !== date);
+          await env.TRANSLATION_KV.put(SNAPSHOT_LIST_KEY, JSON.stringify(updated));
+          return new Response(
+            JSON.stringify({ success: true, deleted: date }),
+            { headers: { ...securityHeaders, "Content-Type": "application/json" } },
+          );
+        }
+      }
+
+      // Default fallback
+      return new Response("DoR API Operational", { headers: securityHeaders });
+   },
 
   // Cron Trigger for JWKS caching (already implemented)
   /**
@@ -922,4 +996,192 @@ function secureCompare(a: string, b: string): boolean {
   let r = 0;
   for (let i = 0; i < a.length; i++) r |= a.charCodeAt(i) ^ b.charCodeAt(i);
   return r === 0;
+}
+
+// Snapshot System
+const SNAPSHOT_RETENTION_COUNT = 30;
+const SNAPSHOT_LIST_KEY = "snapshot:list";
+
+interface SnapshotMetadata {
+  date: string;
+  recordCount: number;
+  checksum: string;
+  createdAt: string;
+  bsDate?: string;
+}
+
+interface ProjectData {
+  records: unknown[];
+  meta: {
+    lastUpdate?: string;
+    total?: number;
+  };
+}
+
+function getBsDate(): string {
+  const bsYear = 2082;
+  const bsMonths = [
+    { name: "बैशाख", days: 30 },
+    { name: "जेठ", days: 32 },
+    { name: "असार", days: 32 },
+    { name: "श्रावण", days: 30 },
+    { name: "भदौ", days: 29 },
+    { name: "अश्विन", days: 30 },
+    { name: "कार्तिक", days: 29 },
+    { name: "मंसिर", days: 30 },
+    { name: "पौष", days: 29 },
+    { name: "माघ", days: 30 },
+    { name: "फाल्गुण", days: 29 },
+    { name: "चैत", days: 30 },
+  ];
+  const today = new Date();
+  const bsDay = today.getDate();
+  const bsMonthIndex = today.getMonth();
+  const bsMonth = bsMonths[bsMonthIndex]?.name || "असार";
+  return `${bsYear} साल ${bsMonth} ${bsDay}`;
+}
+
+function generateChecksum(data: unknown): string {
+  const str = JSON.stringify(data);
+  let hash = 0;
+  for (let i = 0; i < str.length; i++) {
+    const char = str.charCodeAt(i);
+    hash = (hash << 5) - hash + char;
+    hash = hash & hash;
+  }
+  return Math.abs(hash).toString(16);
+}
+
+async function generateSnapshotPdf(
+  data: ProjectData,
+  env: Env,
+): Promise<{ pdfBytes: Uint8Array; metadata: SnapshotMetadata }> {
+  const pdfDoc = await PDFDocument.create();
+  const page = pdfDoc.addPage([595.28, 841.89]);
+  const font = await pdfDoc.embedFont(StandardFonts.Helvetica);
+  const fontBold = await pdfDoc.embedFont(StandardFonts.HelveticaBold);
+  const { height } = page.getSize();
+
+  let y = height - 50;
+
+  page.drawText("DoR Progress Snapshot Report", {
+    x: 50,
+    y,
+    size: 24,
+    font: fontBold,
+    color: rgb(0.2, 0.2, 0.6),
+  });
+  y -= 40;
+
+  const today = new Date().toISOString().split("T")[0];
+  const bsDate = getBsDate();
+
+  page.drawText(`Date: ${today} (${bsDate})`, {
+    x: 50,
+    y,
+    size: 12,
+    font,
+    color: rgb(0.3, 0.3, 0.3),
+  });
+  y -= 20;
+
+  page.drawText(`Records: ${data.records?.length || 0}`, {
+    x: 50,
+    y,
+    size: 12,
+    font,
+    color: rgb(0.3, 0.3, 0.3),
+  });
+  y -= 30;
+
+  page.drawText("Project Records", {
+    x: 50,
+    y,
+    size: 16,
+    font: fontBold,
+    color: rgb(0.2, 0.2, 0.2),
+  });
+  y -= 20;
+
+  const records = data.records || [];
+  for (let i = 0; i < Math.min(records.length, 50); i++) {
+    const record = records[i] as Record<string, unknown>;
+    const text = `${i + 1}. ${JSON.stringify(record).substring(0, 100)}`;
+    page.drawText(text, {
+      x: 50,
+      y,
+      size: 9,
+      font,
+      color: rgb(0.1, 0.1, 0.1),
+    });
+    y -= 12;
+    if (y < 100) {
+      page.drawText("... (truncated)", {
+        x: 50,
+        y: y + 20,
+        size: 10,
+        font,
+        color: rgb(0.5, 0.5, 0.5),
+      });
+      break;
+    }
+  }
+
+  const pdfBytes = await pdfDoc.save();
+
+  const metadata: SnapshotMetadata = {
+    date: today,
+    recordCount: records.length,
+    checksum: generateChecksum(data),
+    createdAt: new Date().toISOString(),
+    bsDate,
+  };
+
+  return { pdfBytes, metadata };
+}
+
+async function enforceRetentionPolicy(
+  env: Env,
+  ctx: ExecutionContext,
+): Promise<void> {
+  const list = await env.TRANSLATION_KV.get<SnapshotMetadata[]>(SNAPSHOT_LIST_KEY, "json") || [];
+  if (list.length <= SNAPSHOT_RETENTION_COUNT) return;
+
+  const toDelete = list.slice(SNAPSHOT_RETENTION_COUNT);
+  for (const snap of toDelete) {
+    ctx.waitUntil(env.TRANSLATION_KV.delete(`snapshot:pdf:${snap.date}`));
+    ctx.waitUntil(env.TRANSLATION_KV.delete(`snapshot:meta:${snap.date}`));
+  }
+}
+
+async function createSnapshot(
+  env: Env,
+  ctx: ExecutionContext,
+  data: ProjectData,
+): Promise<SnapshotMetadata> {
+  const { pdfBytes, metadata } = await generateSnapshotPdf(data, env);
+
+  ctx.waitUntil(
+    env.TRANSLATION_KV.put(`snapshot:pdf:${metadata.date}`, pdfBytes, {
+      expirationTtl: 86400 * 60,
+    }),
+  );
+
+  ctx.waitUntil(
+    env.TRANSLATION_KV.put(`snapshot:meta:${metadata.date}`, JSON.stringify(metadata), {
+      expirationTtl: 86400 * 60,
+    }),
+  );
+
+  const list = await env.TRANSLATION_KV.get<SnapshotMetadata[]>(SNAPSHOT_LIST_KEY, "json") || [];
+  const existingIndex = list.findIndex((s) => s.date === metadata.date);
+  if (existingIndex >= 0) {
+    list[existingIndex] = metadata;
+  } else {
+    list.unshift(metadata);
+  }
+  ctx.waitUntil(env.TRANSLATION_KV.put(SNAPSHOT_LIST_KEY, JSON.stringify(list)));
+  ctx.waitUntil(enforceRetentionPolicy(env, ctx));
+
+  return metadata;
 }

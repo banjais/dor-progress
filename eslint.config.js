@@ -3,8 +3,12 @@ import globals from "globals";
 import pluginN from "eslint-plugin-n";
 
 export default [
+  {
+    ignores: ["dist", ".build", "node_modules", "*.config.js"],
+  },
   js.configs.recommended,
   {
+    files: ["**/*.js", "**/*.mjs", "**/*.cjs", "**/*.ts"],
     languageOptions: {
       ecmaVersion: "latest",
       sourceType: "module",
@@ -32,8 +36,5 @@ export default [
       "no-undef": "error",
       "n/no-deprecated-api": "warn",
     },
-  },
-  {
-    ignores: ["dist", ".build", "node_modules", "*.config.js"],
   },
 ];
