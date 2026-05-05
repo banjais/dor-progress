@@ -31,9 +31,31 @@ jobs:
           PUBLISHED_SHEET_ID: ${{ secrets.PUBLISHED_SHEET_ID }}
           FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
 
-  build:
-    name: 🏗️ Build App
+  test:
+    name: ✅ Test Suite
     needs: check-secrets
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "pnpm"
+      - name: Install Dependencies
+        run: pnpm install --frozen-lockfile
+      - name: Type Check (TypeScript)
+        run: pnpm exec tsc --noEmit
+      - name: Run Unit Tests
+        run: pnpm test
+
+  build-frontend:
+    name: 🏗️ Build Frontend
+    needs: [check-secrets, test]
     runs-on: ubuntu-latest
     steps:
       - name: Checkout Repository
@@ -55,18 +77,35 @@ jobs:
           rm -f sa_key.json
         env:
           PUBLISHED_SHEET_ID: ${{ secrets.PUBLISHED_SHEET_ID }}
-      - name: Run Tests
-        run: |
-          pnpm exec tsc --noEmit
-          pnpm test
-      - name: Build Application
+      - name: Build Frontend Application
         run: pnpm build
       - name: Verify Build Output
         run: pnpm exec tsx scripts/verify-build.js
+      - name: Upload Frontend Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: frontend-build
+          path: .build/
+          retention-days: 7
+
+  build-worker:
+    name: 🏗️ Build Cloudflare Worker
+    needs: [check-secrets, test]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+      - uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: "052a34d4627b5c02d0bff84ff1c0f906"
+          preCommands: |
+            npm install --no-save wrangler
+            npx wrangler --version
 
   deploy:
     name: 🚀 Deploy & Health Check
-    needs: [check-secrets, build]
+    needs: [check-secrets, build-frontend, build-worker]
     if: github.event_name != 'pull_request'
     runs-on: ubuntu-latest
     steps:
@@ -82,6 +121,11 @@ jobs:
           cache: "pnpm"
       - name: Install Dependencies
         run: pnpm install --frozen-lockfile
+      - name: Download Frontend Build
+        uses: actions/download-artifact@v4
+        with:
+          name: frontend-build
+          path: .build/
       - name: Deploy to Firebase Hosting
         uses: FirebaseExtended/action-hosting-deploy@v0
         with:
