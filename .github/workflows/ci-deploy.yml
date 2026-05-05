@@ -117,16 +117,12 @@ jobs:
 
   deploy:
     name: Build, Deploy and Health Check
-    needs: [check-secrets]
+    needs: [check-secrets, build]
     if: github.event_name != 'pull_request'
     runs-on: ubuntu-latest
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v4
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: "20"
       - uses: pnpm/action-setup@v4
         with:
           version: 9
@@ -135,16 +131,16 @@ jobs:
         with:
           node-version: "20"
           cache: "pnpm"
-      - name: Install Dependencies
-        run: pnpm install --frozen-lockfile
+      - name: Download Build Artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: build-output
+          path: .build
 
       - name: Quality Gates (Type Check & Test)
         run: |
           pnpm exec tsc --noEmit
           pnpm test
-
-      - name: Build Application
-        run: pnpm build
 
       - name: Deploy to Firebase Hosting
         uses: FirebaseExtended/action-hosting-deploy@v0
@@ -153,6 +149,7 @@ jobs:
           firebaseServiceAccount: "${{ secrets.FIREBASE_SERVICE_ACCOUNT }}"
           channelId: live
           projectId: dor-progress
+          working-directory: .build
 
       - name: Deploy to Cloudflare Workers
         uses: cloudflare/wrangler-action@v3

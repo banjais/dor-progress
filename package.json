@@ -8,7 +8,7 @@
     "dev:all": "concurrently \"npm run dev\" \"npm run dev:worker\"",
     "build": "vite build",
     "postbuild": "node scripts/finalize-build.js",
-    "deploy": "npm run clean && npm run build && npm run deploy:worker && npm run deploy:hosting && node scripts/git-deploy.js",
+    "deploy": "npm run clean && npm run build && npm run deploy:worker && npm run deploy:hosting && git add . && git commit -m 'Deploy' && git push",
     "deploy:worker": "wrangler deploy",
     "deploy:hosting": "firebase deploy --only hosting --public .build",
     "clean": "node scripts/clean.js",

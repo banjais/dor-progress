@@ -44,5 +44,8 @@ firebase-adminsdk-*.json
 firebase-service-account.json
 
 # Generated assets
-generated-icons/
-generate-icons.js
+.generated-icons/
+
+# Temporary/Noise files
+temp_check/
+list/
