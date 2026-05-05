@@ -240,7 +240,7 @@ async function authenticatedFetch(path, options = {}, maxRetries = 3) {
         const isStale = response.headers.get("X-Is-Stale") === "true";
 
         if (isStale) {
-          addToast("info", I18N[currentLang].dataSyncing, 2000);
+          addToast("info", t("dataSyncing"), 2000);
         } else if (isFromCache) {
           addToast(
             "info",
@@ -300,7 +300,7 @@ async function checkStatus() {
     const duration = Math.round(endTime - startTime);
 
     if (res.ok) {
-      statusEl.innerText = I18N[currentLang].live;
+      statusEl.innerText = t("live");
       statusEl.style.color = "#4ade80";
       addToast(
         "success",
@@ -310,7 +310,7 @@ async function checkStatus() {
       throw new Error();
     }
   } catch (e) {
-    statusEl.innerText = I18N[currentLang].offline;
+    statusEl.innerText = t("offline");
     statusEl.style.color = "#f87171";
     addToast("error", currentLang === "en" ? "Ping failed" : "पिङ असफल");
   } finally {
@@ -645,7 +645,7 @@ async function shareAiBrief() {
     }
   } else {
     navigator.clipboard.writeText(text);
-    addToast("success", I18N[currentLang].linkCopied);
+    addToast("success", t("linkCopied"));
   }
 }
 
@@ -696,7 +696,7 @@ window.downloadAiBriefAudio = async () => {
   try {
     btn.disabled = true;
     btn.innerHTML = `<span class="spinner" style="border-top-color:var(--primary); width:14px; height:14px;"></span>`;
-    addToast("info", I18N[currentLang].preparingAudio);
+    addToast("info", t("preparingAudio"));
 
     const blob = await fetchAiBriefBlob();
     if (!blob) return;
@@ -934,7 +934,7 @@ async function exportHealthReport() {
 
   // Generate Bikram Sambat date string using I18N months and Nepali numerals
   const bsYear = parseInt(year) + 57;
-  const bsMonthName = I18N[currentLang].months[parseInt(month) - 1];
+  const bsMonthName = t(months[parseInt(month) - 1]);
   const displayYear = currentLang === "ne" ? toNepaliNumerals(bsYear) : bsYear;
   const formattedDate =
     currentLang === "en"
@@ -1302,6 +1302,44 @@ const I18N = {
   },
 };
 
+// Minimal critical translations hardcoded for bootstrapping
+const CRITICAL_LABELS = {
+  ne: {
+    govt: "नेपाल सरकार",
+    ministry: "भौतिक पूर्वाधार तथा यातायात मन्त्रालय",
+    dept: "सडक विभाग",
+    city: "चाकुपाट, ललितपुर",
+    mainTitle: "DoR सडक विभाग",
+    reportTitle: "DoR प्रगति प्रतिवेदन (साप्ताहिक)",
+    total: "कुल सूचक",
+    met: "लक्ष्य",
+    attention: "ध्यान",
+    update: "अन्तिम अपडेट",
+    live: "● प्रत्यक्ष",
+    offline: "● अफलाइन",
+    search: "खोज",
+    progress: "प्रगति",
+    results: "नतिजाहरू",
+  },
+  en: {
+    govt: "Government of Nepal",
+    ministry: "Ministry of Physical Infrastructure & Transport",
+    dept: "Department of Roads",
+    city: "Chakupat, Lalitpur",
+    mainTitle: "DoR MIS Dashboard",
+    reportTitle: "DoR Progress Report (Weekly)",
+    total: "Total",
+    met: "Met",
+    attention: "Attention",
+    update: "Updated",
+    live: "● LIVE",
+    offline: "● OFFLINE",
+    search: "Search",
+    progress: "PROGRESS",
+    results: "Results",
+  },
+};
+
 let currentLang = "ne"; // Initialize to Nepali by default
 let currentView = "table";
 let currentSort = { key: null, dir: 1 };
@@ -1311,6 +1349,22 @@ let deferredPrompt;
 let systemRiskLevel = 0;
 let refreshCounter = 60;
 let intentTimer = null;
+let translations = null;
+
+// Fetch translations asynchronously
+async function loadTranslations() {
+  try {
+    const res = await fetch(`${WORKER_BASE}/api/translations`);
+    if (res.ok) {
+      translations = await res.json();
+    }
+  } catch (e) {
+    console.warn("Failed to load translations, using critical labels only");
+  }
+}
+
+// Start loading translations in background
+loadTranslations();
 
 // AI Intent Sensing (Mind-Reading Effect)
 document.addEventListener("mousemove", (e) => {
@@ -1330,7 +1384,7 @@ document.addEventListener("mousemove", (e) => {
   if (kpi) {
     const title = kpi.innerText.toLowerCase();
     if (title.includes("attention") || title.includes("ध्यान")) {
-      typeText(auraText, I18N[currentLang].auraAnalyzing);
+      typeText(auraText, t("auraAnalyzing"));
       if (!auraHalo.classList.contains("critical")) playPing();
       auraGlow.classList.add("pulsing");
       auraHalo.classList.add("critical");
@@ -1348,10 +1402,10 @@ document.addEventListener("mousemove", (e) => {
       if (!intentTimer)
         intentTimer = setTimeout(() => {
           handleSearch("critical");
-          typeText(auraText, I18N[currentLang].auraIsolated);
+          typeText(auraText, t("auraIsolated"));
         }, 1000);
     } else if (title.includes("met") || title.includes("पूरा")) {
-      typeText(auraText, I18N[currentLang].auraTracing);
+      typeText(auraText, t("auraTracing"));
       auraGlow.classList.remove("pulsing");
       auraHalo.classList.remove("critical");
       auraText.classList.remove("glitch");
@@ -1359,11 +1413,11 @@ document.addEventListener("mousemove", (e) => {
       if (!intentTimer)
         intentTimer = setTimeout(() => {
           handleSearch("good");
-          typeText(auraText, I18N[currentLang].auraFiltered);
+          typeText(auraText, t("auraFiltered"));
         }, 1000);
     }
   } else {
-    typeText(auraText, I18N[currentLang].auraText);
+    typeText(auraText, t("auraText"));
     auraGlow.classList.remove("pulsing");
     auraHalo.classList.remove("critical");
     auraText.classList.remove("glitch");
@@ -1433,23 +1487,7 @@ window.setLang = async function (l) {
   // Reset sort key because headers change per language
   currentSort = { key: null, dir: 1 };
 
-  const labels = I18N[l];
-  if (!window.translations) {
-    try {
-      const res = await fetch(`${WORKER_BASE}/api/translations`);
-      window.translations = await res.json();
-    } catch (e) {
-      console.warn("Failed to fetch translations");
-    }
-  }
-
-  // Rapid Language Toggle Helper (with local I18N fallback)
-  const t = (key, fallback) =>
-    (window.translations &&
-      window.translations[currentLang] &&
-      window.translations[currentLang][key]) ||
-    fallback ||
-    key;
+  const labels = T_LABELS[l] || T_LABELS.en;
 
   // Total UI Update
   document.getElementById("main-title").innerText = labels.mainTitle;
@@ -1496,7 +1534,7 @@ window.setLang = async function (l) {
     "btn-cards": { prop: "title", val: t("cardsView", "Cards") },
   };
 
-  // Update dynamic labels to remove unwanted template code from UI
+  // Update dynamic labels
   if (document.getElementById("lbl-year"))
     document.getElementById("lbl-year").innerText = labels.year;
   if (document.getElementById("lbl-month"))
@@ -1509,9 +1547,8 @@ window.setLang = async function (l) {
     if (!el) return;
     if (typeof config === "string") el.innerText = config;
     else if (config.prop === "title") {
-      el.setAttribute("data-title", config.val);
-      el.removeAttribute("title"); // Prevent native browser tooltip collision
-    } else el[config.prop] = config.val;
+      el.title = config.val;
+    }
   });
 
   // Update Gemini badge text
@@ -1598,7 +1635,7 @@ function copyDeepLink(name) {
   const url = new URL(window.location.href);
   url.searchParams.set("indicator", name);
   navigator.clipboard.writeText(url.toString());
-  addToast("success", I18N[currentLang].linkCopied);
+  addToast("success", t("linkCopied"));
 }
 
 window.renderDropdowns = renderDropdowns;
@@ -1610,8 +1647,8 @@ function renderDropdowns() {
   const savedM = mSelect.value;
   const savedY = ySelect.value;
 
-  // Populate Months from I18N
-  mSelect.innerHTML = I18N[currentLang].months
+  // Populate Months from T_LABELS
+  mSelect.innerHTML = T_LABELS[currentLang].months
     .map(
       (m, i) =>
         `<option value="${(i + 1).toString().padStart(2, "0")}">${m}</option>`,

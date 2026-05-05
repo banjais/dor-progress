@@ -557,6 +557,41 @@ export default {
       );
     }
 
+    // API: Serve translations.json
+    if (normalizedPath === "/api/translations") {
+      // Try KV first (cached)
+      const cached = await env.TRANSLATION_KV.get("translations", { type: "json" });
+      if (cached) {
+        return new Response(JSON.stringify(cached), {
+          headers: { ...securityHeaders, "Content-Type": "application/json" },
+        });
+      }
+
+      // Fallback: try to fetch from hosting (public/translations.json)
+      try {
+        const res = await fetch("https://dor-progress.web.app/translations.json");
+        if (res.ok) {
+          const translations = await res.json();
+          // Cache in KV for future requests
+          ctx.waitUntil(
+            env.TRANSLATION_KV.put("translations", JSON.stringify(translations), {
+              expirationTtl: 3600, // 1 hour
+            })
+          );
+          return new Response(JSON.stringify(translations), {
+            headers: { ...securityHeaders, "Content-Type": "application/json" },
+          });
+        }
+      } catch (e) {
+        // Ignore, return empty
+      }
+
+      // Ultimate fallback
+      return new Response(JSON.stringify({ en: {}, ne: {}, _metadata: {} }), {
+        headers: { ...securityHeaders, "Content-Type": "application/json" },
+      });
+    }
+
     // Public API: Translation endpoint
 
     if (normalizedPath === "/api/translate") {
