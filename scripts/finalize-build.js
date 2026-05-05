@@ -22,12 +22,17 @@ if (fs.existsSync(swPath)) {
   const buildId = contentHash;
   const versionIdentifier = pkg.version;
 
-  // Get the actual Git commit SHA
+  // Get the actual Git commit SHA - prefer CI environment variables over git command
+  const envSha = process.env.GITHUB_SHA || process.env.CI_COMMIT_SHA || process.env.COMMIT_SHA;
   let commitSha = "unknown";
-  try {
-    commitSha = execSync("git rev-parse --short HEAD", { encoding: "utf8" }).trim();
-  } catch (e) {
-    console.warn("⚠️  Could not determine Git commit SHA, using fallback");
+  if (envSha) {
+    commitSha = envSha.substring(0, 7); // Use short SHA
+  } else {
+    try {
+      commitSha = execSync("git rev-parse --short HEAD", { encoding: "utf8" }).trim();
+    } catch (e) {
+      console.warn("⚠️  Could not determine Git commit SHA, using fallback");
+    }
   }
 
   sw = sw
