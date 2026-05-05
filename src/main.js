@@ -1,3 +1,5 @@
+/// <reference types="vite/client" />
+
 const WORKER_BASE = import.meta.env.VITE_API_BASE_URL || "";
 const BUILD_ID = import.meta.env.VITE_BUILD_ID || "dev";
 const COMMIT_SHA = import.meta.env.VITE_COMMIT_SHA || "dev";
@@ -8,12 +10,17 @@ import {
   ReCaptchaV3Provider,
 } from "https://www.gstatic.com/firebasejs/11.0.1/firebase-app-check.js";
 
+import * as PDFLib from "pdf-lib";
+
+/* global setLang, setTheme, updateVolume, updatePitch, setSoundPack, triggerDatabaseRestore, listSnapshots */
+
 const toggleLang = () => {
   const next = currentLang === "en" ? "ne" : "en";
   setLang(next);
   const lbl = document.getElementById("lang-current-label");
   if (lbl) lbl.innerText = next.toUpperCase();
 };
+window.toggleLang = toggleLang;
 
 const toggleGeminiMenu = () => {
   const btn = document.getElementById("gemini-main-btn");
@@ -22,6 +29,7 @@ const toggleGeminiMenu = () => {
   if (fabMenu) fabMenu.classList.remove("show");
   menu.classList.toggle("show");
 };
+window.toggleGeminiMenu = toggleGeminiMenu;
 
 const toggleFabMenu = () => {
   const btn = document.getElementById("fab-main-btn");
@@ -31,6 +39,7 @@ const toggleFabMenu = () => {
   btn.classList.toggle("active");
   menu.classList.toggle("show");
 };
+window.toggleFabMenu = toggleFabMenu;
 
 // Close on outside click
 document.addEventListener("click", (e) => {
@@ -509,7 +518,7 @@ const playSound = (id, checkMute = true) => {
     gain.connect(audioCtx.destination);
     osc.start();
     osc.stop(audioCtx.currentTime + p.d);
-  } catch (e) {}
+  } catch (e) {} // eslint-disable-line no-empty
 };
 
 const playPing = () => playSound("ping");
@@ -934,7 +943,7 @@ async function exportHealthReport() {
 
   // Generate Bikram Sambat date string using I18N months and Nepali numerals
   const bsYear = parseInt(year) + 57;
-  const bsMonthName = t(months[parseInt(month) - 1]);
+  const bsMonthName = I18N[currentLang].months[parseInt(month) - 1];
   const displayYear = currentLang === "ne" ? toNepaliNumerals(bsYear) : bsYear;
   const formattedDate =
     currentLang === "en"
@@ -1043,7 +1052,6 @@ const I18N = {
     exportPdf: "पीडीएफ",
     downloadOfficialPdf: "डाउनलोड",
     muteUnmute: "ध्वनि",
-    settings: "सेटिङ",
     translateBrief: "अनुवाद",
     readAloud: "वाचन",
     shareAudio: "साझा",
@@ -1076,7 +1084,6 @@ const I18N = {
     verificationTitle: "प्रतिवेदन प्रमाणीकरण",
     verifiedSuccess: "✅ प्रमाणित",
     invalidReport: "❌ अमान्य",
-    settings: "सेटिङहरू",
     theme: "थिम प्राथमिकता",
     themeLight: "लाइट मोड",
     themeDark: "डार्क मोड",
@@ -1086,9 +1093,8 @@ const I18N = {
     resetConfirm: "सबै डेटा मेटिनेछ। निश्चित हुनुहुन्छ?",
     totalCache: "कुल पीवाइई (PWA) क्यास",
     downloadOffline: "अफलाइन डाउनलोड",
-    downloading: "डाउनलोड",
     downloadComplete: "डाउनलोड सम्पन्न",
-    forceThrottled: "पुनः लोड सीमा पुग्यो। हालैको डेटा प्रयोग गर्दै।",
+    forceThrottled: "पुनः लोड सीमा पुग्यो। हालैको डाटा प्रयोग गर्दै।",
     cacheCleared: "क्यास सफा",
     qualifying: "योग्यता जाँच्दै...",
     storageUsage: "भण्डारण उपयोग",
@@ -1101,10 +1107,7 @@ const I18N = {
     dbRestore: "रिस्टोर",
     dbRestoreDesc: "क्लाउडबाट डाटा रिकभर गर्नुहोस्",
     dataSyncing: "डाटा सिङ्क हुँदैछ...",
-    readAloud: "वाचन",
     stopReading: "रोक्नुहोस्",
-    downloadAudio: "डाउनलोड",
-    shareAudio: "साझा",
     preparingAudio: "तयारी...",
     voiceSelection: "आवाज चयन",
     voiceDesc: "पढ्नको लागि आवाज छान्नुहोस्",
@@ -1211,9 +1214,9 @@ const I18N = {
     exportPdf: "PDF",
     downloadOfficialPdf: "Download",
     muteUnmute: "Sound",
-    settings: "Settings",
     translateBrief: "Translate",
     readAloud: "Narration",
+    stopReading: "Stop",
     shareAudio: "Share",
     downloadAudio: "Download",
     shareBrief: "Share",
@@ -1221,7 +1224,6 @@ const I18N = {
     tableView: "Table",
     chartsView: "Charts",
     cardsView: "Cards",
-    settings: "Settings",
     theme: "Theme Preference",
     themeLight: "Light Mode",
     themeDark: "Dark Mode",
@@ -1231,7 +1233,6 @@ const I18N = {
     resetConfirm: "All data will be deleted. Proceed?",
     totalCache: "Total PWA Cache",
     downloadOffline: "Offline Download",
-    downloading: "Downloading",
     downloadComplete: "Download Complete",
     forceThrottled: "Refresh limit reached. Using cache.",
     cacheCleared: "Cache cleared",
@@ -1246,10 +1247,6 @@ const I18N = {
     dbRestore: "Restore",
     dbRestoreDesc: "Recover data from a cloud snapshot",
     dataSyncing: "Syncing...",
-    readAloud: "Narration",
-    stopReading: "Stop",
-    downloadAudio: "Download",
-    shareAudio: "Share",
     preparingAudio: "Preparing...",
     voiceSelection: "Voice Selection",
     voiceDesc: "Choose a voice for reading",
@@ -1351,6 +1348,15 @@ let refreshCounter = 60;
 let intentTimer = null;
 let translations = null;
 let lastSnapshotUpdate = null; // Track lastUpdate for automatic snapshot creation
+
+// Global translation helper: get key from current language, fallback to English
+function t(key, fallback) {
+  const dict = I18N[currentLang] || I18N.en;
+  if (arguments.length === 1) {
+    return dict[key] || I18N.en[key] || "";
+  }
+  return dict[key] || fallback;
+}
 
 // Fetch translations asynchronously
 async function loadTranslations() {
@@ -1488,7 +1494,7 @@ window.setLang = async function (l) {
   // Reset sort key because headers change per language
   currentSort = { key: null, dir: 1 };
 
-  const labels = T_LABELS[l] || T_LABELS.en;
+  const labels = I18N[l] || I18N.en;
 
   // Total UI Update
   document.getElementById("main-title").innerText = labels.mainTitle;
@@ -1648,8 +1654,8 @@ function renderDropdowns() {
   const savedM = mSelect.value;
   const savedY = ySelect.value;
 
-  // Populate Months from T_LABELS
-  mSelect.innerHTML = T_LABELS[currentLang].months
+  // Populate Months from I18N
+  mSelect.innerHTML = I18N[currentLang].months
     .map(
       (m, i) =>
         `<option value="${(i + 1).toString().padStart(2, "0")}">${m}</option>`,
@@ -2990,6 +2996,18 @@ window.toggleDarkSchedule = (enabled) => {
     syncAppTheme();
   }
 };
+
+// Sync theme based on schedule/location (stub implementation)
+function syncAppTheme() {
+  const enabled = localStorage.getItem("theme-schedule") === "true";
+  if (!enabled) return;
+  // Simple: Apply theme based on system preference if no location
+  const prefersDark =
+    window.matchMedia &&
+    window.matchMedia("(prefers-color-scheme: dark)").matches;
+  const theme = prefersDark ? "dark" : "light";
+  setTheme(theme, false);
+}
 
 window.toggleGrayscale = (enabled) => {
   localStorage.setItem("grayscale", enabled);
