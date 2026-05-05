@@ -26,9 +26,6 @@
         ],
         "types": [
             "@cloudflare/workers-types"
-        ],
-        "typeRoots": [
-            "../node_modules/@types"
         ]
     },
     "exclude": [

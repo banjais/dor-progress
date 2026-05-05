@@ -8,6 +8,7 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/11.0.1/firebas
 import {
   initializeAppCheck,
   ReCaptchaV3Provider,
+  getToken,
 } from "https://www.gstatic.com/firebasejs/11.0.1/firebase-app-check.js";
 
 const toggleLang = () => {
@@ -208,8 +209,6 @@ async function authenticatedFetch(path, options = {}, maxRetries = 3) {
   const url = path.startsWith("http")
     ? path
     : `${WORKER_BASE}${path.startsWith("/") ? "" : "/"}${path}`;
-  const { getToken } =
-    await import("https://www.gstatic.com/firebasejs/11.0.1/firebase-app-check.js");
 
   const method = (options.method || "GET").toUpperCase();
   const isIdempotent = ["GET", "PUT", "DELETE", "HEAD", "OPTIONS"].includes(
@@ -1447,7 +1446,7 @@ function applyTranslations() {
   });
 
   // Generic attribute translation: title, placeholder, aria-label
-  ["title", "placeholder", "aria-label"].forEach((attr) => {
+  ["title", "placeholder", "aria-label", "data-title"].forEach((attr) => {
     document.querySelectorAll(`[data-i18n-${attr}]`).forEach((el) => {
       el.setAttribute(attr, t(el.getAttribute(`data-i18n-${attr}`)));
     });
@@ -3532,7 +3531,7 @@ function render(json) {
             <div style="display:flex; align-items:center; gap:8px;">
               ${renderMiniChart(annualPerc, true)} 
               <button class="icon-btn" onclick="event.stopPropagation(); showInChartView('${name.replace(/'/g, "\\'")}')" data-i18n-title="showInChartView" style="width:24px; height:24px; font-size:0.7rem; padding:0; border-radius:6px; flex-shrink:0;">📊</button>
-              <button class="icon-btn" onclick="event.stopPropagation(); copyDeepLink('${name.replace(/'/g, "\\'")}')" data-title="${t.copyDeepLink}" style="width:24px; height:24px; font-size:0.7rem; padding:0; border-radius:6px; flex-shrink:0;">🔗</button>
+              <button class="icon-btn" onclick="event.stopPropagation(); copyDeepLink('${name.replace(/'/g, "\\'")}')" data-i18n-data-title="copyDeepLink" style="width:24px; height:24px; font-size:0.7rem; padding:0; border-radius:6px; flex-shrink:0;">🔗</button>
             </div>
           </td>`;
       headers.forEach((h, i) => {
