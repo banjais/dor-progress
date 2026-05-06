@@ -1,15 +1,376 @@
-import translationsData from "./locales/translations.json";
+import translationsData from "./locales/translations.json" with { type: "json" };
 
 const WORKER_BASE = import.meta.env.VITE_API_BASE_URL || "";
+const APP_VERSION = import.meta.env.VITE_APP_VERSION || "unknown"; // Access the version from package.json
 const BUILD_ID = import.meta.env.VITE_BUILD_ID || "dev";
 const COMMIT_SHA = import.meta.env.VITE_COMMIT_SHA || "dev";
 
-import { initializeApp } from "https://www.gstatic.com/firebasejs/11.0.1/firebase-app.js";
+import { initializeApp } from "firebase/app";
 import {
   initializeAppCheck,
-  ReCaptchaV3Provider,
+  ReCaptchaEnterpriseProvider,
   getToken,
-} from "https://www.gstatic.com/firebasejs/11.0.1/firebase-app-check.js";
+} from "firebase/app-check";
+
+/**
+ * World-Class Audio Engine
+ * Handles multiple simultaneous channels (UI sounds, Background Music).
+ */
+class AudioEngine {
+  constructor() {
+    this.ctx = null;
+    this.isBroken = false;
+    this.musicSource = null;
+    this.musicGain = null;
+    this.uiGain = null;
+    this.musicBuffer = null;
+    this.analyser = null;
+    this.duckLevel = 0.3;
+  }
+
+  async init() {
+    if (this.ctx || this.isBroken) return;
+    try {
+      const AudioContextClass =
+        window.AudioContext || window.webkitAudioContext;
+      if (!AudioContextClass) throw new Error("Web Audio API not supported");
+
+      this.ctx = new AudioContextClass();
+
+      // Ensure context is resumed (crucial for iOS/Chrome Autoplay policies)
+      if (this.ctx.state === "suspended") {
+        await this.ctx.resume();
+      }
+
+      // Channels Routing
+      this.uiGain = this.ctx.createGain();
+      this.musicGain = this.ctx.createGain();
+
+      this.uiGain.connect(this.ctx.destination);
+      this.musicGain.connect(this.ctx.destination);
+
+      // Visualization Analyser
+      this.analyser = this.ctx.createAnalyser();
+      this.analyser.fftSize = 64;
+      this.musicGain.connect(this.analyser);
+
+      this.updateVolumes();
+    } catch (e) {
+      console.warn("Audio Engine initialization failed:", e.message);
+      this.isBroken = true;
+    }
+  }
+
+  async updateVolumes() {
+    if (!this.ctx) return;
+    if (this.ctx.state === "suspended") await this.ctx.resume();
+
+    const vol = parseFloat(localStorage.getItem("ui-volume") || "0.5");
+    this.uiGain.gain.setTargetAtTime(vol, this.ctx.currentTime, 0.05);
+    this.musicGain.gain.setTargetAtTime(
+      vol * this.duckLevel,
+      this.ctx.currentTime,
+      0.05,
+    );
+  }
+
+  async loadMusic(url) {
+    await this.init();
+    if (this.isBroken) return;
+    try {
+      const res = await fetch(url);
+      const arrayBuffer = await res.arrayBuffer();
+      this.musicBuffer = await this.ctx.decodeAudioData(arrayBuffer);
+    } catch (e) {
+      console.error("[Audio Engine] Music load failed:", e);
+    }
+  }
+
+  playMusic() {
+    if (!this.musicBuffer || this.isBroken) return;
+    this.stopMusic(0);
+    this.musicSource = this.ctx.createBufferSource();
+    this.musicSource.buffer = this.musicBuffer;
+    this.musicSource.loop = true;
+    this.musicSource.connect(this.musicGain);
+    this.musicSource.start();
+  }
+
+  stopMusic(fadeDuration = 1.5) {
+    if (!this.musicSource) return;
+    const source = this.musicSource;
+    this.musicGain.gain.linearRampToValueAtTime(
+      0,
+      this.ctx.currentTime + fadeDuration,
+    );
+    setTimeout(
+      () => {
+        try {
+          source.stop();
+        } catch (e) {}
+      },
+      fadeDuration * 1000 + 100,
+    );
+    this.musicSource = null;
+  }
+
+  async playBlob(blob) {
+    await this.init();
+    if (this.isBroken) return;
+    try {
+      const arrayBuffer = await blob.arrayBuffer();
+      const audioBuffer = await this.ctx.decodeAudioData(arrayBuffer);
+      const source = this.ctx.createBufferSource();
+      source.buffer = audioBuffer;
+      source.connect(this.uiGain); // Connect to UI gain for volume control
+      source.start();
+    } catch (e) {
+      console.error("[Audio Engine] Play blob failed:", e);
+    }
+  }
+
+  duck(level, duration = 0.2) {
+    if (!this.musicGain) return;
+    const vol = parseFloat(localStorage.getItem("ui-volume") || "0.5");
+    this.musicGain.gain.setTargetAtTime(
+      vol * level,
+      this.ctx.currentTime,
+      duration,
+    );
+  }
+
+  async playUi(id, checkMute = true) {
+    await this.init();
+    const vol = parseFloat(localStorage.getItem("ui-volume") || "0.5");
+    if (this.isBroken || (checkMute && vol === 0)) return;
+
+    try {
+      if (this.ctx.state === "suspended") await this.ctx.resume();
+
+      const profile =
+        SOUND_PROFILES[localStorage.getItem("sound-pack") || "modern"]?.[id];
+      if (!profile) return;
+
+      const osc = this.ctx.createOscillator();
+      const gain = this.ctx.createGain();
+      const pitch = parseFloat(localStorage.getItem("ui-pitch") || "1.0");
+
+      osc.type = profile.type;
+      osc.frequency.setValueAtTime(profile.f1 * pitch, this.ctx.currentTime);
+      if (profile.f2)
+        osc.frequency.exponentialRampToValueAtTime(
+          profile.f2 * pitch,
+          this.ctx.currentTime + profile.d,
+        );
+
+      gain.gain.setValueAtTime(profile.g, this.ctx.currentTime);
+      gain.gain.exponentialRampToValueAtTime(
+        0.0001,
+        this.ctx.currentTime + profile.d,
+      );
+
+      osc.connect(gain);
+      gain.connect(this.uiGain);
+      osc.start();
+      osc.stop(this.ctx.currentTime + profile.d);
+    } catch (e) {
+      console.error("UI Sound error:", e);
+    }
+  }
+}
+
+const audioEngine = new AudioEngine();
+
+/**
+ * Speech Engine Class
+ * Manages TTS lifecycle, highlighting, and audio ducking.
+ */
+class SpeechEngine {
+  constructor(audio) {
+    this.audio = audio;
+    this.webSpeechApiAvailable = "speechSynthesis" in window;
+    this.synth = this.webSpeechApiAvailable ? window.speechSynthesis : null;
+    this.utterance = null;
+    this.originalText = "";
+    this.container = null;
+    this.currentBlobAudioSource = null; // To manage server-side TTS playback
+    this.spanMap = [];
+  }
+
+  stop() {
+    if (this.synth.speaking) {
+      this.audio.stopMusic(1.5);
+      setTimeout(() => {
+        if (this.synth) this.synth.cancel();
+        if (this.container && this.originalText) {
+          this.container.innerText = this.originalText;
+        }
+        this.resetUI();
+      }, 800);
+    } else if (this.currentBlobAudioSource) {
+      this.audio.stopMusic(1.5);
+      setTimeout(() => {
+        this.currentBlobAudioSource.stop();
+        this.resetUI();
+      }, 800);
+    }
+  }
+
+  resetUI() {
+    const btn = document.getElementById("ai-read-btn");
+    if (btn) {
+      btn.innerText = "🔊";
+      btn.title = I18N[currentLang].readAloud;
+    }
+  }
+
+  async toggle(container) {
+    const btn = document.getElementById("ai-read-btn");
+    const t = I18N[currentLang];
+    this.container = container;
+
+    try {
+      if (this.webSpeechApiAvailable) {
+        // --- Web Speech API Logic ---
+        if (this.synth.speaking && !this.synth.paused) {
+          this.synth.pause();
+          this.audio.duck(0);
+          btn.innerText = "▶️";
+          btn.title = t.resumeReading;
+          return;
+        } else if (this.synth.paused) {
+          this.synth.resume();
+          this.audio.duck(0.3);
+          btn.innerText = "⏸️";
+          btn.title = t.pauseReading;
+          return;
+        } else if (this.synth.speaking) {
+          this.stop();
+          return;
+        }
+      } else if (this.currentBlobAudioSource) {
+        // --- Server-side TTS Playback Control ---
+        // For server-side TTS, we don't have pause/resume directly on the blob source.
+        // We can only stop it.
+        this.stop();
+        return;
+      }
+
+      // If not speaking, paused, or already stopped, start new narration
+      await this.audio.loadMusic(
+        localStorage.getItem("music-track") || "/ambient-focus.mp3",
+      );
+      this.originalText = container.innerText;
+      if (!this.originalText) return;
+
+      if (this.webSpeechApiAvailable) {
+        this.utterance = new SpeechSynthesisUtterance(this.originalText);
+        this.utterance.lang = currentLang === "ne" ? "ne-NP" : "en-US";
+        this.utterance.rate = parseFloat(
+          localStorage.getItem("tts-rate") || "0.95",
+        );
+        this.utterance.pitch = parseFloat(
+          localStorage.getItem("tts-pitch") || "1.0",
+        );
+
+        const voices = this.synth.getVoices();
+        const savedVoiceUri = localStorage.getItem("tts-voice-uri");
+        if (savedVoiceUri) {
+          this.utterance.voice =
+            voices.find((v) => v.voiceURI === savedVoiceUri) || null;
+        }
+
+        // Prepare Spans for Highlighting
+        this.spanMap = [];
+        let cumulativeIdx = 0;
+        container.innerHTML = "";
+        this.originalText.split(/(\s+)/).forEach((w) => {
+          if (w.trim().length > 0) {
+            const span = document.createElement("span");
+            span.innerText = w;
+            container.appendChild(span);
+            this.spanMap.push({
+              start: cumulativeIdx,
+              end: cumulativeIdx + w.length,
+              el: span,
+            });
+          } else {
+            container.appendChild(document.createTextNode(w));
+          }
+          cumulativeIdx += w.length;
+        });
+
+        this.utterance.onboundary = (event) => {
+          if (event.name !== "word") return;
+          const match = this.spanMap.find(
+            (m) => event.charIndex >= m.start && event.charIndex < m.end,
+          );
+          if (match) {
+            this.spanMap.forEach((m) =>
+              m.el.classList.remove("highlight-word"),
+            );
+            match.el.classList.add("highlight-word");
+            match.el.scrollIntoView({ behavior: "smooth", block: "nearest" });
+          }
+        };
+
+        this.utterance.onstart = () => {
+          btn.innerText = "🛑";
+          this.audio.playMusic();
+        };
+        this.utterance.onend = () => {
+          this.audio.stopMusic(2.0);
+          container.innerText = this.originalText;
+          this.resetUI();
+        };
+        this.utterance.onerror = () => {
+          this.audio.stopMusic(0.2);
+          container.innerText = this.originalText;
+          this.resetUI();
+        };
+
+        this.synth.speak(this.utterance);
+      } else {
+        // --- Fallback to Server-Side TTS ---
+        addToast("info", t("preparingAudio"));
+        btn.innerText = "🛑"; // Show stop button
+        btn.title = t.stopReading;
+
+        const blob = await fetchAiBriefBlob();
+        if (!blob) {
+          throw new Error("Failed to fetch audio blob.");
+        }
+
+        this.audio.playMusic();
+        const audioBuffer = await this.audio.ctx.decodeAudioData(
+          await blob.arrayBuffer(),
+        );
+        this.currentBlobAudioSource = this.audio.ctx.createBufferSource();
+        this.currentBlobAudioSource.buffer = audioBuffer;
+        this.currentBlobAudioSource.connect(this.audio.uiGain); // Connect to UI gain for volume control
+        this.currentBlobAudioSource.start();
+
+        this.currentBlobAudioSource.onended = () => {
+          this.audio.stopMusic(2.0);
+          container.innerText = this.originalText;
+          this.resetUI();
+          this.currentBlobAudioSource = null;
+        };
+      }
+    } catch (e) {
+      console.error("Speech Engine error:", e);
+      addToast("error", t.offline);
+      this.resetUI();
+      if (this.currentBlobAudioSource) {
+        this.currentBlobAudioSource.stop();
+        this.currentBlobAudioSource = null;
+      }
+    }
+  }
+}
+
+const speechEngine = new SpeechEngine(audioEngine);
+audioEngine.init();
 
 const toggleLang = () => {
   const next = currentLang === "en" ? "ne" : "en";
@@ -163,7 +524,7 @@ async function setupSecurity() {
 
     updateLaunchProgress(60, "Verifying Integrity...");
     window.appCheck = initializeAppCheck(app, {
-      provider: new ReCaptchaV3Provider(config.recaptchaKey),
+      provider: new ReCaptchaEnterpriseProvider(config.recaptchaKey),
       isTokenAutoRefreshEnabled: true,
     });
     console.log("[App Check Init] App Check initialized successfully.");
@@ -392,8 +753,20 @@ function addToast(type, message, duration = 4000) {
 }
 
 /**
+ * @typedef {Object} SoundEffect
+ * @property {OscillatorType} type - The waveform (sine, square, etc.)
+ * @property {number} f1 - Initial frequency
+ * @property {number} [f2] - Ending frequency for ramps
+ * @property {number} g - Gain (volume)
+ * @property {number} d - Duration in seconds
+ *
+ * @typedef {Object.<string, SoundEffect>} SoundPack
+ */
+
+/**
  * World-Class Audio Engine
  * Implements customizable sound profiles for UI feedback.
+ * @type {Object.<string, SoundPack>}
  */
 const SOUND_PROFILES = {
   modern: {
@@ -482,41 +855,10 @@ window.resetAudioToDefault = () => {
   );
 };
 
-const playSound = (id, checkMute = true) => {
-  if (checkMute && uiVolume === 0) return;
-  try {
-    const p = SOUND_PROFILES[currentSoundPack][id];
-    const audioCtx =
-      window._audioCtx ||
-      (window._audioCtx = new (
-        window.AudioContext || window.webkitAudioContext
-      )());
-    if (audioCtx.state === "suspended") audioCtx.resume();
-    const osc = audioCtx.createOscillator();
-    const gain = audioCtx.createGain();
-    osc.type = p.type;
-    osc.frequency.setValueAtTime(p.f1 * uiPitch, audioCtx.currentTime);
-    if (p.f2)
-      osc.frequency.exponentialRampToValueAtTime(
-        p.f2 * uiPitch,
-        audioCtx.currentTime + p.d,
-      );
-    gain.gain.setValueAtTime(
-      p.g * (checkMute ? uiVolume : 1),
-      audioCtx.currentTime,
-    );
-    gain.gain.exponentialRampToValueAtTime(0.0001, audioCtx.currentTime + p.d);
-    osc.connect(gain);
-    gain.connect(audioCtx.destination);
-    osc.start();
-    osc.stop(audioCtx.currentTime + p.d);
-  } catch (e) {}
-};
-
-const playPing = () => playSound("ping");
-const playTypeSound = () => playSound("type");
-const playClickSound = () => playSound("click", false);
-const playPopSound = () => playSound("pop");
+const playPing = () => audioEngine.playUi("ping");
+const playTypeSound = () => audioEngine.playUi("type");
+const playClickSound = () => audioEngine.playUi("click", false);
+const playPopSound = () => audioEngine.playUi("pop");
 
 window.playPing = playPing;
 window.playTypeSound = playTypeSound;
@@ -575,8 +917,8 @@ async function startVoiceSearch() {
   }
 
   const recognition = new SpeechRecognition();
-  recognition.lang = currentLang === "ne" ? "ne-NP" : "en-US";
-  recognition.interimResults = false;
+  recognition.lang = currentLang === "ne" ? "ne-NP" : "en-US"; // Set language for recognition
+  recognition.interimResults = false; // Only return final results
   recognition.maxAlternatives = 1;
 
   const btn = document.getElementById("voice-search-btn");
@@ -591,25 +933,26 @@ async function startVoiceSearch() {
   }
 
   let audioStream = null;
-  let audioCtx = null;
+  let localAudioCtx = null; // Use a local AudioContext for voice search
   let animationId = null;
 
   const cleanup = () => {
     if (animationId) cancelAnimationFrame(animationId);
     if (audioStream) audioStream.getTracks().forEach((t) => t.stop());
-    if (audioCtx) audioCtx.close();
+    if (localAudioCtx) localAudioCtx.close(); // Close local context
     if (btn) btn.classList.remove("listening");
     if (volumeBar) {
       volumeBar.style.width = "0%";
       volumeBar.style.opacity = "0";
     }
   };
-
   try {
     audioStream = await navigator.mediaDevices.getUserMedia({ audio: true });
-    audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-    const source = audioCtx.createMediaStreamSource(audioStream);
-    const analyser = audioCtx.createAnalyser();
+    localAudioCtx = new (window.AudioContext || window.webkitAudioContext)(); // Create a new AudioContext for this specific operation
+    if (localAudioCtx.state === "suspended") await localAudioCtx.resume();
+
+    const source = localAudioCtx.createMediaStreamSource(audioStream);
+    const analyser = localAudioCtx.createAnalyser();
     analyser.fftSize = 256;
     source.connect(analyser);
 
@@ -630,6 +973,7 @@ async function startVoiceSearch() {
     draw();
   } catch (err) {
     console.warn("Audio visualization failed:", err);
+    cleanup(); // Ensure cleanup if audio setup fails
   }
 
   recognition.onresult = (event) => {
@@ -662,6 +1006,12 @@ async function startVoiceSearch() {
     cleanup();
     if (event.error === "not-allowed") {
       addToast("error", currentLang === "en" ? "Mic denied" : "अनुमति छैन");
+    } else {
+      console.error("Speech recognition error:", event.error);
+      addToast(
+        "error",
+        currentLang === "en" ? "Voice search failed" : "भ्वाइस सर्च असफल",
+      );
     }
   };
   recognition.start();
@@ -811,99 +1161,128 @@ let speechSynth = window.speechSynthesis;
 let currentUtterance = null;
 let originalAiText = "";
 
-window.toggleReadAloud = () => {
+window.toggleReadAloud = async () => {
   const btn = document.getElementById("ai-read-btn");
   const container = document.getElementById("ai-brief-text");
   const t = I18N[currentLang];
 
-  if (speechSynth.speaking && !speechSynth.paused) {
-    speechSynth.pause();
-    btn.innerText = "▶️"; // Play icon
-    btn.title = t.resumeReading;
-    return;
-  } else if (speechSynth.paused) {
-    speechSynth.resume();
-    btn.innerText = "⏸️"; // Pause icon
-    btn.title = t.pauseReading;
-    return;
-  } else if (speechSynth.speaking) {
-    // If speaking but not paused (e.g., just started)
-    speechSynth.cancel();
-    if (originalAiText) container.innerText = originalAiText;
-    btn.innerText = "🔊";
-    btn.title = t.readAloud;
-    return;
-  }
-  originalAiText = container.innerText;
-  if (!originalAiText) return;
+  try {
+    if (!speechSynth) throw new Error("Speech Synthesis not available");
 
-  currentUtterance = new SpeechSynthesisUtterance(originalAiText);
-  // Map local currentLang to standard BCP 47 language tags
-  currentUtterance.lang = currentLang === "ne" ? "ne-NP" : "en-US";
-
-  // Apply User-Selected Voice
-  const savedVoiceUri = localStorage.getItem("tts-voice-uri");
-  if (savedVoiceUri) {
-    const voices = speechSynthesis.getVoices();
-    currentUtterance.voice =
-      voices.find((v) => v.voiceURI === savedVoiceUri) || null;
-  }
-
-  currentUtterance.rate = parseFloat(
-    localStorage.getItem("tts-rate") || "0.95",
-  );
-  currentUtterance.pitch = parseFloat(
-    localStorage.getItem("tts-pitch") || "1.0",
-  );
-
-  // Prepare Highlightable Spans
-  const words = originalAiText.split(/(\s+)/);
-  const spanMap = [];
-  let cumulativeIdx = 0;
-
-  container.innerHTML = "";
-  words.forEach((w) => {
-    if (w.trim().length > 0) {
-      const span = document.createElement("span");
-      span.innerText = w;
-      container.appendChild(span);
-      spanMap.push({
-        start: cumulativeIdx,
-        end: cumulativeIdx + w.length,
-        el: span,
-      });
-    } else {
-      container.appendChild(document.createTextNode(w));
+    if (speechSynth.speaking && !speechSynth.paused) {
+      speechSynth.pause();
+      audioEngine.duck(0);
+      btn.innerText = "▶️"; // Play icon
+      btn.title = t.resumeReading;
+      return;
+    } else if (speechSynth.paused) {
+      speechSynth.resume();
+      audioEngine.duck(0.3);
+      btn.innerText = "⏸️"; // Pause icon
+      btn.title = t.pauseReading;
+      return;
+    } else if (speechSynth.speaking) {
+      // Smooth stop: Fade out music, then cancel speech
+      audioEngine.stopMusic(1.5);
+      setTimeout(() => {
+        speechSynth.cancel();
+        if (originalAiText) container.innerText = originalAiText;
+        btn.innerText = "🔊";
+        btn.title = t.readAloud;
+      }, 800);
+      return;
     }
-    cumulativeIdx += w.length;
-  });
 
-  currentUtterance.onboundary = (event) => {
-    if (event.name !== "word") return;
-    const match = spanMap.find(
-      (m) => event.charIndex >= m.start && event.charIndex < m.end,
+    await audioEngine.loadMusic(
+      localStorage.getItem("music-track") || "/ambient-focus.mp3",
     );
-    if (match) {
-      spanMap.forEach((m) => m.el.classList.remove("highlight-word"));
-      match.el.classList.add("highlight-word");
 
-      // Auto-Scroll: Ensure the currently spoken word stays within the user's view
-      match.el.scrollIntoView({ behavior: "smooth", block: "nearest" });
+    originalAiText = container.innerText;
+    if (!originalAiText) return;
+
+    currentUtterance = new SpeechSynthesisUtterance(originalAiText);
+    // Map local currentLang to standard BCP 47 language tags
+    currentUtterance.lang = currentLang === "ne" ? "ne-NP" : "en-US";
+
+    // Apply User-Selected Voice
+    const savedVoiceUri = localStorage.getItem("tts-voice-uri");
+    if (savedVoiceUri) {
+      const voices = speechSynthesis.getVoices();
+      currentUtterance.voice =
+        voices.find((v) => v.voiceURI === savedVoiceUri) || null;
     }
-  };
 
-  currentUtterance.onstart = () => {
-    btn.innerText = "🛑";
-    btn.title = t.pauseReading; // Initially pause, then stop
-  };
+    currentUtterance.rate = parseFloat(
+      localStorage.getItem("tts-rate") || "0.95",
+    );
+    currentUtterance.pitch = parseFloat(
+      localStorage.getItem("tts-pitch") || "1.0",
+    );
 
-  currentUtterance.onend = () => {
-    container.innerText = originalAiText;
-    btn.innerText = "🔊";
-    btn.title = t.readAloud;
-  };
+    // Prepare Highlightable Spans
+    const words = originalAiText.split(/(\s+)/);
+    const spanMap = [];
+    let cumulativeIdx = 0;
 
-  speechSynth.speak(currentUtterance);
+    container.innerHTML = "";
+    words.forEach((w) => {
+      if (w.trim().length > 0) {
+        const span = document.createElement("span");
+        span.innerText = w;
+        container.appendChild(span);
+        spanMap.push({
+          start: cumulativeIdx,
+          end: cumulativeIdx + w.length,
+          el: span,
+        });
+      } else {
+        container.appendChild(document.createTextNode(w));
+      }
+      cumulativeIdx += w.length;
+    });
+
+    currentUtterance.onboundary = (event) => {
+      if (event.name !== "word") return;
+      const match = spanMap.find(
+        (m) => event.charIndex >= m.start && event.charIndex < m.end,
+      );
+      if (match) {
+        spanMap.forEach((m) => m.el.classList.remove("highlight-word"));
+        match.el.classList.add("highlight-word");
+
+        // Auto-Scroll: Ensure the currently spoken word stays within the user's view
+        match.el.scrollIntoView({ behavior: "smooth", block: "nearest" });
+      }
+    };
+
+    currentUtterance.onstart = () => {
+      btn.innerText = "🛑";
+      btn.title = t.pauseReading; // Initially pause, then stop
+      audioEngine.playMusic();
+    };
+
+    currentUtterance.onend = () => {
+      audioEngine.stopMusic(2.0); // Natural finish fade-out
+      container.innerText = originalAiText;
+      btn.innerText = "🔊";
+      btn.title = t.readAloud;
+    };
+
+    currentUtterance.onerror = (err) => {
+      audioEngine.stopMusic(0.2);
+      console.error("Speech Synthesis Utterance error:", err);
+      container.innerText = originalAiText;
+      btn.innerText = "🔊";
+    };
+
+    speechSynth.speak(currentUtterance);
+  } catch (e) {
+    handleAudioError(e, "Speech Synthesis failed");
+    addToast(
+      "error",
+      currentLang === "en" ? "Speech unavailable" : "वाचन उपलब्ध छैन",
+    );
+  }
 };
 
 function typeText(element, text, useSound = false) {
@@ -942,38 +1321,96 @@ function showDiagnostics() {
   const lastMonth = now.toISOString().slice(0, 7); // YYYY-MM
 
   let html = `
-        <div class="modal-header">
+        <div class="modal-header"> 
           <h3 style="color:var(--critical); margin:0;">🚨 System Diagnostics</h3>
           <p style="font-size:0.8rem; opacity:0.8; margin:5px 0 0;">${dispCount} ${currentLang === "ne" ? "सूचकहरूलाई तत्काल ध्यान दिनु आवश्यक छ।" : "indicators require immediate attention."}</p>
         </div>
         <div style="max-height: 400px; overflow-y: auto; margin-top:15px;">
           <div style="margin-bottom: 15px; padding: 12px; background: var(--bg); border-radius: 12px; border: 1px solid var(--border);">
             <label id="lbl-diag-period" style="font-size: 0.7rem; font-weight: 800; display: block; margin-bottom: 8px; color:var(--text-light); text-transform:uppercase;"></label>
-            <select id="diag-period-year" style="width:40%; padding:8px; border-radius:8px; border:1px solid var(--border); background:var(--surface); color:var(--text); outline:none;"></select>
-            <input type="month" id="diag-period" value="${lastMonth}" lang="${currentLang === "en" ? "en" : "ne"}"
-              style="width: 100%; padding: 8px; border-radius: 8px; border: 1px solid var(--border); background: var(--surface); color: var(--text); outline: none;">
+            <div style="display:flex; gap:10px;">
+              <select id="diag-period-year" style="flex:1; padding:8px; border-radius:8px; border:1px solid var(--border); background:var(--surface); color:var(--text); outline:none;"></select>
+              <select id="diag-period-month" style="flex:1; padding:8px; border-radius:8px; border:1px solid var(--border); background:var(--surface); color:var(--text); outline:none;"></select>
+            </div>
+            <input type="hidden" id="diag-period" value="${lastMonth}">
           </div>
       `;
+  const modalBody = document.getElementById("modal-body");
+  modalBody.innerHTML = html;
 
+  // Populate Year and Month selectors
+  const diagY = document.getElementById("diag-period-year");
+  const diagM = document.getElementById("diag-period-month");
+  const diagHidden = document.getElementById("diag-period");
+
+  const currentADYear = new Date().getFullYear();
+  diagY.innerHTML = [currentADYear, currentADYear - 1, currentADYear - 2]
+    .map(
+      (y) =>
+        `<option value="${y}">${currentLang === "ne" ? toNepaliNumerals(y + 57) + " वि.सं." : y + " AD"}</option>`,
+    )
+    .join("");
+
+  diagM.innerHTML = I18N[currentLang].months
+    .map(
+      (m, i) =>
+        `<option value="${(i + 1).toString().padStart(2, "0")}">${m}</option>`,
+    )
+    .join("");
+
+  const [y, m] = lastMonth.split("-");
+  diagY.value = y;
+  diagM.value = m;
+
+  const updateDiagHidden = () =>
+    (diagHidden.value = `${diagY.value}-${diagM.value}`);
+  diagY.onchange = updateDiagHidden;
+  diagM.onchange = updateDiagHidden;
+
+  const diagListContainer = document.createElement("div");
   criticalRows.forEach((r) => {
     const name = r[store.headers[0]];
     const prog = getProgress(r, store.headers);
     const dispProg = currentLang === "ne" ? toNepaliNumerals(prog) : prog;
-    html += `<div style="padding: 12px; border-bottom: 1px solid var(--border); display: flex; justify-content: space-between; align-items: center; cursor:pointer;" onclick="showModal('${name.replace(/'/g, "\\'")}', null, true)">
-                   <span style="font-weight: 600; font-size:0.85rem;">${name}</span>
-                   <span style="color: var(--critical); font-weight: 800; font-size:0.9rem;">${dispProg}%</span>
-                 </div>`;
-  });
 
-  html += `</div>
+    const itemDiv = document.createElement("div");
+    itemDiv.style.cssText =
+      "padding: 12px; border-bottom: 1px solid var(--border); display: flex; justify-content: space-between; align-items: center; cursor:pointer;";
+    itemDiv.dataset.indicatorName = name; // Use data attribute for event delegation
+
+    itemDiv.innerHTML = `
+      <span style="font-weight: 600; font-size:0.85rem;">${name}</span>
+      <span style="color: var(--critical); font-weight: 800; font-size:0.9rem;">${dispProg}%</span>
+    `;
+    diagListContainer.appendChild(itemDiv);
+  });
+  modalBody
+    .querySelector("div[style*='max-height: 400px']")
+    .appendChild(diagListContainer);
+
+  const footerDiv = document.createElement("div");
+  footerDiv.innerHTML = `
         <div style="display:flex; gap:10px; margin-top:15px;">
-          <button onclick="exportHealthReport()" style="flex:1; background:var(--critical); color:white; border:none; padding:10px; border-radius:8px; font-weight:bold; cursor:pointer;">📄 Export Health Report (PDF)</button>
-          <button onclick="closeModal()" style="flex:1; background:var(--bg); border:1px solid var(--border); padding:10px; border-radius:8px; font-weight:bold; cursor:pointer;">Close</button>
+          <button id="export-health-report-btn" style="flex:1; background:var(--critical); color:white; border:none; padding:10px; border-radius:8px; font-weight:bold; cursor:pointer;">📄 Export Health Report (PDF)</button>
+          <button id="close-diag-modal-btn" style="flex:1; background:var(--bg); border:1px solid var(--border); padding:10px; border-radius:8px; font-weight:bold; cursor:pointer;">Close</button>
         </div>
         <p style="font-size:0.7rem; color:var(--text-light); margin-top:10px; text-align:center;">Click an item to isolate the record.</p>`;
+  modalBody.appendChild(footerDiv);
 
-  document.getElementById("modal-body").innerHTML = html;
   document.getElementById("modal-overlay").style.display = "flex";
+
+  // Attach event listeners programmatically
+  diagListContainer.addEventListener("click", (e) => {
+    const item = e.target.closest("div[data-indicator-name]");
+    if (item) showModal(item.dataset.indicatorName);
+  });
+  document
+    .getElementById("export-health-report-btn")
+    ?.addEventListener("click", exportHealthReport);
+  document
+    .getElementById("close-diag-modal-btn")
+    ?.addEventListener("click", closeModal);
+  document.getElementById("lbl-diag-period").textContent = t("diagPeriod");
 }
 
 async function exportHealthReport() {
@@ -986,7 +1423,7 @@ async function exportHealthReport() {
 
   // Generate Bikram Sambat date string using I18N months and Nepali numerals
   const bsYear = parseInt(year) + 57;
-  const bsMonthName = t(months[parseInt(month) - 1]);
+  const bsMonthName = t(I18N[currentLang].months[parseInt(month) - 1]);
   const displayYear = currentLang === "ne" ? toNepaliNumerals(bsYear) : bsYear;
   const formattedDate =
     currentLang === "en"
@@ -1154,6 +1591,7 @@ const I18N = {
     dbRestoreDesc: "क्लाउडबाट डाटा रिकभर गर्नुहोस्",
     dataSyncing: "डाटा सिङ्क हुँदैछ...",
     readAloud: "वाचन",
+    musicSelection: "पृष्ठभूमि संगीत",
     stopReading: "रोक्नुहोस्",
     downloadAudio: "डाउनलोड",
     shareAudio: "साझा",
@@ -1299,6 +1737,7 @@ const I18N = {
     dbRestoreDesc: "Recover data from a cloud snapshot",
     dataSyncing: "Syncing...",
     readAloud: "Narration",
+    musicSelection: "Background Music",
     stopReading: "Stop",
     downloadAudio: "Download",
     shareAudio: "Share",
@@ -1413,17 +1852,25 @@ const t = (key, count) => {
   if (count !== undefined) {
     const rule = new Intl.PluralRules(currentLang).select(count);
     const pKey = `${key}_${rule}`;
-    // Check if the specific plural key exists, otherwise fallback to base key
-    if (translationsData?.[currentLang]?.[pKey] || I18N[currentLang]?.[pKey]) {
-      finalKey = pKey;
-    }
+
+    // Optimized lookup for plural/standard keys
+    const lookup = [
+      translationsData?.[currentLang]?.[pKey],
+      I18N[currentLang]?.[pKey],
+      translationsData?.[currentLang]?.[key],
+      I18N[currentLang]?.[key],
+    ];
+
+    finalKey = lookup.find((v) => v !== undefined)
+      ? lookup[0] || lookup[1]
+        ? pKey
+        : key
+      : key;
   }
 
   let text =
     translationsData?.[currentLang]?.[finalKey] ||
     I18N[currentLang]?.[finalKey] ||
-    translationsData?.[currentLang]?.[key] ||
-    I18N[currentLang]?.[key] ||
     key;
 
   if (count !== undefined) {
@@ -2078,9 +2525,9 @@ function showModal(indicatorName) {
   const dispProg = currentLang === "ne" ? toNepaliNumerals(progress) : progress;
 
   let details = "";
-  headers.forEach((h, i) => {
+  headers.forEach((h) => {
     if (r[h])
-      details += `<div class="modal-item"><b>${h}</b> ${currentLang === "ne" ? toNepaliNumerals(r[h]) : r[h]}</div>`;
+      details += `<div class="modal-item"><b>${h}</b> ${currentLang === "ne" ? toNepaliNumerals(r[h]) : r[h]}</div>`; // Use textContent for safety
   });
 
   document.getElementById("modal-body").innerHTML = `
@@ -2095,9 +2542,13 @@ function showModal(indicatorName) {
         </div>
       </div>
     </div>
-    <div class="modal-grid">${details}</div>
-    <p style="margin-top:20px; padding:15px; background:var(--bg); border-radius:12px; border:1px solid var(--border); font-style:italic; color:var(--text-light)">${r._insight || ""}</p>
+    <div class="modal-grid">${details}</div> 
+    <p id="modal-insight" style="margin-top:20px; padding:15px; background:var(--bg); border-radius:12px; border:1px solid var(--border); font-style:italic; color:var(--text-light)"></p>
   `;
+  document.getElementById("modal-indicator-title").textContent = t(
+    r[headers[0]],
+  );
+  document.getElementById("modal-insight").textContent = r._insight || ""; // Use textContent for safety
   document.getElementById("modal-overlay").style.display = "flex";
 }
 window.closeModal = closeModal;
@@ -2173,8 +2624,8 @@ async function getActiveSwVersion() {
 
 // PDF Snapshot Code// PDF Snapshot Management Functions
 let snapshotList = [];
-window.createSnapshotManual = async () => {
-  var btn = event.target;
+window.createSnapshotManual = async (e) => {
+  const btn = e?.target || document.getElementById("create-snapshot-btn");
   var originalText = btn.innerText;
   btn.innerText = "Creating...";
   btn.disabled = true;
@@ -2191,7 +2642,7 @@ window.createSnapshotManual = async () => {
       btn.disabled = false;
       return;
     }
-    var response = await fetch(WORKER_BASE + "/api/snapshot", {
+    const response = await fetch(WORKER_BASE + "/api/snapshot", {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
@@ -2221,7 +2672,7 @@ window.createSnapshotManual = async () => {
   }
 };
 window.listSnapshots = async (force) => {
-  var container = document.getElementById("snapshot-list-container");
+  const container = document.getElementById("snapshot-list-container");
   var listEl = document.getElementById("snapshot-list");
   if (container.style.display !== "none" && !force) {
     container.style.display = "none";
@@ -2229,7 +2680,7 @@ window.listSnapshots = async (force) => {
   }
   try {
     var adminKey = prompt("Enter Admin Secret:");
-    if (!adminKey) return;
+    if (!adminKey) return; // Early exit if adminKey is not provided
     var response = await fetch(WORKER_BASE + "/api/snapshots", {
       headers: { "X-Admin-Secret": adminKey },
     });
@@ -2270,7 +2721,7 @@ window.listSnapshots = async (force) => {
   }
 };
 window.downloadSnapshot = async (date) => {
-  var adminKey = prompt("Enter Admin Secret:");
+  const adminKey = prompt("Enter Admin Secret:");
   if (!adminKey) return;
   try {
     var response = await fetch(WORKER_BASE + "/api/snapshot?date=" + date, {
@@ -2294,7 +2745,7 @@ window.downloadSnapshot = async (date) => {
 };
 window.deleteSnapshot = async (date) => {
   if (!confirm("Delete " + date + "?")) return;
-  var adminKey = prompt("Enter Admin Secret:");
+  const adminKey = prompt("Enter Admin Secret:");
   if (!adminKey) return;
   try {
     var response = await fetch(WORKER_BASE + "/api/snapshot?date=" + date, {
@@ -2355,12 +2806,13 @@ window.showSettings = async () => {
 
   const changelog = await getSwChangelog();
 
-  document.getElementById("modal-body").innerHTML = `
+  const modalBody = document.getElementById("modal-body");
+  modalBody.innerHTML = `
         <div class="modal-header">
           <div style="display:flex; justify-content:space-between; align-items:center">
-            <h3 style="margin:0">${t.settings}</h3>
+            <h3 style="margin:0">${t("settings")}</h3>
             <span style="font-size:0.6rem; opacity:0.6; font-weight:800; background:var(--bg); padding:2px 8px; border-radius:10px;">
-              ${t.appVersion}: ${currentLang === "ne" ? toNepaliNumerals(swVersion) : swVersion}
+              ${t.appVersion}: ${currentLang === "ne" ? toNepaliNumerals(APP_VERSION) : APP_VERSION}
             </span>
           </div>
         </div>
@@ -2390,12 +2842,12 @@ window.showSettings = async () => {
               : ""
           }
           <label style="font-size: 0.7rem; font-weight: 800; text-transform: uppercase; color: var(--text-light); margin-bottom: 10px; display: block;">${t.theme}</label>
-          <div class="theme-selector" onmouseleave="revertTheme()">
-            <div class="theme-option light-opt ${originalTheme === "light" ? "active" : ""}" data-theme="light" onmouseenter="setTheme('light', false)" onclick="setTheme('light', true)">
+          <div class="theme-selector">
+            <div class="theme-option light-opt ${originalTheme === "light" ? "active" : ""}" data-theme="light">
               <div class="mini-dash"></div>
               <span>${t.themeLight}</span>
             </div>
-            <div class="theme-option dark-opt ${originalTheme === "dark" ? "active" : ""}" data-theme="dark" onmouseenter="setTheme('dark', false)" onclick="setTheme('dark', true)">
+            <div class="theme-option dark-opt ${originalTheme === "dark" ? "active" : ""}" data-theme="dark">
               <div class="mini-dash"></div>
               <span>${t.themeDark}</span>
             </div>
@@ -2406,7 +2858,7 @@ window.showSettings = async () => {
               <div style="font-size: 0.65rem; color: var(--text-light);">${t.lowDataDesc}</div>
             </div>
             <label class="toggle-btn" style="padding: 4px; display: flex; align-items: center; gap: 8px; cursor: pointer;">
-              <input type="checkbox" id="low-data-toggle" ${isLowData ? "checked" : ""} onchange="toggleLowData(this.checked)" style="width: 18px; height: 18px; cursor: pointer; accent-color: var(--primary);">
+              <input type="checkbox" id="low-data-toggle" ${isLowData ? "checked" : ""} style="width: 18px; height: 18px; cursor: pointer; accent-color: var(--primary);">
             </label>
           </div>
           <div style="margin-top: 15px; padding: 12px; background: var(--bg); border-radius: 12px; border: 1px solid var(--border); display: flex; align-items: center; justify-content: space-between;">
@@ -2415,15 +2867,24 @@ window.showSettings = async () => {
               <div style="font-size: 0.65rem; color: var(--text-light);">${t.darkScheduleDesc}</div>
             </div>
             <label class="toggle-btn" style="padding: 4px; display: flex; align-items: center; gap: 8px; cursor: pointer;">
-              <input type="checkbox" id="dark-schedule-toggle" ${isSchedule ? "checked" : ""} onchange="toggleDarkSchedule(this.checked)" style="width: 18px; height: 18px; cursor: pointer; accent-color: var(--primary);">
+              <input type="checkbox" id="dark-schedule-toggle" ${isSchedule ? "checked" : ""} style="width: 18px; height: 18px; cursor: pointer; accent-color: var(--primary);">
             </label>
+          </div>
+          <div style="margin-top: 15px; padding: 12px; background: var(--bg); border-radius: 12px; border: 1px solid var(--border);">
+            <div style="text-align: left; margin-bottom: 10px;">
+              <div style="font-size: 0.8rem; font-weight: 800; color: var(--text);">${t.musicSelection}</div>
+            </div>
+            <select id="music-track-select" style="width: 100%; padding: 8px; border-radius: 8px; border: 1px solid var(--border); background: var(--surface); color: var(--text); font-size: 0.75rem; outline: none;">
+              <option value="/ambient-focus.mp3" ${localStorage.getItem("music-track") === "/ambient-focus.mp3" ? "selected" : ""}>Focus Ambient</option>
+              <option value="/ambient-calm.mp3" ${localStorage.getItem("music-track") === "/ambient-calm.mp3" ? "selected" : ""}>Calm Reflection</option>
+            </select>
           </div>
           <div style="margin-top: 15px; padding: 12px; background: var(--bg); border-radius: 12px; border: 1px solid var(--border);">
             <div style="text-align: left; margin-bottom: 10px;">
               <div style="font-size: 0.8rem; font-weight: 800; color: var(--text);">${t.voiceSelection}</div>
               <div style="font-size: 0.65rem; color: var(--text-light);">${t.voiceDesc}</div>
             </div>
-            <select onchange="updateVoicePreference(this.value)" style="width: 100%; padding: 8px; border-radius: 8px; border: 1px solid var(--border); background: var(--surface); color: var(--text); font-size: 0.75rem; outline: none;">
+            <select id="tts-voice-select" style="width: 100%; padding: 8px; border-radius: 8px; border: 1px solid var(--border); background: var(--surface); color: var(--text); font-size: 0.75rem; outline: none;">
               <option value="">Default System Voice</option>
               ${voiceOptions}
             </select>
@@ -2435,8 +2896,8 @@ window.showSettings = async () => {
                 <div style="font-size: 0.65rem; color: var(--text-light);">${t.speechPitchDesc}</div>
               </div>
               <div id="speech-pitch-val" style="font-size: 0.8rem; font-weight: 800; color: var(--primary);">${currentLang === "ne" ? toNepaliNumerals(speechPitch) : speechPitch}x</div>
-            </div>
-            <input type="range" min="0.5" max="2.0" step="0.05" value="${speechPitch}" oninput="updateSpeechPitch(this.value)" style="width:100%; height:6px; accent-color: var(--primary); background:var(--surface); border-radius:3px; outline:none; cursor:pointer;">
+            </div> 
+            <input type="range" id="tts-pitch-slider" min="0.5" max="2.0" step="0.05" value="${speechPitch}" style="width:100%; height:6px; accent-color: var(--primary); background:var(--surface); border-radius:3px; outline:none; cursor:pointer;">
           </div>
           <div style="margin-top: 15px; padding: 12px; background: var(--bg); border-radius: 12px; border: 1px solid var(--border);">
             <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
@@ -2445,8 +2906,8 @@ window.showSettings = async () => {
                 <div style="font-size: 0.65rem; color: var(--text-light);">${t.speechRateDesc}</div>
               </div>
               <div id="speech-rate-val" style="font-size: 0.8rem; font-weight: 800; color: var(--primary);">${currentLang === "ne" ? toNepaliNumerals(speechRate) : speechRate}x</div>
-            </div>
-            <input type="range" min="0.5" max="2.0" step="0.05" value="${speechRate}" oninput="updateSpeechRate(this.value)" style="width:100%; height:6px; accent-color: var(--primary); background:var(--surface); border-radius:3px; outline:none; cursor:pointer;">
+            </div> 
+            <input type="range" id="tts-rate-slider" min="0.5" max="2.0" step="0.05" value="${speechRate}" style="width:100%; height:6px; accent-color: var(--primary); background:var(--surface); border-radius:3px; outline:none; cursor:pointer;">
           </div>
           <div style="margin-top: 15px; padding: 12px; background: var(--bg); border-radius: 12px; border: 1px solid var(--border); display: flex; align-items: center; justify-content: space-between;">
             <div style="text-align: left;">
@@ -2454,7 +2915,7 @@ window.showSettings = async () => {
               <div style="font-size: 0.65rem; color: var(--text-light);">${t.systemFontDesc}</div>
             </div>
             <label class="toggle-btn" style="padding: 4px; display: flex; align-items: center; gap: 8px; cursor: pointer;">
-              <input type="checkbox" id="system-font-toggle" ${isSystemFont ? "checked" : ""} onchange="toggleSystemFont(this.checked)" style="width: 18px; height: 18px; cursor: pointer; accent-color: var(--primary);">
+              <input type="checkbox" id="system-font-toggle" ${isSystemFont ? "checked" : ""} style="width: 18px; height: 18px; cursor: pointer; accent-color: var(--primary);">
             </label>
           </div>
           <div style="margin-top: 15px; padding: 12px; background: var(--bg); border-radius: 12px; border: 1px solid var(--border); display: flex; align-items: center; justify-content: space-between;">
@@ -2462,7 +2923,7 @@ window.showSettings = async () => {
               <div style="font-size: 0.8rem; font-weight: 800; color: var(--text);">${t.dbBackup}</div>
               <div style="font-size: 0.65rem; color: var(--text-light);">${t.dbBackupDesc}</div>
             </div>
-            <button id="db-backup-btn" onclick="triggerDatabaseBackup()" class="icon-btn" style="width: auto; padding: 0 12px; border-radius: 8px; font-size: 0.7rem; font-weight: 800;">
+            <button id="db-backup-btn" class="icon-btn" style="width: auto; padding: 0 12px; border-radius: 8px; font-size: 0.7rem; font-weight: 800;">
               BACKUP
             </button>
           </div>
@@ -2471,7 +2932,7 @@ window.showSettings = async () => {
               <div style="font-size: 0.8rem; font-weight: 800; color: var(--text);">${t.dbRestore}</div>
               <div style="font-size: 0.65rem; color: var(--text-light);">${t.dbRestoreDesc}</div>
             </div>
-            <button id="db-restore-btn" onclick="triggerDatabaseRestore()" class="icon-btn" style="width: auto; padding: 0 12px; border-radius: 8px; font-size: 0.7rem; font-weight: 800; color: var(--stable);">
+            <button id="db-restore-btn" class="icon-btn" style="width: auto; padding: 0 12px; border-radius: 8px; font-size: 0.7rem; font-weight: 800; color: var(--stable);">
               RESTORE
             </button>
           </div>
@@ -2482,8 +2943,8 @@ window.showSettings = async () => {
                 <div style="font-size: 0.65rem; color: var(--text-light);">${t.fontSizeDesc}</div>
               </div>
               <div id="font-size-val" style="font-size: 0.8rem; font-weight: 800; color: var(--primary);">${currentLang === "ne" ? toNepaliNumerals(fontMultiplier) : fontMultiplier}x</div>
-            </div>
-            <input type="range" min="0.8" max="1.4" step="0.05" value="${fontMultiplier}" oninput="updateFontSize(this.value)" style="width:100%; height:6px; accent-color: var(--primary); background:var(--surface); border-radius:3px; outline:none; cursor:pointer;">
+            </div> 
+            <input type="range" id="font-size-slider" min="0.8" max="1.4" step="0.05" value="${fontMultiplier}" style="width:100%; height:6px; accent-color: var(--primary); background:var(--surface); border-radius:3px; outline:none; cursor:pointer;">
           </div>
           <div style="margin-top: 15px; padding: 12px; background: var(--bg); border-radius: 12px; border: 1px solid var(--border); display: flex; align-items: center; justify-content: space-between;">
             <div style="text-align: left;">
@@ -2491,7 +2952,7 @@ window.showSettings = async () => {
               <div style="font-size: 0.65rem; color: var(--text-light);">${t.highContrastDesc}</div>
             </div>
             <label class="toggle-btn" style="padding: 4px; display: flex; align-items: center; gap: 8px; cursor: pointer;">
-              <input type="checkbox" id="high-contrast-toggle" ${isHighContrast ? "checked" : ""} onchange="toggleHighContrast(this.checked)" style="width: 18px; height: 18px; cursor: pointer; accent-color: var(--primary);">
+              <input type="checkbox" id="high-contrast-toggle" ${isHighContrast ? "checked" : ""} style="width: 18px; height: 18px; cursor: pointer; accent-color: var(--primary);">
             </label>
           </div>
           <div style="margin-top: 15px; padding: 12px; background: var(--bg); border-radius: 12px; border: 1px solid var(--border); display: flex; align-items: center; justify-content: space-between;">
@@ -2500,7 +2961,7 @@ window.showSettings = async () => {
               <div style="font-size: 0.65rem; color: var(--text-light);">${t.grayscaleDesc}</div>
             </div>
             <label class="toggle-btn" style="padding: 4px; display: flex; align-items: center; gap: 8px; cursor: pointer;">
-              <input type="checkbox" id="grayscale-toggle" ${isGrayscale ? "checked" : ""} onchange="toggleGrayscale(this.checked)" style="width: 18px; height: 18px; cursor: pointer; accent-color: var(--primary);">
+              <input type="checkbox" id="grayscale-toggle" ${isGrayscale ? "checked" : ""} style="width: 18px; height: 18px; cursor: pointer; accent-color: var(--primary);">
             </label>
           </div>
           <div style="margin-top: 15px; padding: 12px; background: var(--bg); border-radius: 12px; border: 1px solid var(--border); display: flex; align-items: center; justify-content: space-between;">
@@ -2550,29 +3011,29 @@ window.showSettings = async () => {
           </div>
           <hr style="margin: 15px 0; border: none; border-top: 1px solid var(--border);">
           <div style="display:flex; flex-direction:column; gap:8px;">
-            <button id="update-check-btn" onclick="checkForUpdates()" class="toggle-btn" style="width: 100%; border: 1px solid var(--primary); display: flex; align-items: center; justify-content: center; gap: 10px;">
+            <button id="update-check-btn" class="toggle-btn" style="width: 100%; border: 1px solid var(--primary); display: flex; align-items: center; justify-content: center; gap: 10px;">
               🔄 ${t.checkUpdates}
             </button>
-            <button id="offline-download-btn" onclick="downloadAllOfflineData()" class="toggle-btn" style="width: 100%; border: 1px solid var(--primary); display: flex; align-items: center; justify-content: center; gap: 10px;">
+            <button id="offline-download-btn" class="toggle-btn" style="width: 100%; border: 1px solid var(--primary); display: flex; align-items: center; justify-content: center; gap: 10px;">
               📥 ${t.downloadOffline}
             </button>
-            <button onclick="clearDataCache()" class="retry-btn" style="width: 100%; margin:0; display: flex; align-items: center; justify-content: center; gap: 10px;">
+            <button id="clear-cache-btn" class="retry-btn" style="width: 100%; margin:0; display: flex; align-items: center; justify-content: center; gap: 10px;">
               🧹 ${t.clearCache}
             </button>
-            <button onclick="showFactoryResetConfirmation()" class="toggle-btn" style="width: 100%; border: 1px solid var(--critical); color: var(--critical); display: flex; align-items: center; justify-content: center; gap: 10px;">
+            <button id="factory-reset-btn" class="toggle-btn" style="width: 100%; border: 1px solid var(--critical); color: var(--critical); display: flex; align-items: center; justify-content: center; gap: 10px;">
               ⚠️ ${t.resetAll}
             </button>
          </div>
         </div>
            <hr style="margin: 15px 0; border: none; border-top: 1px solid var(--border);">
-           <div style="margin-top: 15px;">
+           <div style="margin-top: 15px;"> 
              <label style="font-size: 0.7rem; font-weight: 800; text-transform: uppercase; color: var(--text-light); margin-bottom: 10px; display: block;">PDF Snapshots</label>
              <p style="font-size: 0.65rem; color: var(--text-light); margin-bottom: 10px;">Create and manage PDF snapshots of report data with date-based versioning.</p>
              <div style="display:flex; flex-direction:column; gap:8px;">
-               <button onclick="createSnapshotManual()" class="toggle-btn" style="width: 100%; border: 1px solid var(--primary); display: flex; align-items: center; justify-content: center; gap: 10px; padding: 10px;">
+               <button id="create-snapshot-btn" class="toggle-btn" style="width: 100%; border: 1px solid var(--primary); display: flex; align-items: center; justify-content: center; gap: 10px; padding: 10px;">
                  Create Snapshot Now
                </button>
-               <button onclick="listSnapshots()" class="toggle-btn" style="width: 100%; border: 1px solid var(--primary); display: flex; align-items: center; justify-content: center; gap: 10px; padding: 10px;">
+               <button id="list-snapshots-btn" class="toggle-btn" style="width: 100%; border: 1px solid var(--primary); display: flex; align-items: center; justify-content: center; gap: 10px; padding: 10px;">
                  List Available Snapshots
                </button>
              </div>
@@ -2582,6 +3043,104 @@ window.showSettings = async () => {
               </div>
             </div>
             `;
+  document.getElementById("modal-overlay").style.display = "flex";
+
+  // Attach event listeners programmatically
+  document
+    .getElementById("low-data-toggle")
+    ?.addEventListener("change", (e) => toggleLowData(e.target.checked));
+  document
+    .getElementById("dark-schedule-toggle")
+    ?.addEventListener("change", (e) => toggleDarkSchedule(e.target.checked));
+  document
+    .getElementById("tts-voice-select")
+    ?.addEventListener("change", (e) => updateVoicePreference(e.target.value));
+  document
+    .getElementById("music-track-select")
+    ?.addEventListener("change", (e) => setMusicTrack(e.target.value));
+  document
+    .getElementById("tts-pitch-slider")
+    ?.addEventListener("input", (e) => updateSpeechPitch(e.target.value));
+  document
+    .getElementById("tts-rate-slider")
+    ?.addEventListener("input", (e) => updateSpeechRate(e.target.value));
+  document
+    .getElementById("system-font-toggle")
+    ?.addEventListener("change", (e) => toggleSystemFont(e.target.checked));
+  document
+    .getElementById("db-backup-btn")
+    ?.addEventListener("click", triggerDatabaseBackup);
+  document
+    .getElementById("db-restore-btn")
+    ?.addEventListener("click", triggerDatabaseRestore);
+  document
+    .getElementById("font-size-slider")
+    ?.addEventListener("input", (e) => updateFontSize(e.target.value));
+  document
+    .getElementById("high-contrast-toggle")
+    ?.addEventListener("change", (e) => toggleHighContrast(e.target.checked));
+  document
+    .getElementById("grayscale-toggle")
+    ?.addEventListener("change", (e) => toggleGrayscale(e.target.checked));
+  document
+    .getElementById("sepia-toggle")
+    ?.addEventListener("change", (e) => toggleSepia(e.target.checked));
+  document
+    .getElementById("sound-pack-selector")
+    ?.addEventListener("click", (e) => {
+      const packOption = e.target.closest(".pack-opt");
+      if (packOption) setSoundPack(packOption.dataset.pack);
+    });
+  document
+    .getElementById("ui-volume-slider")
+    ?.addEventListener("input", (e) => updateVolume(e.target.value));
+  document
+    .getElementById("mute-toggle-btn")
+    ?.addEventListener("click", toggleMute);
+  document.getElementById("unmute-btn")?.addEventListener("click", toggleMute);
+  document
+    .getElementById("reset-audio-btn")
+    ?.addEventListener("click", resetAudioToDefault);
+  document
+    .getElementById("reset-theme-btn")
+    ?.addEventListener("click", resetThemeToSystem);
+  document
+    .getElementById("update-check-btn")
+    ?.addEventListener("click", checkForUpdates);
+  document
+    .getElementById("offline-download-btn")
+    ?.addEventListener("click", downloadAllOfflineData);
+  document
+    .getElementById("clear-cache-btn")
+    ?.addEventListener("click", clearDataCache);
+  document
+    .getElementById("factory-reset-btn")
+    ?.addEventListener("click", showFactoryResetConfirmation);
+  document
+    .getElementById("create-snapshot-btn")
+    ?.addEventListener("click", createSnapshotManual);
+  document
+    .getElementById("list-snapshots-btn")
+    ?.addEventListener("click", listSnapshots);
+
+  // Theme selector event delegation
+  document.querySelector(".theme-selector")?.addEventListener("click", (e) => {
+    const themeOption = e.target.closest(".theme-option");
+    if (themeOption) setTheme(themeOption.dataset.theme, true);
+  });
+  document.querySelector(".theme-selector")?.addEventListener(
+    "mouseenter",
+    (e) => {
+      const themeOption = e.target.closest(".theme-option");
+      if (themeOption) setTheme(themeOption.dataset.theme, false);
+    },
+    true,
+  ); // Use capture phase
+  document
+    .querySelector(".theme-selector")
+    ?.addEventListener("mouseleave", revertTheme);
+
+  updateStorageUsageDisplay(); // Update storage display after modal is rendered
 };
 
 /**
@@ -3068,7 +3627,11 @@ function showIosInstallInstructions() {
   document.getElementById("modal-overlay").style.display = "flex";
 }
 
-// Refresh Logic
+// Constants for magic numbers
+const PULL_THRESHOLD = 120;
+const REFRESH_INTERVAL_SECONDS = 60;
+const PWA_INSTALL_QUALIFICATION_DELAY_MS = 30000;
+
 setInterval(() => {
   refreshCounter--;
   if (refreshCounter <= 0) {
@@ -3137,8 +3700,8 @@ setTimeout(() => {
     // If the browser hasn't fired the event yet, hide until it does
     btn.style.display = "none";
   }
-}, 30000);
-
+}, PWA_INSTALL_QUALIFICATION_DELAY_MS);
+// PWA Install Logic for Android/Chrome
 document.getElementById("install-btn").addEventListener("click", async () => {
   if (deferredPrompt) {
     deferredPrompt.prompt();
@@ -3228,7 +3791,7 @@ window.addEventListener(
       const indicator = document.getElementById("pull-indicator");
       indicator.classList.add("visible");
       // Damped movement for natural resistance
-      const topOffset = Math.min(dist / 2.5, pullThreshold) - 50;
+      const topOffset = Math.min(dist / 2.5, PULL_THRESHOLD) - 50;
       indicator.style.top = `${topOffset}px`;
       if (pullIcon) pullIcon.style.transform = `rotate(${dist * 1.5}deg)`;
     }
@@ -3241,7 +3804,8 @@ window.addEventListener("touchend", () => {
   const dist = touchCurrentY - touchStartY;
   const indicator = document.getElementById("pull-indicator");
 
-  if (dist > pullThreshold) {
+  if (dist > PULL_THRESHOLD) {
+    // Use PULL_THRESHOLD
     indicator.style.top = "20px";
     indicator.innerHTML =
       '<span class="spinner" style="border-top-color:var(--primary); width:20px; height:20px;"></span>';
@@ -3306,13 +3870,11 @@ async function loadData(isForced = false) {
   document.getElementById("tbody").innerHTML = skeleton;
 
   try {
+    const fetchOptions = isForced ? { cache: "no-store" } : {}; // Apply no-store only if forced
     const res = await authenticatedFetch(
       `/api/report?lang=${currentLang}${isForced ? "&force=true" : ""}`,
-      {
-        cache: "no-store",
-      },
+      fetchOptions,
     );
-
     const json = await res.json();
     if (json && json.headers) {
       const fetchEnd = performance.now();
@@ -3338,8 +3900,10 @@ async function loadData(isForced = false) {
       updateConnStrength(duration);
     }
   } catch (e) {
+    console.error("Error loading data:", e); // Log the actual error
     document.getElementById("status").innerText = I18N[currentLang].offline;
     document.getElementById("status").style.color = "#f87171";
+    addToast("error", I18N[currentLang].offline); // Inform user about offline status
   }
   if (syncIcon) {
     syncIcon.classList.remove("spinning");
@@ -3356,7 +3920,8 @@ function render(json) {
   // Handle Global Admin Message
   const banner = document.getElementById("admin-banner");
   if (json.adminMessage) {
-    document.getElementById("admin-message-text").innerText = json.adminMessage;
+    document.getElementById("admin-message-text").textContent =
+      json.adminMessage; // Use textContent for safety
     banner.style.display = "block";
   } else {
     banner.style.display = "none";
@@ -3498,6 +4063,15 @@ function render(json) {
     if (currentLang === "ne") briefText = toNepaliNumerals(briefText);
     // Type out the brief with the shimmer effect and sound enabled
     typeText(document.getElementById("ai-brief-text"), briefText, true);
+
+    const container = document.getElementById("ai-brief-text");
+    if (!document.getElementById("ai-visualizer")) {
+      container.insertAdjacentHTML(
+        "beforebegin",
+        '<canvas id="ai-visualizer" width="400" height="40" style="width:100%; height:40px; margin-bottom:12px; border-radius:8px; opacity:0.6"></canvas>',
+      );
+    }
+    typeText(container, briefText, true);
   }
 
   const url = window.location.origin;
@@ -3526,12 +4100,13 @@ function render(json) {
     rows.forEach((r) => {
       const name = r[headers[0]] || "";
       const annualPerc = getProgress(r, headers);
-      tbody += `<tr onclick="showModal('${name.replace(/'/g, "\\'")}', this, true)">`;
+      // Using data attributes for event delegation
+      tbody += `<tr data-indicator-name="${name.replace(/"/g, "&quot;")}">`; // Escape quotes for HTML attribute
       tbody += `<td>
             <div style="display:flex; align-items:center; gap:8px;">
-              ${renderMiniChart(annualPerc, true)} 
-              <button class="icon-btn" onclick="event.stopPropagation(); showInChartView('${name.replace(/'/g, "\\'")}')" data-i18n-title="showInChartView" style="width:24px; height:24px; font-size:0.7rem; padding:0; border-radius:6px; flex-shrink:0;">📊</button>
-              <button class="icon-btn" onclick="event.stopPropagation(); copyDeepLink('${name.replace(/'/g, "\\'")}')" data-i18n-data-title="copyDeepLink" style="width:24px; height:24px; font-size:0.7rem; padding:0; border-radius:6px; flex-shrink:0;">🔗</button>
+              ${renderMiniChart(annualPerc, true)}
+              <button class="icon-btn table-chart-btn" data-indicator="${name.replace(/"/g, "&quot;")}" data-i18n-title="chartsView" style="width:24px; height:24px; font-size:0.7rem; padding:0; border-radius:6px; flex-shrink:0;">📊</button>
+              <button class="icon-btn table-deeplink-btn" data-indicator="${name.replace(/"/g, "&quot;")}" data-i18n-title="linkCopied" style="width:24px; height:24px; font-size:0.7rem; padding:0; border-radius:6px; flex-shrink:0;">🔗</button>
             </div>
           </td>`;
       headers.forEach((h, i) => {
@@ -3608,7 +4183,7 @@ function render(json) {
       let details = "";
       headers.slice(1, 6).forEach((h, i) => {
         if (r[h])
-          details += `<div style="font-size:0.75rem;margin-bottom:4px"><span style="color:var(--text-light)">${h}:</span> <span style="font-weight:600">${currentLang === "ne" ? toNepaliNumerals(r[h]) : r[h]}</span></div>`;
+          details += `<div style="font-size:0.75rem;margin-bottom:4px"><span style="color:var(--text-light)">${h}:</span> <span style="font-weight:600">${currentLang === "ne" ? toNepaliNumerals(r[h]) : r[h]}</span></div>`; // Use textContent for safety
       });
       cards += `
             <div class="data-card" data-indicator="${name}" onclick="showModal('${name.replace(/'/g, "\\'")}', this, true)">
@@ -3616,7 +4191,7 @@ function render(json) {
                 <div style="display:flex; align-items:center">${renderMiniChart(annPerc)}<b>${t(name)}</b></div>
                 <div style="display:flex; align-items:center; gap:6px">
                   <span style="font-size:0.7rem;background:${annColor};color:white;padding:2px 8px;border-radius:4px;font-weight:bold;">${dispAnn}%</span>
-                  <button class="icon-btn" onclick="event.stopPropagation(); showInChartView('${name.replace(/'/g, "\\'")}')" data-title="${t.showInChartView}" style="width:24px; height:24px; font-size:0.7rem; padding:0; border-radius:6px">📊</button>
+                  <button class="icon-btn card-chart-btn" data-indicator="${name.replace(/'/g, "\\'")}" style="width:24px; height:24px; font-size:0.7rem; padding:0; border-radius:6px">📊</button>
                 </div>
               </div>
               <div style="padding:1rem">
@@ -3644,7 +4219,6 @@ function render(json) {
             </div>`;
     });
   }
-  document.getElementById("view-cards").innerHTML = cards;
 
   // 6. CHARTS
   let chartHtml = "";
@@ -3667,9 +4241,9 @@ function render(json) {
       <div class="chart-card" data-indicator="${name}" onclick="showModal('${name.replace(/'/g, "\\'")}', this, true)" style="cursor:pointer">
         <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px">
           <b style="font-size:0.9rem">${t(name)}</b>
-          <div style="display:flex; align-items:center; gap:6px">
+          <div style="display:flex; align-items:center; gap:6px"> 
             <span style="font-size:0.75rem; font-weight:800; color:${color}">${dispProg}%</span>
-            <button class="icon-btn" onclick="event.stopPropagation(); showInCardView('${name.replace(/'/g, "\\'")}')" data-title="${t.showInCardView}" style="width:24px; height:24px; font-size:0.7rem; padding:0; border-radius:6px">🗂️</button>
+            <button class="icon-btn chart-card-btn" data-indicator="${name.replace(/'/g, "\\'")}" style="width:24px; height:24px; font-size:0.7rem; padding:0; border-radius:6px">🗂️</button>
           </div>
         </div>
         <div class="chart-bar-container">
@@ -3692,6 +4266,55 @@ function render(json) {
   // Final Sync: Ensure all data-i18n elements (including results-count) are refreshed
   applyTranslations();
 }
+
+// --- One-time Event Delegation Initialization ---
+const initDelegation = () => {
+  document.getElementById("tbody").onclick = (event) => {
+    const target = event.target;
+    const row = target.closest("tr[data-indicator-name]");
+    if (row) {
+      const name = row.dataset.indicatorName;
+      if (target.classList.contains("table-chart-btn")) {
+        event.stopPropagation();
+        showInChartView(name);
+      } else if (target.classList.contains("table-deeplink-btn")) {
+        event.stopPropagation();
+        copyDeepLink(name);
+      } else {
+        showModal(name);
+      }
+    }
+  };
+
+  document.getElementById("view-cards").onclick = (event) => {
+    const target = event.target;
+    const card = target.closest(".data-card");
+    if (card) {
+      const name = card.dataset.indicator;
+      if (target.classList.contains("card-chart-btn")) {
+        event.stopPropagation();
+        showInChartView(name);
+      } else {
+        showModal(name);
+      }
+    }
+  };
+
+  document.getElementById("view-charts").onclick = (event) => {
+    const target = event.target;
+    const chart = target.closest(".chart-card");
+    if (chart) {
+      const name = chart.dataset.indicator;
+      if (target.classList.contains("chart-card-btn")) {
+        event.stopPropagation();
+        showInCardView(name);
+      } else {
+        showModal(name);
+      }
+    }
+  };
+};
+initDelegation();
 
 /**
  * Generates a Progress Report PDF directly in the browser using pdf-lib.

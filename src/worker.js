@@ -1,5 +1,25 @@
 import { runProjectSummary } from "./ai-service.js";
+import { jwtVerify, createRemoteJWKSet } from "jose";
 
+/**
+ * Custom error for Worker services that supports error chaining via 'cause'.
+ */
+class ServiceError extends Error {
+  /**
+   * @param {string} message
+   * @param {{ cause?: Error, status?: number }} [options]
+   */
+  constructor(message, options) {
+    super(message, options);
+    this.name = "ServiceError";
+    this.status = options?.status || 500;
+  }
+}
+
+/**
+ * @param {ProjectRow[]} data
+ * @returns {Promise<string>}
+ */
 async function generateFingerprint(data) {
   const msgUint8 = new TextEncoder().encode(JSON.stringify(data));
   const hashBuffer = await crypto.subtle.digest("SHA-256", msgUint8);
@@ -7,12 +27,74 @@ async function generateFingerprint(data) {
   return hashArray.map((b) => b.toString(16).padStart(2, "0")).join("");
 }
 
+// Firebase App Check public keys URL
+const JWKS = createRemoteJWKSet(
+  new URL("https://firebaseappcheck.googleapis.com/v1/jwks"),
+);
+
 export default {
+  /**
+   * @param {Request} request
+   * @param {Env} env
+   */
   async fetch(request, env) {
     const url = new URL(request.url);
 
     // Handle the /api/report endpoint
     if (url.pathname === "/api/report") {
+      const appCheckToken = request.headers.get("X-Firebase-AppCheck");
+
+      if (!appCheckToken) {
+        return new Response(
+          JSON.stringify({ error: "Unauthorized: No token" }),
+          {
+            status: 401,
+            headers: {
+              "Content-Type": "application/json",
+              "Access-Control-Allow-Origin": "*",
+            },
+          },
+        );
+      }
+
+      // Allow bypassing strict JWT verification in local development environments
+      // Ensure this ONLY evaluates to true when explicitly set in .dev.vars
+      const isLocalDev =
+        env.APP_ENV === "development" && env.DEBUG_MODE === "true";
+
+      if (!isLocalDev) {
+        try {
+          // Verify the token against Google's public keys
+          const projectNumber = env.FIREBASE_PROJECT_NUMBER;
+          const { payload } = await jwtVerify(appCheckToken, JWKS, {
+            issuer: `https://firebaseappcheck.googleapis.com/${projectNumber}`,
+            audience: [
+              `projects/${projectNumber}`,
+              `projects/${env.FIREBASE_PROJECT_ID}`,
+            ],
+            // Enforce that the token has not expired
+            clockTolerance: "1m",
+          });
+
+          console.log(
+            "[Security] App Check verified for project:",
+            payload.sub,
+          );
+        } catch (e) {
+          console.error("[Security] App Check verification failed:", e.message);
+          return new Response(
+            JSON.stringify({ error: "Invalid App Check Token" }),
+            {
+              status: 401,
+              headers: {
+                "Content-Type": "application/json",
+                "Access-Control-Allow-Origin": "*",
+              },
+            },
+          );
+        }
+      }
+
       const lang = url.searchParams.get("lang") || "en";
       const isLowData = request.headers.get("X-Low-Data") === "true";
       const forceRefresh = url.searchParams.get("force") === "true";
@@ -26,6 +108,7 @@ export default {
         const projectData = await fetchProjectData(env);
 
         // 2. Prepare the base response structure
+        /** @type {ProjectReport} */
         const report = {
           headers: projectData.headers,
           rows: projectData.rows,
@@ -39,6 +122,7 @@ export default {
           const cacheKey = `ai_summary_${lang}_${fingerprint}`;
 
           // Try to fetch from Cloudflare KV unless a force refresh is requested
+          /** @type {AiSummary | null} */
           let aiResult = forceRefresh
             ? null
             : await env.REPORTS_KV.get(cacheKey, { type: "json" });
@@ -102,6 +186,10 @@ export default {
   },
 };
 
+/**
+ * @param {Env} env
+ * @returns {Promise<{headers: string[], rows: ProjectRow[]}>}
+ */
 async function fetchProjectData(env) {
   try {
     // Placeholder: Replace with actual logic, e.g., const res = await fetch(env.DATA_URL);
@@ -113,14 +201,16 @@ async function fetchProjectData(env) {
     };
 
     // Validation: Ensure the data contains the expected structure before returning
-    if (!data || !Array.isArray(data.rows) || data.rows.length === 0) {
-      throw new Error("Data source returned an empty or invalid project list.");
+    if (!data || !Array.isArray(data.rows)) {
+      throw new ServiceError("Data source returned an invalid project list.", {
+        status: 422,
+      });
     }
 
     return data;
   } catch (error) {
     console.error("[fetchProjectData Error]:", error.message);
     // Re-throwing allows the main fetch() try/catch to return a proper 500 response
-    throw new Error(`Data synchronization failed: ${error.message}`);
+    throw new ServiceError("Data synchronization failed", { cause: error });
   }
 }

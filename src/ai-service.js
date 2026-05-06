@@ -18,6 +18,10 @@ export function getAi(apiKey) {
 
 /**
  * Generates the executive summary briefing for the DoR MIS Dashboard.
+ *
+ * @param {string} apiKey
+ * @param {{rows: ProjectRow[], lang: 'en' | 'ne'}} input
+ * @returns {Promise<AiSummary>}
  */
 export async function runProjectSummary(apiKey, input) {
   const ai = getAi(apiKey);
@@ -35,34 +39,40 @@ export async function runProjectSummary(apiKey, input) {
       }),
     },
     async (input) => {
-      const response = await ai.generate({
-        model: googleAI.model("gemini-2.5-flash"),
-        prompt: `
-        You are a world-class senior infrastructure analyst for the Department of Roads (DoR), Nepal.
-        Review the following project progress data:
-        ${JSON.stringify(input.rows)}
+      try {
+        const response = await ai.generate({
+          model: googleAI.model("gemini-2.5-flash"),
+          prompt: `
+          You are a world-class senior infrastructure analyst for the Department of Roads (DoR), Nepal.
+          Review the following project progress data:
+          ${JSON.stringify(input.rows)}
 
-        Your task is to generate a concise "Executive Briefing" in ${input.lang === "ne" ? "Nepali" : "English"}.
+          Your task is to generate a concise "Executive Briefing" in ${input.lang === "ne" ? "Nepali" : "English"}.
 
-        Guidelines:
-        1. Identify the overall health of the road network projects.
-        2. Specifically call out any projects that are falling behind (critical status).
-        3. Mention one or two projects that are exceeding performance targets.
-        4. Use a professional, authoritative, and helpful tone.
-        5. Keep the briefing under 100 words so it fits well in the UI.
-      `,
-      });
+          Guidelines:
+          1. Identify the overall health of the road network projects.
+          2. Specifically call out any projects that are falling behind (critical status).
+          3. Mention one or two projects that are exceeding performance targets.
+          4. Use a professional, authoritative, and helpful tone.
+          5. Keep the briefing under 100 words so it fits well in the UI.
+        `,
+        });
 
-      if (
-        response.finishReason === "safety" ||
-        response.finishReason === "blocked"
-      ) {
-        return {
-          brief:
-            "This summary was blocked by safety filters. Please ensure project data adheres to department guidelines.",
-        };
+        if (
+          response.finishReason === "safety" ||
+          response.finishReason === "blocked"
+        ) {
+          return {
+            brief:
+              "This summary was blocked by safety filters. Please ensure project data adheres to department guidelines.",
+          };
+        }
+        return { brief: response.text };
+      } catch (e) {
+        console.error("[Genkit Flow Error]:", e);
+        // Using the same pattern for custom errors here
+        throw new Error("AI Summary Generation Failed", { cause: e });
       }
-      return { brief: response.text };
     },
   );
 

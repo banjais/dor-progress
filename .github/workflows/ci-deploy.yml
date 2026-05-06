@@ -70,6 +70,26 @@ jobs:
           cache: "pnpm"
       - name: Install Dependencies
         run: pnpm install --frozen-lockfile
+      - name: Configure Git
+        run: |
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "github-actions[bot]@users.noreply.github.com"
+      - name: Automate Version Bump
+        if: github.event_name == 'push'
+        run: |
+          # 1. Bump version in package.json without creating a commit yet
+          pnpm version patch --no-git-tag-version
+          
+          # 2. Sync the new version to branding.json
+          node scripts/sync-branding.js
+          
+          # 3. Commit both files and create the tag
+          git add package.json src/branding.json
+          git commit -m "chore(release): bump version to $(node -p "require('./package.json').version") [skip ci]"
+          git tag "v$(node -p "require('./package.json').version")"
+          git push origin ${{ github.ref_name }} --follow-tags
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       - name: Sync Translations (optional)
         run: |
           echo '${{ secrets.FIREBASE_SERVICE_ACCOUNT }}' > sa_key.json || true
@@ -79,6 +99,9 @@ jobs:
           PUBLISHED_SHEET_ID: ${{ secrets.PUBLISHED_SHEET_ID }}
       - name: Build Frontend Application
         run: pnpm build
+        env:
+          VITE_COMMIT_SHA: ${{ github.sha }}
+          VITE_BUILD_ID: ${{ github.run_id }}-${{ github.run_attempt }}
       - name: Verify Build Output
         run: pnpm exec tsx scripts/verify-build.js
       - name: Upload Frontend Artifacts
