@@ -90,11 +90,12 @@ jobs:
           # 1. Bump version in package.json without creating a commit yet
           pnpm version patch --no-git-tag-version
           
-          # 2. Sync the new version to branding.json
+          # 2. Sync the new version to branding.json and update lockfile
           pnpm exec tsx scripts/sync-branding.js
+          pnpm install --lockfile-only
           
-          # 3. Commit both files and create the tag
-          git add package.json src/branding.json wrangler.toml VERSION
+          # 3. Commit files and create the tag (ensure lockfile is included)
+          git add package.json pnpm-lock.yaml src/branding.json wrangler.toml VERSION
           git commit -m "chore(release): bump version to $(node -p "require('./package.json').version") [skip ci]"
           git tag "v$(node -p "require('./package.json').version")"
           git push origin ${{ github.ref_name }} --follow-tags
