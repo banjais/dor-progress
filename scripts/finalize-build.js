@@ -6,6 +6,7 @@ import { execSync } from "child_process";
 const buildDir = path.resolve(".build");
 const swPath = path.join(buildDir, "sw.v2.js");
 const pkgPath = path.resolve("package.json");
+const versionPath = path.resolve("VERSION");
 
 if (fs.existsSync(swPath)) {
   let sw = fs.readFileSync(swPath, "utf8");
@@ -20,7 +21,11 @@ if (fs.existsSync(swPath)) {
     .digest("hex")
     .slice(0, 10);
   const buildId = contentHash;
-  const versionIdentifier = pkg.version;
+
+  // Read version from VERSION file, fallback to package.json
+  const versionIdentifier = fs.existsSync(versionPath)
+    ? fs.readFileSync(versionPath, "utf8").trim()
+    : pkg.version;
 
   // Get the actual Git commit SHA - prefer CI environment variables over git command
   const envSha = process.env.GITHUB_SHA || process.env.CI_COMMIT_SHA || process.env.COMMIT_SHA;
@@ -38,7 +43,8 @@ if (fs.existsSync(swPath)) {
   sw = sw
     .replace(/__API_BASE_URL__/g, apiBase)
     .replace(/__BUILD_ID__/g, buildId)
-    .replace(/__COMMIT_SHA__/g, commitSha);  // Use actual Git SHA, not version
+    .replace(/__COMMIT_SHA__/g, commitSha)
+    .replace(/__VERSION__/g, versionIdentifier);
 
   fs.writeFileSync(swPath, sw);
   console.log("✅ Service Worker environment variables injected");

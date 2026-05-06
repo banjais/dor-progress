@@ -1,0 +1,15 @@
+# Set default behavior to handle line endings automatically
+* text=auto eol=lf
+
+# Ensure shell scripts always use LF (vital for scripts/health-check.sh in CI)
+scripts/*.sh text eol=lf
+
+# Treat the generated VERSION file as standard text
+VERSION text
+
+# Mark large generated JSON files as "generated" to keep PR diffs clean
+src/locales/translations.json linguist-generated
+public/translations.json linguist-generated
+
+# Standardize JSON formatting for consistent diffs
+*.json text

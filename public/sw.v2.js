@@ -1,4 +1,4 @@
-const VERSION = "2.4.0";
+const VERSION = "__VERSION__";
 const CHANGELOG = {
   "2.4.0": [
     "Optimized Translation sync: Background Sync support and fingerprint-based revalidation",
@@ -251,7 +251,7 @@ self.addEventListener("fetch", (event) => {
               if (
                 !cachedData ||
                 freshData._metadata?.fingerprint !==
-                  cachedData._metadata?.fingerprint
+                cachedData._metadata?.fingerprint
               ) {
                 await cache.put(event.request, networkResponse.clone());
                 notifyClients({

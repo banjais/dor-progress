@@ -5,6 +5,10 @@ on:
     branches:
       - main
       - master
+  pull_request:
+    branches:
+      - main
+      - master
   workflow_dispatch:
 
 jobs:
@@ -74,6 +78,12 @@ jobs:
         run: |
           git config --global user.name "github-actions[bot]"
           git config --global user.email "github-actions[bot]@users.noreply.github.com"
+      - name: Validate Version Sync
+        if: github.event_name == 'pull_request'
+        run: |
+          pnpm exec tsx scripts/sync-branding.js
+          # Fails if the script changes any files, ensuring they were pre-synced.
+          git diff --exit-code src/branding.json wrangler.toml VERSION
       - name: Automate Version Bump
         if: github.event_name == 'push'
         run: |
@@ -81,10 +91,10 @@ jobs:
           pnpm version patch --no-git-tag-version
           
           # 2. Sync the new version to branding.json
-          node scripts/sync-branding.js
+          pnpm exec tsx scripts/sync-branding.js
           
           # 3. Commit both files and create the tag
-          git add package.json src/branding.json
+          git add package.json src/branding.json wrangler.toml VERSION
           git commit -m "chore(release): bump version to $(node -p "require('./package.json').version") [skip ci]"
           git tag "v$(node -p "require('./package.json').version")"
           git push origin ${{ github.ref_name }} --follow-tags
@@ -108,7 +118,9 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: frontend-build
-          path: .build/
+          path: |
+            .build/
+            VERSION
           retention-days: 7
 
   build-worker:

@@ -8,8 +8,6 @@
 import fs from "fs";
 import path from "path";
 import { execSync } from "child_process";
-// import { formatTimestamp, VERSION } from '../shared/utils.js';
-const VERSION = "1.0.80"; // Fallback
 const formatTimestamp = (d: any) => new Date(d).toLocaleString();
 
 import { fileURLToPath } from "url";
@@ -48,7 +46,7 @@ function getFolderSize(dir: string): string {
     } else {
       try {
         size += fs.statSync(full).size;
-      } catch {}
+      } catch { }
     }
   }
   return formatBytes(size);
@@ -67,9 +65,15 @@ const pkg = JSON.parse(
   fs.readFileSync(path.resolve(process.cwd(), "package.json"), "utf8"),
 ) as PackageJson;
 
+let versionFromFile = "N/A";
+const versionFilePath = path.resolve(process.cwd(), "VERSION");
+if (fs.existsSync(versionFilePath)) {
+  versionFromFile = fs.readFileSync(versionFilePath, "utf8").trim();
+}
+
 section("📦 Project");
 console.log(`Name:    ${pkg.name}`);
-console.log(`Version: ${VERSION} (pkg: ${pkg.version})`);
+console.log(`Version: ${versionFromFile} (package.json: ${pkg.version})`);
 console.log(`Type:    ${pkg.type}`);
 
 section("🔗 URLs");
@@ -95,30 +99,27 @@ try {
   );
   const lines = wrangler.split("\n");
   console.log(
-    `Name:         ${
-      lines
-        .find((l) => l.trim().startsWith("name = "))
-        ?.split("=")[1]
-        ?.trim()
-        .replace(/"/g, "") || "N/A"
+    `Name:         ${lines
+      .find((l) => l.trim().startsWith("name = "))
+      ?.split("=")[1]
+      ?.trim()
+      .replace(/"/g, "") || "N/A"
     }`,
   );
   console.log(
-    `Worker:       ${
-      lines
-        .find((l) => l.trim().startsWith("main = "))
-        ?.split("=")[1]
-        ?.trim()
-        .replace(/"/g, "") || "index.ts"
+    `Worker:       ${lines
+      .find((l) => l.trim().startsWith("main = "))
+      ?.split("=")[1]
+      ?.trim()
+      .replace(/"/g, "") || "index.ts"
     }`,
   );
   console.log(
-    `Compatibility: ${
-      lines
-        .find((l) => l.trim().startsWith("compatibility_date = "))
-        ?.split("=")[1]
-        ?.trim()
-        .replace(/"/g, "") || "N/A"
+    `Compatibility: ${lines
+      .find((l) => l.trim().startsWith("compatibility_date = "))
+      ?.split("=")[1]
+      ?.trim()
+      .replace(/"/g, "") || "N/A"
     }`,
   );
 } catch {
