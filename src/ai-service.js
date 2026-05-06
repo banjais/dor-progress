@@ -2,12 +2,25 @@ import { genkit } from "genkit";
 import { googleAI } from "@genkit-ai/google-genai";
 
 /**
+ * @typedef {Record<string, string | number>} ProjectRow
+ */
+
+/**
+ * @typedef {object} AiSummary
+ * @property {string} brief
+ */
+
+/**
  * Helper to initialize Genkit with a specific API Key.
  * In Genkit v1, it's best to define the instance once.
  */
 /** @type {import('genkit').Genkit | null} */
 let aiInstance = null;
-/** @returns {import('genkit').Genkit} */
+
+/**
+ * @param {string} apiKey
+ * @returns {import('genkit').Genkit | null}
+ */
 export function getAi(apiKey) {
   if (!aiInstance && apiKey) {
     aiInstance = genkit({
@@ -34,6 +47,10 @@ export async function runProjectSummary(apiKey, input) {
 
 /**
  * Flow logic defined as a helper to avoid re-registration.
+ *
+ * @param {import('genkit').Genkit} ai
+ * @param {{rows: ProjectRow[], lang: 'en' | 'ne'}} input
+ * @returns {Promise<AiSummary>}
  */
 async function generateProjectSummary(ai, input) {
   try {

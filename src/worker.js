@@ -2,6 +2,34 @@ import { runProjectSummary } from "./ai-service.js";
 import { jwtVerify, createRemoteJWKSet } from "jose";
 
 /**
+ * @typedef {object} Env
+ * @property {KVNamespace} REPORTS_KV
+ * @property {string} GOOGLE_GENAI_API_KEY
+ * @property {string} FIREBASE_PROJECT_NUMBER
+ * @property {string} FIREBASE_PROJECT_ID
+ * @property {string} APP_ENV
+ * @property {string} DEBUG_MODE
+ * @property {string} PUBLISHED_SHEET_ID
+ * @property {string} RECAPTCHA_SITE_KEY
+ */
+
+/**
+ * @typedef {Record<string, string | number>} ProjectRow
+ */
+
+/**
+ * @typedef {object} AiSummary
+ * @property {string} brief
+ */
+
+/**
+ * @typedef {object} ProjectReport
+ * @property {string[]} headers
+ * @property {ProjectRow[]} rows
+ * @property {string} lastUpdate
+ * @property {AiSummary | null} aiSummary
+ */
+/**
  * Custom error for Worker services that supports error chaining via 'cause'.
  */
 class ServiceError extends Error {
@@ -13,6 +41,20 @@ class ServiceError extends Error {
     super(message, options);
     this.name = "ServiceError";
     this.status = options?.status || 500;
+  }
+}
+
+/**
+ * Traverses and logs the entire Error.cause chain for deep debugging.
+ * @param {Error} err
+ */
+function logErrorChain(err) {
+  if (!err) return;
+  console.error(`[Error Hierarchy] ${err.name}: ${err.message}`);
+  let cause = err.cause;
+  while (cause) {
+    console.error(`  ↳ [Cause] ${cause.name || "Error"}: ${cause.message}`);
+    cause = cause.cause;
   }
 }
 
@@ -39,6 +81,86 @@ export default {
    */
   async fetch(request, env) {
     const url = new URL(request.url);
+
+    // Health Check & Ping
+    if (url.pathname === "/api/ping" || url.pathname === "/api/health") {
+      return new Response(JSON.stringify({ status: "ok", time: Date.now() }), {
+        headers: {
+          "Content-Type": "application/json",
+          "Access-Control-Allow-Origin": "*",
+        },
+      });
+    }
+
+    // Client Security Configuration
+    if (url.pathname === "/api/client-config") {
+      const config = {
+        firebase: {
+          apiKey: env.GOOGLE_GENAI_API_KEY, // Or a specific FIREBASE_API_KEY if different
+          authDomain: `${env.FIREBASE_PROJECT_ID}.firebaseapp.com`,
+          projectId: env.FIREBASE_PROJECT_ID,
+          storageBucket: `${env.FIREBASE_PROJECT_ID}.appspot.com`,
+          messagingSenderId: env.FIREBASE_PROJECT_NUMBER,
+          appId: `1:${env.FIREBASE_PROJECT_NUMBER}:web:dynamic`,
+        },
+        recaptchaKey: env.RECAPTCHA_SITE_KEY,
+      };
+      return new Response(JSON.stringify(config), {
+        headers: {
+          "Content-Type": "application/json",
+          "Access-Control-Allow-Origin": "*",
+        },
+      });
+    }
+
+    // Handle the /api/reports endpoint (Archive History List)
+    if (url.pathname === "/api/reports") {
+      const appCheckToken = request.headers.get("X-Firebase-AppCheck");
+      const isLocalDev =
+        env.APP_ENV === "development" && env.DEBUG_MODE === "true";
+
+      if (!appCheckToken && !isLocalDev) {
+        return new Response(JSON.stringify({ error: "Unauthorized" }), {
+          status: 401,
+          headers: {
+            "Content-Type": "application/json",
+            "Access-Control-Allow-Origin": "*",
+          },
+        });
+      }
+
+      try {
+        const list = await env.REPORTS_KV.list({
+          prefix: "report:",
+          limit: 50,
+        });
+        const archives = list.keys
+          .map((k) => ({
+            date: k.name.replace("report:", ""),
+            summary: k.metadata?.summary || "Weekly progress snapshot.",
+          }))
+          .sort((a, b) => b.date.localeCompare(a.date));
+
+        return new Response(JSON.stringify(archives), {
+          headers: {
+            "Content-Type": "application/json",
+            "Access-Control-Allow-Origin": "*",
+          },
+        });
+      } catch (err) {
+        logErrorChain(err);
+        return new Response(
+          JSON.stringify({ error: "Failed to fetch archives list" }),
+          {
+            status: 500,
+            headers: {
+              "Content-Type": "application/json",
+              "Access-Control-Allow-Origin": "*",
+            },
+          },
+        );
+      }
+    }
 
     // Handle the /api/report endpoint
     if (url.pathname === "/api/report") {
@@ -96,6 +218,7 @@ export default {
       }
 
       const lang = url.searchParams.get("lang") || "en";
+      const date = url.searchParams.get("date");
       const isLowData = request.headers.get("X-Low-Data") === "true";
       const forceRefresh = url.searchParams.get("force") === "true";
 
@@ -104,17 +227,31 @@ export default {
       const initialRetryDelayMs = 1000; // 1 second
 
       try {
-        // 1. Fetch your data (e.g., from Google Sheets or your DB)
-        const projectData = await fetchProjectData(env);
-
-        // 2. Prepare the base response structure
         /** @type {ProjectReport} */
-        const report = {
-          headers: projectData.headers,
-          rows: projectData.rows,
-          lastUpdate: new Date().toISOString().split("T")[0],
-          aiSummary: null,
-        };
+        let report;
+
+        if (date) {
+          // 1. Fetch from Archive (KV)
+          const archivedData = await env.REPORTS_KV.get(`report:${date}`, {
+            type: "json",
+          });
+          if (!archivedData) {
+            throw new ServiceError(
+              `Archived report for date ${date} not found.`,
+              { status: 404 },
+            );
+          }
+          report = archivedData;
+        } else {
+          // 1. Fetch live data from Google Sheets
+          const projectData = await fetchProjectData(env);
+          report = {
+            headers: projectData.headers,
+            rows: projectData.rows,
+            lastUpdate: new Date().toISOString().split("T")[0],
+            aiSummary: null,
+          };
+        }
 
         // 3. Only run Genkit if NOT in Low Data mode
         if (!isLowData) {
@@ -176,9 +313,17 @@ export default {
         });
       } catch (err) {
         console.error("Error processing /api/report request:", err);
-        return new Response(JSON.stringify({ error: err.message }), {
-          status: 500,
-        });
+        logErrorChain(err);
+        return new Response(
+          JSON.stringify({ error: err.message || "Internal Server Error" }),
+          {
+            status: err.status || 500,
+            headers: {
+              "Content-Type": "application/json",
+              "Access-Control-Allow-Origin": "*",
+            },
+          },
+        );
       }
     }
 
@@ -190,24 +335,91 @@ export default {
  * @param {Env} env
  * @returns {Promise<{headers: string[], rows: ProjectRow[]}>}
  */
-async function fetchProjectData(env) {
+async function fetchProjectData(env, lang = "en") {
   try {
-    // Placeholder: Replace with actual logic, e.g., const res = await fetch(env.DATA_URL);
-    const data = {
-      headers: ["Indicator", "Target", "Progress"],
-      rows: [
-        { Indicator: "Road A", Target: 100, Progress: 45, _status: "critical" },
-      ],
-    };
-
-    // Validation: Ensure the data contains the expected structure before returning
-    if (!data || !Array.isArray(data.rows)) {
-      throw new ServiceError("Data source returned an invalid project list.", {
-        status: 422,
+    const sheetId = env.PUBLISHED_SHEET_ID;
+    if (!sheetId) {
+      throw new ServiceError("Google Sheet ID is not configured.", {
+        status: 500,
       });
     }
 
-    return data;
+    // Construct the URL for the published Google Sheet as CSV
+    const publishedUrl = `https://docs.google.com/spreadsheets/d/e/${sheetId}/pub?output=csv`;
+    const response = await fetch(publishedUrl);
+
+    if (!response.ok) {
+      throw new ServiceError(
+        `Failed to fetch data from Google Sheets: ${response.statusText}`,
+        { status: response.status },
+      );
+    }
+
+    const csvText = await response.text();
+    const lines = csvText.split(/\r?\n/).filter((line) => line.trim() !== ""); // Filter out empty lines
+
+    if (lines.length === 0) {
+      return { headers: [], rows: [] };
+    }
+
+    // Parse headers (first line)
+    const rawHeaders = lines[0]
+      .split(/,(?=(?:(?:[^"]*"){2})*[^"]*$)/)
+      .map((h) => h.replace(/^"|"$/g, "").trim());
+    // Remove zero-width spaces that sometimes appear in CSVs from Google Sheets
+    const headers = rawHeaders.map((h) =>
+      h.replace(/[\u200B-\u200D\uFEFF]/g, ""),
+    );
+
+    // Parse rows
+    const rows = lines.slice(1).map((line) => {
+      const values = line
+        .split(/,(?=(?:(?:[^"]*"){2})*[^"]*$)/)
+        .map((v) => v.replace(/^"|"$/g, "").trim());
+      /** @type {ProjectRow} */
+      const row = {};
+
+      headers.forEach((header, i) => {
+        let rawValue = values[i] || "";
+        // Strip commas and attempt numeric conversion for values like "1,234.50"
+        const cleanValue = rawValue.replace(/,/g, "");
+        if (!isNaN(Number(cleanValue)) && cleanValue.trim() !== "") {
+          row[header] = Number(cleanValue);
+        } else {
+          row[header] = rawValue;
+        }
+      });
+
+      // Determine Progress and Status for the Dashboard
+      const targetKey = headers.find(
+        (h) => h.includes("Annual Target") || h.includes("बार्षिक लक्ष्य"),
+      );
+      const progKey = headers.find(
+        (h) =>
+          h.includes("Annual Progress") ||
+          h.includes("हाल सम्म को बार्षिक प्रगति"),
+      );
+
+      const t = parseFloat(String(row[targetKey] || "0"));
+      const p = parseFloat(String(row[progKey] || "0"));
+      const progress = t > 0 ? Math.round((p / t) * 100) : 0;
+
+      row._progress = progress;
+      row._status =
+        progress >= 80 ? "good" : progress >= 40 ? "stable" : "critical";
+
+      return row;
+    });
+
+    // Validation: Ensure the data contains the expected structure before returning
+    if (!rows || !Array.isArray(rows)) {
+      throw new ServiceError(
+        "Parsed data is not in the expected array format.",
+        { status: 422 },
+      );
+    }
+
+    return { headers, rows };
   } catch (error) {
     console.error("[fetchProjectData Error]:", error.message);
     // Re-throwing allows the main fetch() try/catch to return a proper 500 response
