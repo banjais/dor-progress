@@ -1,4 +1,4 @@
-import { genkit, z } from "genkit";
+import { genkit } from "genkit";
 import { googleAI } from "@genkit-ai/google-genai";
 
 /**
@@ -29,7 +29,7 @@ export async function runProjectSummary(apiKey, input) {
   if (!ai) throw new Error("Genkit not initialized. API Key required.");
 
   // Use the pre-defined flow
-  return await ai.run("runSummary", () => generateProjectSummary(ai, input));
+  return await generateProjectSummary(ai, input);
 }
 
 /**
