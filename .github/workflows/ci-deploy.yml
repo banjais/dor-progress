@@ -139,14 +139,11 @@ jobs:
         with:
           node-version: "20"
           cache: "pnpm"
-      - name: Install Dependencies
-        run: pnpm install --frozen-lockfile
       - uses: cloudflare/wrangler-action@v3
         with:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           accountId: "052a34d4627b5c02d0bff84ff1c0f906"
           preCommands: |
-            npm install --no-save wrangler
             npx wrangler --version
 
   deploy:
