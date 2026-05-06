@@ -376,8 +376,6 @@ class AudioEngine {
   }
 }
 
-const audioEngine = new AudioEngine();
-
 /**
  * Speech Engine Class
  * Manages TTS lifecycle, highlighting, and audio ducking.
@@ -565,9 +563,6 @@ class SpeechEngine {
   }
 }
 
-const speechEngine = new SpeechEngine(audioEngine);
-audioEngine.init();
-
 const toggleLang = () => {
   const next = currentLang === "en" ? "ne" : "en";
   setLang(next);
@@ -739,7 +734,7 @@ async function setupSecurity() {
     setTimeout(checkFreshInstall, 3000); // Check for backups after UI is stable
 
     // Initialize Audio Icon State
-    updateVolume(uiVolume);
+    dashboard.audio.updateVolume(dashboard.state.uiVolume);
 
     // Version Badge Check
     const swVersion = await getActiveSwVersion();
@@ -877,18 +872,8 @@ async function checkStatus() {
   }
 }
 
-window.dismissAllToasts = dismissAllToasts;
-function dismissAllToasts() {
-  const toasts = document.querySelectorAll(".toast");
-  toasts.forEach((t) => {
-    if (t.dataset.dismissing) return;
-    // Trigger the click event to reuse the existing dismissal logic
-    t.click();
-  });
-}
-
 function addToast(type, message, duration = 4000) {
-  playPopSound();
+  dashboard.audio.playUi("pop");
   const container = document.getElementById("toast-container");
   const dismissAllBtn = document.getElementById("dismiss-all");
   if (!container || !dismissAllBtn) return;
@@ -948,35 +933,9 @@ function addToast(type, message, duration = 4000) {
   }
 }
 
-window.updatePitch = (val) => audioEngine.updatePitch(val);
-window.updateVolume = (val) => audioEngine.updateVolume(val);
-window.setSoundPack = (pack) => audioEngine.setSoundPack(pack);
-window.toggleMute = () => audioEngine.toggleMute();
-
-window.resetAudioToDefault = () => {
-  audioEngine.resetToDefault();
-  addToast(
-    "success",
-    currentLang === "en"
-      ? "Audio settings reset to default."
-      : "ध्वनि सेटिङहरू रिसेट गरियो।",
-  );
-};
-
-const playPing = () => audioEngine.playUi("ping");
-const playTypeSound = () => audioEngine.playUi("type");
-const playClickSound = () => audioEngine.playUi("click", false);
-const playPopSound = () => audioEngine.playUi("pop");
-
-window.playPing = playPing;
-window.playTypeSound = playTypeSound;
-window.playPopSound = playPopSound;
-
-let latencyHistory = [];
-let lastFetchTime = null;
 function getRelativeTimeString() {
-  if (!lastFetchTime) return "";
-  const diff = Math.floor((Date.now() - lastFetchTime) / 1000);
+  if (!dashboard.lastFetchTime) return "";
+  const diff = Math.floor((Date.now() - dashboard.lastFetchTime) / 1000);
   const t = I18N[currentLang];
   if (diff < 10) return t.justNow;
   if (diff < 60)
@@ -1798,14 +1757,25 @@ class Dashboard {
     if (Dashboard._instance) {
       return Dashboard._instance;
     }
-    this.lang =
-      localStorage.getItem("pref-lang") ||
-      (navigator.language.startsWith("en") ? "en" : "ne");
-    this.view = "table";
-    this.sort = { key: null, dir: 1 };
-    this.search = "";
-    this.store = null;
-    this.riskLevel = 0;
+
+    // Core Engines
+    this.audio = new AudioEngine();
+    this.speech = new SpeechEngine(this.audio);
+    this.audio.init();
+
+    // Application State
+    this.state = {
+      lang:
+        localStorage.getItem("pref-lang") ||
+        (navigator.language.startsWith("en") ? "en" : "ne"),
+      view: "table",
+      search: "",
+      sort: { key: null, dir: 1 },
+      store: null,
+      riskLevel: 0,
+      uiVolume: parseFloat(localStorage.getItem("ui-volume") || "0.5"),
+    };
+
     this.refreshCounter = 60;
     this.lastFetchTime = null;
     this.latencyHistory = [];
@@ -1840,15 +1810,15 @@ class Dashboard {
   }
 
   async setLang(l) {
-    const prevLang = this.lang;
-    this.lang = l;
+    const prevLang = this.state.lang;
+    this.state.lang = l;
     localStorage.setItem("pref-lang", l);
 
     const lbl = document.getElementById("lang-current-label");
     if (lbl) lbl.innerText = l.toUpperCase();
 
     applyTranslations();
-    this.sort = { key: null, dir: 1 };
+    this.state.sort = { key: null, dir: 1 };
 
     const titleEl = document.getElementById("main-title");
     if (titleEl) titleEl.innerText = t("mainTitle");
@@ -1864,13 +1834,13 @@ class Dashboard {
       if (loader) loader.style.display = "flex";
       if (msg) msg.innerText = t("loading");
       await this.loadData();
-    } else if (this.store) {
+    } else if (this.state.store) {
       this.render();
     }
   }
 
   setView(v) {
-    this.view = v;
+    this.state.view = v;
     document
       .querySelectorAll("#view-toggle .toggle-btn")
       .forEach((b) => b.classList.toggle("active", b.id === "btn-" + v));
@@ -1886,7 +1856,15 @@ class Dashboard {
     if (verify) verify.style.display = v === "verify" ? "block" : "none";
     if (history) history.style.display = v === "history" ? "block" : "none";
 
-    if (this.store) this.render();
+    if (this.state.store) this.render();
+  }
+
+  dismissAllToasts() {
+    const toasts = document.querySelectorAll(".toast");
+    toasts.forEach((t) => {
+      if (t.dataset.dismissing) return;
+      t.click();
+    });
   }
 }
 
@@ -1898,7 +1876,7 @@ let deferredPrompt; // PWA prompt remains global as it interacts with browser ev
  * Priority: Dynamic JSON from Sheet > Hardcoded I18N fallback > Key name
  */
 const t = (key, count) => {
-  const currentLang = dashboard.lang;
+  const currentLang = dashboard.state.lang;
   let finalKey = key;
 
   if (count !== undefined) {

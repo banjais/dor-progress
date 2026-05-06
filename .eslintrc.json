@@ -38,14 +38,7 @@
         "PDFLib": "readonly",
         "appCheck": "writable",
         "FIREBASE_APPCHECK_DEBUG_TOKEN": "writable",
-        "store": "writable",
-        "currentLang": "writable",
-        "currentView": "writable",
-        "initialLang": "readonly",
-        "uiVolume": "writable",
-        "searchText": "writable",
-        "currentSort": "writable",
-        "systemRiskLevel": "writable"
+        "dashboard": "readonly"
       }
     },
     {
