@@ -15,8 +15,49 @@ import {
 /**
  * World-Class Audio Engine
  * Handles multiple simultaneous channels (UI sounds, Background Music).
+ *
+ * @property {AudioContext | null} ctx - Web Audio API Context.
+ * @property {boolean} isBroken - Flag to indicate if audio initialization failed.
+ * @property {AudioBufferSourceNode | null} musicSource - Current active background music source.
+ * @property {GainNode | null} musicGain - Gain node for background music channel.
+ * @property {GainNode | null} uiGain - Gain node for UI feedback sounds channel.
+ * @property {AudioBuffer | null} musicBuffer - Decoded audio data for background music.
+ * @property {AnalyserNode | null} analyser - Visualizer analyzer node.
+ * @property {number} duckLevel - The volume multiplier when background music is ducked.
+ * @property {number} uiVolume - Current master volume level (0.0 - 1.0).
+ * @property {number} lastVolume - Cache for the last active volume level before muting.
+ * @property {string} currentSoundPack - Active sound theme ID.
+ * @property {number} uiPitch - Pitch multiplier for UI sounds.
  */
 class AudioEngine {
+  /**
+   * Defines various sound synthesis profiles for different UI themes.
+   * @type {Object.<string, Object.<string, {type: OscillatorType, f1: number, f2?: number, g: number, d: number}>>}
+   */
+  static SOUND_PROFILES = {
+    modern: {
+      ping: { type: "triangle", f1: 1200, f2: 400, g: 0.05, d: 0.1 },
+      type: { type: "sine", f1: 2000, g: 0.01, d: 0.02 },
+      pop: { type: "sine", f1: 600, f2: 1200, g: 0.04, d: 0.1 },
+      click: { type: "sine", f1: 1600, g: 0.015, d: 0.04 },
+    },
+    classic: {
+      ping: { type: "sine", f1: 880, f2: 440, g: 0.06, d: 0.15 },
+      type: { type: "triangle", f1: 1200, g: 0.015, d: 0.03 },
+      pop: { type: "triangle", f1: 500, f2: 900, g: 0.05, d: 0.12 },
+      click: { type: "triangle", f1: 1000, g: 0.02, d: 0.05 },
+    },
+    retro: {
+      ping: { type: "square", f1: 400, f2: 100, g: 0.03, d: 0.2 },
+      type: { type: "square", f1: 600, g: 0.012, d: 0.04 },
+      pop: { type: "square", f1: 200, f2: 500, g: 0.03, d: 0.15 },
+      click: { type: "square", f1: 300, g: 0.025, d: 0.06 },
+    },
+  };
+
+  /**
+   * Initializes the AudioEngine state with default volumes and settings from localStorage.
+   */
   constructor() {
     this.ctx = null;
     this.isBroken = false;
@@ -26,8 +67,18 @@ class AudioEngine {
     this.musicBuffer = null;
     this.analyser = null;
     this.duckLevel = 0.3;
+
+    this.uiVolume = parseFloat(localStorage.getItem("ui-volume") || "0.5");
+    this.lastVolume = this.uiVolume > 0 ? this.uiVolume : 0.5;
+    this.currentSoundPack = localStorage.getItem("sound-pack") || "modern";
+    this.uiPitch = parseFloat(localStorage.getItem("ui-pitch") || "1.0");
   }
 
+  /**
+   * Initializes the Web Audio Context and internal routing nodes.
+   * Resumes the context if suspended (browser security requirement).
+   * @returns {Promise<void>}
+   */
   async init() {
     if (this.ctx || this.isBroken) return;
     try {
@@ -61,19 +112,27 @@ class AudioEngine {
     }
   }
 
+  /**
+   * Synchronizes internal gain levels with current volume settings using a smooth transition.
+   * @returns {Promise<void>}
+   */
   async updateVolumes() {
     if (!this.ctx) return;
     if (this.ctx.state === "suspended") await this.ctx.resume();
 
-    const vol = parseFloat(localStorage.getItem("ui-volume") || "0.5");
-    this.uiGain.gain.setTargetAtTime(vol, this.ctx.currentTime, 0.05);
+    this.uiGain.gain.setTargetAtTime(this.uiVolume, this.ctx.currentTime, 0.05);
     this.musicGain.gain.setTargetAtTime(
-      vol * this.duckLevel,
+      this.uiVolume * this.duckLevel,
       this.ctx.currentTime,
       0.05,
     );
   }
 
+  /**
+   * Fetches and decodes an audio file for background music playback.
+   * @param {string} url - The URL of the audio resource.
+   * @returns {Promise<void>}
+   */
   async loadMusic(url) {
     await this.init();
     if (this.isBroken) return;
@@ -86,6 +145,9 @@ class AudioEngine {
     }
   }
 
+  /**
+   * Starts playback of the loaded background music in a loop.
+   */
   playMusic() {
     if (!this.musicBuffer || this.isBroken) return;
     this.stopMusic(0);
@@ -96,6 +158,10 @@ class AudioEngine {
     this.musicSource.start();
   }
 
+  /**
+   * Stops the background music with an optional volume fade.
+   * @param {number} [fadeDuration=1.5] - Duration of the fade-out in seconds.
+   */
   stopMusic(fadeDuration = 1.5) {
     if (!this.musicSource) return;
     const source = this.musicSource;
@@ -114,6 +180,11 @@ class AudioEngine {
     this.musicSource = null;
   }
 
+  /**
+   * Plays a specific audio blob (useful for dynamic TTS playback).
+   * @param {Blob} blob - The audio data to play.
+   * @returns {Promise<void>}
+   */
   async playBlob(blob) {
     await this.init();
     if (this.isBroken) return;
@@ -129,6 +200,11 @@ class AudioEngine {
     }
   }
 
+  /**
+   * Temporarily ducks the background music volume.
+   * @param {number} level - Target volume multiplier (0.0 to 1.0).
+   * @param {number} [duration=0.2] - Time constant for the transition.
+   */
   duck(level, duration = 0.2) {
     if (!this.musicGain) return;
     const vol = parseFloat(localStorage.getItem("ui-volume") || "0.5");
@@ -139,6 +215,12 @@ class AudioEngine {
     );
   }
 
+  /**
+   * Plays a synthesized UI sound based on current sound profile.
+   * @param {string} id - The sound profile key (e.g., 'click', 'ping').
+   * @param {boolean} [checkMute=true] - Whether to respect the global mute setting.
+   * @returns {Promise<void>}
+   */
   async playUi(id, checkMute = true) {
     await this.init();
     const vol = parseFloat(localStorage.getItem("ui-volume") || "0.5");
@@ -148,7 +230,9 @@ class AudioEngine {
       if (this.ctx.state === "suspended") await this.ctx.resume();
 
       const profile =
-        SOUND_PROFILES[localStorage.getItem("sound-pack") || "modern"]?.[id];
+        AudioEngine.SOUND_PROFILES[
+          localStorage.getItem("sound-pack") || "modern"
+        ]?.[id];
       if (!profile) return;
 
       const osc = this.ctx.createOscillator();
@@ -176,6 +260,118 @@ class AudioEngine {
     } catch (e) {
       console.error("UI Sound error:", e);
     }
+  }
+
+  /**
+   * Updates the global UI sound pitch.
+   * @param {number|string} val - Pitch multiplier.
+   */
+  updatePitch(val) {
+    this.uiPitch = parseFloat(val);
+    localStorage.setItem("ui-pitch", val);
+  }
+
+  /**
+   * Updates the master UI volume and persists it to localStorage.
+   * @param {number|string} val - Volume level (0.0 to 1.0).
+   */
+  updateVolume(val) {
+    this.uiVolume = parseFloat(val);
+    localStorage.setItem("ui-volume", val);
+    const icon = this.uiVolume === 0 ? "🔇" : "🔊";
+    const targets = ["mute-toggle-btn", "header-mute-btn"];
+    targets.forEach((id) => {
+      const el = document.getElementById(id);
+      if (el) {
+        el.innerText = icon;
+        if (id === "header-mute-btn")
+          el.classList.toggle("audio-active", this.uiVolume > 0);
+      }
+    });
+    const banner = document.getElementById("mute-all-active");
+    if (banner) banner.style.display = this.uiVolume === 0 ? "flex" : "none";
+    this.updateVolumes();
+  }
+
+  /**
+   * Switches the active sound pack and plays a feedback sound.
+   * @param {string} pack - Name of the sound pack ('modern', 'classic', 'retro').
+   */
+  setSoundPack(pack) {
+    this.currentSoundPack = pack;
+    localStorage.setItem("sound-pack", pack);
+    document
+      .querySelectorAll(".pack-opt")
+      .forEach((opt) =>
+        opt.classList.toggle("active", opt.dataset.pack === pack),
+      );
+    this.playUi("click", false);
+  }
+
+  /**
+   * Toggles between muted and last active volume.
+   */
+  toggleMute() {
+    this.playUi("click", false);
+    if (this.uiVolume > 0) {
+      this.lastVolume = this.uiVolume;
+      this.updateVolume(0);
+    } else {
+      this.updateVolume(this.lastVolume);
+    }
+    const slider = document.getElementById("ui-volume-slider");
+    if (slider) slider.value = this.uiVolume;
+  }
+
+  /**
+   * Resets all audio settings to their factory defaults.
+   * @returns {boolean} - Always returns true on success.
+   */
+  resetToDefault() {
+    this.updateVolume(0.5);
+    this.updatePitch(1.0);
+    this.setSoundPack("modern");
+    const volSlider = document.getElementById("ui-volume-slider");
+    const pitchSlider = document.getElementById("ui-pitch-slider");
+    if (volSlider) volSlider.value = 0.5;
+    if (pitchSlider) pitchSlider.value = 1.0;
+    return true;
+  }
+
+  /**
+   * Starts a real-time frequency visualizer on the provided canvas.
+   * Uses the analyser node to render dynamic bars.
+   * @param {HTMLCanvasElement} canvas - The canvas to render the visualization.
+   */
+  startVisualizer(canvas) {
+    if (!this.analyser || !canvas) return;
+    const canvasCtx = canvas.getContext("2d");
+    const bufferLength = this.analyser.frequencyBinCount;
+    const dataArray = new Uint8Array(bufferLength);
+
+    const draw = () => {
+      if (!this.ctx || !document.contains(canvas)) return; // Stop loop if context closed or canvas removed
+      requestAnimationFrame(draw);
+      this.analyser.getByteFrequencyData(dataArray);
+
+      canvasCtx.clearRect(0, 0, canvas.width, canvas.height);
+      const barWidth = canvas.width / bufferLength;
+      let x = 0;
+
+      for (let i = 0; i < bufferLength; i++) {
+        const barHeight = (dataArray[i] / 255) * canvas.height;
+        // Use branding green with dynamic opacity based on frequency intensity
+        canvasCtx.fillStyle = `rgba(26, 92, 58, ${0.4 + (dataArray[i] / 255) * 0.6})`;
+        canvasCtx.fillRect(
+          x,
+          canvas.height - barHeight,
+          barWidth - 2,
+          barHeight,
+        );
+        x += barWidth;
+      }
+    };
+    draw();
   }
 }
 
@@ -220,13 +416,12 @@ class SpeechEngine {
     const btn = document.getElementById("ai-read-btn");
     if (btn) {
       btn.innerText = "🔊";
-      btn.title = I18N[currentLang].readAloud;
+      btn.title = t("readAloud");
     }
   }
 
   async toggle(container) {
     const btn = document.getElementById("ai-read-btn");
-    const t = I18N[currentLang];
     this.container = container;
 
     try {
@@ -236,13 +431,13 @@ class SpeechEngine {
           this.synth.pause();
           this.audio.duck(0);
           btn.innerText = "▶️";
-          btn.title = t.resumeReading;
+          btn.title = t("resumeReading");
           return;
         } else if (this.synth.paused) {
           this.synth.resume();
           this.audio.duck(0.3);
           btn.innerText = "⏸️";
-          btn.title = t.pauseReading;
+          btn.title = t("pauseReading");
           return;
         } else if (this.synth.speaking) {
           this.stop();
@@ -334,7 +529,7 @@ class SpeechEngine {
         // --- Fallback to Server-Side TTS ---
         addToast("info", t("preparingAudio"));
         btn.innerText = "🛑"; // Show stop button
-        btn.title = t.stopReading;
+        btn.title = t("stopReading");
 
         const blob = await fetchAiBriefBlob();
         if (!blob) {
@@ -359,7 +554,7 @@ class SpeechEngine {
       }
     } catch (e) {
       console.error("Speech Engine error:", e);
-      addToast("error", t.offline);
+      addToast("error", t("offline"));
       this.resetUI();
       if (this.currentBlobAudioSource) {
         this.currentBlobAudioSource.stop();
@@ -752,101 +947,13 @@ function addToast(type, message, duration = 4000) {
   }
 }
 
-/**
- * @typedef {Object} SoundEffect
- * @property {OscillatorType} type - The waveform (sine, square, etc.)
- * @property {number} f1 - Initial frequency
- * @property {number} [f2] - Ending frequency for ramps
- * @property {number} g - Gain (volume)
- * @property {number} d - Duration in seconds
- *
- * @typedef {Object.<string, SoundEffect>} SoundPack
- */
-
-/**
- * World-Class Audio Engine
- * Implements customizable sound profiles for UI feedback.
- * @type {Object.<string, SoundPack>}
- */
-const SOUND_PROFILES = {
-  modern: {
-    ping: { type: "triangle", f1: 1200, f2: 400, g: 0.05, d: 0.1 },
-    type: { type: "sine", f1: 2000, g: 0.01, d: 0.02 },
-    pop: { type: "sine", f1: 600, f2: 1200, g: 0.04, d: 0.1 },
-    click: { type: "sine", f1: 1600, g: 0.015, d: 0.04 },
-  },
-  classic: {
-    ping: { type: "sine", f1: 880, f2: 440, g: 0.06, d: 0.15 },
-    type: { type: "triangle", f1: 1200, g: 0.015, d: 0.03 },
-    pop: { type: "triangle", f1: 500, f2: 900, g: 0.05, d: 0.12 },
-    click: { type: "triangle", f1: 1000, g: 0.02, d: 0.05 },
-  },
-  retro: {
-    ping: { type: "square", f1: 400, f2: 100, g: 0.03, d: 0.2 },
-    type: { type: "square", f1: 600, g: 0.012, d: 0.04 },
-    pop: { type: "square", f1: 200, f2: 500, g: 0.03, d: 0.15 },
-    click: { type: "square", f1: 300, g: 0.025, d: 0.06 },
-  },
-};
-
-let uiVolume = parseFloat(localStorage.getItem("ui-volume") || "0.5");
-let lastVolume = uiVolume > 0 ? uiVolume : 0.5;
-let currentSoundPack = localStorage.getItem("sound-pack") || "modern";
-let uiPitch = parseFloat(localStorage.getItem("ui-pitch") || "1.0");
-
-window.updatePitch = (val) => {
-  uiPitch = parseFloat(val);
-  localStorage.setItem("ui-pitch", val);
-};
-
-window.updateVolume = (val) => {
-  uiVolume = parseFloat(val);
-  localStorage.setItem("ui-volume", val);
-  const icon = uiVolume === 0 ? "🔇" : "🔊";
-  const targets = ["mute-toggle-btn", "header-mute-btn"];
-  targets.forEach((id) => {
-    const el = document.getElementById(id);
-    if (el) {
-      el.innerText = icon;
-      if (id === "header-mute-btn")
-        el.classList.toggle("audio-active", uiVolume > 0);
-    }
-  });
-  const banner = document.getElementById("mute-all-active");
-  if (banner) banner.style.display = uiVolume === 0 ? "flex" : "none";
-};
-
-window.setSoundPack = (pack) => {
-  currentSoundPack = pack;
-  localStorage.setItem("sound-pack", pack);
-  document
-    .querySelectorAll(".pack-opt")
-    .forEach((opt) =>
-      opt.classList.toggle("active", opt.dataset.pack === pack),
-    );
-  playClickSound();
-};
-
-window.toggleMute = () => {
-  playClickSound();
-  if (uiVolume > 0) {
-    lastVolume = uiVolume;
-    updateVolume(0);
-  } else {
-    updateVolume(lastVolume);
-  }
-  const slider = document.getElementById("ui-volume-slider");
-  if (slider) slider.value = uiVolume;
-};
+window.updatePitch = (val) => audioEngine.updatePitch(val);
+window.updateVolume = (val) => audioEngine.updateVolume(val);
+window.setSoundPack = (pack) => audioEngine.setSoundPack(pack);
+window.toggleMute = () => audioEngine.toggleMute();
 
 window.resetAudioToDefault = () => {
-  updateVolume(0.5);
-  updatePitch(1.0);
-  setSoundPack("modern");
-  const volSlider = document.getElementById("ui-volume-slider");
-  const pitchSlider = document.getElementById("ui-pitch-slider");
-  if (volSlider) volSlider.value = 0.5;
-  if (pitchSlider) pitchSlider.value = 1.0;
+  audioEngine.resetToDefault();
   addToast(
     "success",
     currentLang === "en"
@@ -1153,136 +1260,9 @@ window.shareAiBriefAudio = async () => {
   }
 };
 
-/**
- * World-Class Text-to-Speech Engine
- * Integrates Web Speech API for AI summary narration.
- */
-let speechSynth = window.speechSynthesis;
-let currentUtterance = null;
-let originalAiText = "";
-
-window.toggleReadAloud = async () => {
-  const btn = document.getElementById("ai-read-btn");
+window.toggleReadAloud = () => {
   const container = document.getElementById("ai-brief-text");
-  const t = I18N[currentLang];
-
-  try {
-    if (!speechSynth) throw new Error("Speech Synthesis not available");
-
-    if (speechSynth.speaking && !speechSynth.paused) {
-      speechSynth.pause();
-      audioEngine.duck(0);
-      btn.innerText = "▶️"; // Play icon
-      btn.title = t.resumeReading;
-      return;
-    } else if (speechSynth.paused) {
-      speechSynth.resume();
-      audioEngine.duck(0.3);
-      btn.innerText = "⏸️"; // Pause icon
-      btn.title = t.pauseReading;
-      return;
-    } else if (speechSynth.speaking) {
-      // Smooth stop: Fade out music, then cancel speech
-      audioEngine.stopMusic(1.5);
-      setTimeout(() => {
-        speechSynth.cancel();
-        if (originalAiText) container.innerText = originalAiText;
-        btn.innerText = "🔊";
-        btn.title = t.readAloud;
-      }, 800);
-      return;
-    }
-
-    await audioEngine.loadMusic(
-      localStorage.getItem("music-track") || "/ambient-focus.mp3",
-    );
-
-    originalAiText = container.innerText;
-    if (!originalAiText) return;
-
-    currentUtterance = new SpeechSynthesisUtterance(originalAiText);
-    // Map local currentLang to standard BCP 47 language tags
-    currentUtterance.lang = currentLang === "ne" ? "ne-NP" : "en-US";
-
-    // Apply User-Selected Voice
-    const savedVoiceUri = localStorage.getItem("tts-voice-uri");
-    if (savedVoiceUri) {
-      const voices = speechSynthesis.getVoices();
-      currentUtterance.voice =
-        voices.find((v) => v.voiceURI === savedVoiceUri) || null;
-    }
-
-    currentUtterance.rate = parseFloat(
-      localStorage.getItem("tts-rate") || "0.95",
-    );
-    currentUtterance.pitch = parseFloat(
-      localStorage.getItem("tts-pitch") || "1.0",
-    );
-
-    // Prepare Highlightable Spans
-    const words = originalAiText.split(/(\s+)/);
-    const spanMap = [];
-    let cumulativeIdx = 0;
-
-    container.innerHTML = "";
-    words.forEach((w) => {
-      if (w.trim().length > 0) {
-        const span = document.createElement("span");
-        span.innerText = w;
-        container.appendChild(span);
-        spanMap.push({
-          start: cumulativeIdx,
-          end: cumulativeIdx + w.length,
-          el: span,
-        });
-      } else {
-        container.appendChild(document.createTextNode(w));
-      }
-      cumulativeIdx += w.length;
-    });
-
-    currentUtterance.onboundary = (event) => {
-      if (event.name !== "word") return;
-      const match = spanMap.find(
-        (m) => event.charIndex >= m.start && event.charIndex < m.end,
-      );
-      if (match) {
-        spanMap.forEach((m) => m.el.classList.remove("highlight-word"));
-        match.el.classList.add("highlight-word");
-
-        // Auto-Scroll: Ensure the currently spoken word stays within the user's view
-        match.el.scrollIntoView({ behavior: "smooth", block: "nearest" });
-      }
-    };
-
-    currentUtterance.onstart = () => {
-      btn.innerText = "🛑";
-      btn.title = t.pauseReading; // Initially pause, then stop
-      audioEngine.playMusic();
-    };
-
-    currentUtterance.onend = () => {
-      audioEngine.stopMusic(2.0); // Natural finish fade-out
-      container.innerText = originalAiText;
-      btn.innerText = "🔊";
-      btn.title = t.readAloud;
-    };
-
-    currentUtterance.onerror = (err) => {
-      audioEngine.stopMusic(0.2);
-      console.error("Speech Synthesis Utterance error:", err);
-      container.innerText = originalAiText;
-      btn.innerText = "🔊";
-    };
-
-    speechSynth.speak(currentUtterance);
-  } catch (e) {
-    handleAudioError(e, "Speech Synthesis failed");
-    addToast(
-      "error",
-      currentLang === "en" ? "Speech unavailable" : "वाचन उपलब्ध छैन",
-    );
-  }
+  if (container) speechEngine.toggle(container);
 };
 
 function typeText(element, text, useSound = false) {
@@ -1793,60 +1773,121 @@ const I18N = {
   },
 };
 
-// Minimal critical translations hardcoded for bootstrapping
-const CRITICAL_LABELS = {
-  ne: {
-    govt: "नेपाल सरकार",
-    ministry: "भौतिक पूर्वाधार तथा यातायात मन्त्रालय",
-    dept: "सडक विभाग",
-    city: "चाकुपाट, ललितपुर",
-    mainTitle: "DoR सडक विभाग",
-    reportTitle: "DoR प्रगति प्रतिवेदन (साप्ताहिक)",
-    total: "कुल सूचक",
-    met: "लक्ष्य",
-    attention: "ध्यान",
-    update: "अन्तिम अपडेट",
-    live: "● प्रत्यक्ष",
-    offline: "● अफलाइन",
-    search: "खोज",
-    progress: "प्रगति",
-    results: "नतिजाहरू",
-  },
-  en: {
-    govt: "Government of Nepal",
-    ministry: "Ministry of Physical Infrastructure & Transport",
-    dept: "Department of Roads",
-    city: "Chakupat, Lalitpur",
-    mainTitle: "DoR MIS Dashboard",
-    reportTitle: "DoR Progress Report (Weekly)",
-    total: "Total",
-    met: "Met",
-    attention: "Attention",
-    update: "Updated",
-    live: "● LIVE",
-    offline: "● OFFLINE",
-    search: "Search",
-    progress: "PROGRESS",
-    results: "Results",
-  },
-};
+/**
+ * Core Dashboard Manager
+ * Encapsulates application state, rendering lifecycle, and data synchronization.
+ */
+class Dashboard {
+  static _instance = null;
 
-let currentLang = "ne"; // Initialize to Nepali by default
-let currentView = "table";
-let currentSort = { key: null, dir: 1 };
-let searchText = "";
-let store = null;
-let deferredPrompt;
-let systemRiskLevel = 0;
-let refreshCounter = 60;
-let intentTimer = null;
-let lastSnapshotUpdate = null; // Track lastUpdate for automatic snapshot creation
+  constructor() {
+    // Enforce singleton pattern: if an instance already exists, return it.
+    // This prevents multiple instances from being created even if `new Dashboard()`
+    // is called directly after the first instance.
+    if (Dashboard._instance) {
+      return Dashboard._instance;
+    }
+    this.lang =
+      localStorage.getItem("pref-lang") ||
+      (navigator.language.startsWith("en") ? "en" : "ne");
+    this.view = "table";
+    this.sort = { key: null, dir: 1 };
+    this.search = "";
+    this.store = null;
+    this.riskLevel = 0;
+    this.refreshCounter = 60;
+    this.lastFetchTime = null;
+    this.latencyHistory = [];
+    this.intentTimer = null;
+    this.lastSnapshotUpdate = null;
+
+    this.initTimer();
+    // Store the newly created instance
+    Dashboard._instance = this;
+  }
+
+  // Static method to get the single instance of the Dashboard
+  static getInstance() {
+    if (!Dashboard._instance) {
+      Dashboard._instance = new Dashboard();
+    }
+    return Dashboard._instance;
+  }
+
+  initTimer() {
+    setInterval(() => {
+      this.refreshCounter--;
+      if (this.refreshCounter <= 0) {
+        this.refreshCounter = 60;
+        this.loadData();
+      }
+      const timerEl = document.getElementById("refresh-timer");
+      if (timerEl) {
+        timerEl.innerText = `(${t("refreshing")} ${this.refreshCounter}${t("sec")})`;
+      }
+    }, 1000);
+  }
+
+  async setLang(l) {
+    const prevLang = this.lang;
+    this.lang = l;
+    localStorage.setItem("pref-lang", l);
+
+    const lbl = document.getElementById("lang-current-label");
+    if (lbl) lbl.innerText = l.toUpperCase();
+
+    applyTranslations();
+    this.sort = { key: null, dir: 1 };
+
+    const titleEl = document.getElementById("main-title");
+    if (titleEl) titleEl.innerText = t("mainTitle");
+
+    const gBadge = document.getElementById("gemini-badge");
+    if (gBadge) gBadge.innerHTML = `${t("poweredBy")} <span>Gemini</span>`;
+
+    renderDropdowns();
+
+    if (prevLang !== l) {
+      const loader = document.getElementById("loader");
+      const msg = document.getElementById("loading-msg");
+      if (loader) loader.style.display = "flex";
+      if (msg) msg.innerText = t("loading");
+      await this.loadData();
+    } else if (this.store) {
+      this.render();
+    }
+  }
+
+  setView(v) {
+    this.view = v;
+    document
+      .querySelectorAll("#view-toggle .toggle-btn")
+      .forEach((b) => b.classList.toggle("active", b.id === "btn-" + v));
+    const tables = document.getElementById("view-table");
+    const cards = document.getElementById("view-cards");
+    const charts = document.getElementById("view-charts");
+    if (tables) tables.classList.toggle("active-view", v === "table");
+    if (cards) cards.classList.toggle("active-view", v === "cards");
+    if (charts) charts.classList.toggle("active-view", v === "charts");
+
+    const verify = document.getElementById("view-verify");
+    const history = document.getElementById("view-history");
+    if (verify) verify.style.display = v === "verify" ? "block" : "none";
+    if (history) history.style.display = v === "history" ? "block" : "none";
+
+    if (this.store) this.render();
+  }
+}
+
+const dashboard = Dashboard.getInstance();
+let deferredPrompt; // PWA prompt remains global as it interacts with browser events
 
 /**
  * Translation Helper
  * Priority: Dynamic JSON from Sheet > Hardcoded I18N fallback > Key name
  */
 const t = (key, count) => {
+  const currentLang = dashboard.lang;
   let finalKey = key;
 
   if (count !== undefined) {
@@ -1924,17 +1965,17 @@ document.addEventListener("mousemove", (e) => {
       auraHalo.classList.add("critical");
 
       // Calculate dynamic intensity: higher risk = faster, wider glitch
-      const offset = 1 + systemRiskLevel * 5; // 1px to 6px
-      const duration = 0.15 - systemRiskLevel * 0.1; // 0.15s to 0.05s
+      const offset = 1 + dashboard.riskLevel * 5; // 1px to 6px
+      const duration = 0.15 - dashboard.riskLevel * 0.1; // 0.15s to 0.05s
       auraText.style.setProperty("--glitch-offset", `${offset}px`);
       auraText.style.setProperty("--glitch-dur", `${duration}s`);
       auraText.classList.add("glitch");
 
       // Expand halo based on risk
-      auraHalo.style.setProperty("--halo-scale", 1 + systemRiskLevel * 1.5);
+      auraHalo.style.setProperty("--halo-scale", 1 + dashboard.riskLevel * 1.5);
 
-      if (!intentTimer)
-        intentTimer = setTimeout(() => {
+      if (!dashboard.intentTimer)
+        dashboard.intentTimer = setTimeout(() => {
           handleSearch("critical");
           typeText(auraText, t("auraIsolated"));
         }, 1000);
@@ -1944,8 +1985,8 @@ document.addEventListener("mousemove", (e) => {
       auraHalo.classList.remove("critical");
       auraText.classList.remove("glitch");
       auraHalo.style.setProperty("--halo-scale", 1);
-      if (!intentTimer)
-        intentTimer = setTimeout(() => {
+      if (!dashboard.intentTimer)
+        dashboard.intentTimer = setTimeout(() => {
           handleSearch("good");
           typeText(auraText, t("auraFiltered"));
         }, 1000);
@@ -1956,17 +1997,14 @@ document.addEventListener("mousemove", (e) => {
     auraHalo.classList.remove("critical");
     auraText.classList.remove("glitch");
     auraHalo.style.setProperty("--halo-scale", 1);
-    if (intentTimer) {
-      clearTimeout(intentTimer);
-      intentTimer = null;
+    if (dashboard.intentTimer) {
+      clearTimeout(dashboard.intentTimer);
+      dashboard.intentTimer = null;
     }
   }
 });
 
 // Language Detection
-const userLocale = navigator.language || navigator.userLanguage;
-const initialLang = userLocale.startsWith("en") ? "en" : "ne";
-
 let originalTheme = "light";
 window.setTheme = (theme, persist = true) => {
   const color = theme === "dark" ? "#0b0f1a" : "#1a5c3a";
@@ -2009,59 +2047,11 @@ window.toggleTheme = () => {
   setTheme(current === "dark" ? "light" : "dark");
 };
 
-window.setLang = async function (l) {
-  const prevLang = currentLang;
-  currentLang = l;
-  localStorage.setItem("pref-lang", l);
+window.setLang = (l) => dashboard.setLang(l);
+window.setView = (v) => dashboard.setView(v);
 
-  // Update switch UI
-  const lbl = document.getElementById("lang-current-label");
-  if (lbl) lbl.innerText = l.toUpperCase();
-
-  // UI Sync
-  applyTranslations();
-  currentSort = { key: null, dir: 1 };
-
-  // Total UI Update
-  document.getElementById("main-title").innerText = t("mainTitle");
-
-  // Update Gemini badge text
-  const gBadge = document.getElementById("gemini-badge");
-  if (gBadge) gBadge.innerHTML = `${t("poweredBy")} <span>Gemini</span>`;
-
-  renderDropdowns();
-
-  // Trigger data reload if language changed or first load
-  if (prevLang !== l) {
-    document.getElementById("loader").style.display = "flex";
-    document.getElementById("loading-msg").innerText = t("loading");
-    await loadData();
-  } else if (store) {
-    render(store);
-  }
-};
-
-window.setView = setView;
-function setView(v) {
-  currentView = v;
-  document
-    .querySelectorAll("#view-toggle .toggle-btn")
-    .forEach((b) => b.classList.toggle("active", b.id === "btn-" + v));
-  document
-    .getElementById("view-table")
-    .classList.toggle("active-view", v === "table");
-  document
-    .getElementById("view-cards")
-    .classList.toggle("active-view", v === "cards");
-  document
-    .getElementById("view-charts")
-    .classList.toggle("active-view", v === "charts");
-  document.getElementById("view-verify").style.display =
-    v === "verify" ? "block" : "none";
-  document.getElementById("view-history").style.display =
-    v === "history" ? "block" : "none";
-  if (store) render(store);
-}
+const getLang = () => dashboard.lang;
+const getStore = () => dashboard.store;
 
 window.showInChartView = showInChartView;
 function showInChartView(name) {
@@ -2115,7 +2105,7 @@ function renderDropdowns() {
   const savedY = ySelect.value;
 
   // Populate Months from I18N Fallback
-  mSelect.innerHTML = I18N[currentLang].months
+  mSelect.innerHTML = I18N[dashboard.lang].months
     .map(
       (m, i) =>
         `<option value="${(i + 1).toString().padStart(2, "0")}">${m}</option>`,
@@ -2127,7 +2117,7 @@ function renderDropdowns() {
   ySelect.innerHTML = [currentADYear, currentADYear - 1, currentADYear - 2]
     .map(
       (y) =>
-        `<option value="${y}">${currentLang === "ne" ? toNepaliNumerals(y + 57) + " वि.सं." : y + " AD"}</option>`,
+        `<option value="${y}">${dashboard.lang === "ne" ? toNepaliNumerals(y + 57) + " वि.सं." : y + " AD"}</option>`,
     )
     .join("");
 
@@ -2137,7 +2127,7 @@ function renderDropdowns() {
 
 window.toggleHistory = toggleHistory;
 async function toggleHistory() {
-  if (currentView === "history") {
+  if (dashboard.view === "history") {
     setView("table");
     return;
   }
@@ -2255,19 +2245,14 @@ async function loadCumulative(type) {
   const period = `${year}-${month}`; // Construct period for API
 
   const res = await authenticatedFetch(
-    `${WORKER_BASE}/api/summary?type=${type}&year=${year}&month=${month}&lang=${currentLang}`,
+    `${WORKER_BASE}/api/summary?type=${type}&year=${year}&month=${month}&lang=${dashboard.lang}`,
   );
   const json = await res.json();
-  store = json;
+  dashboard.store = json;
   render(json);
   setView("table");
   document.getElementById("loader").style.display = "none";
-  addToast(
-    "success",
-    currentLang === "en"
-      ? `Cumulative ${type} report generated for ${period}.`
-      : `${period} को लागि संचयी ${type} प्रतिवेदन उत्पन्न भयो।`,
-  );
+  addToast("success", t("cumulativeReportSuccess", { period }));
 }
 
 window.downloadConsolidatedPdf = downloadConsolidatedPdf;
@@ -2366,10 +2351,10 @@ window.loadSnapshot = loadSnapshot;
 async function loadSnapshot(date) {
   document.getElementById("loader").style.display = "flex";
   const res = await authenticatedFetch(
-    `/api/report?date=${date}&lang=${currentLang}`,
+    `/api/report?date=${date}&lang=${dashboard.lang}`,
   );
   const json = await res.json();
-  store = json;
+  dashboard.store = json;
   render(json);
   setView("table");
   document.getElementById("loader").style.display = "none";
@@ -2386,19 +2371,20 @@ async function handleVerification() {
 
   setView("verify");
   document.getElementById("loader").style.display = "flex";
-  document.getElementById("verify-title").innerText =
-    I18N[currentLang].verificationTitle;
+  const verifyTitle = document.getElementById("verify-title");
+  if (verifyTitle)
+    verifyTitle.innerText = I18N[dashboard.lang].verificationTitle;
 
   try {
     // Construct internal API call to verify existence in KV (ensure year is passed for summary)
     const endpoint =
       type === "monthly"
-        ? `/api/summary?type=monthly&year=${period.split("-")[0]}&month=${period.split("-")[1]}&lang=${currentLang}`
-        : `/api/report?date=${period}&lang=${currentLang}`;
+        ? `/api/summary?type=monthly&year=${period.split("-")[0]}&month=${period.split("-")[1]}&lang=${dashboard.lang}`
+        : `/api/report?date=${period}&lang=${dashboard.lang}`;
     const res = await authenticatedFetch(endpoint);
     if (res.ok) {
       document.getElementById("verify-msg").innerText =
-        I18N[currentLang].verifiedSuccess;
+        I18N[dashboard.lang].verifiedSuccess;
       document.getElementById("verify-msg").style.color = "var(--good)";
       document.getElementById("verify-details").innerHTML =
         `<b>Type:</b> ${type.toUpperCase()}<br><b>Period:</b> ${period}<br><b>Status:</b> SYSTEM_MATCH_FOUND`;
@@ -2406,9 +2392,11 @@ async function handleVerification() {
       throw new Error();
     }
   } catch (e) {
-    document.getElementById("verify-msg").innerText =
-      I18N[currentLang].invalidReport;
-    document.getElementById("verify-msg").style.color = "var(--critical)";
+    const verifyMsg = document.getElementById("verify-msg");
+    if (verifyMsg) {
+      verifyMsg.innerText = I18N[dashboard.lang].invalidReport;
+      verifyMsg.style.color = "var(--critical)";
+    }
   }
   if (document.getElementById("loader"))
     document.getElementById("loader").style.display = "none";
@@ -2418,7 +2406,7 @@ window.checkDeepLink = checkDeepLink;
 function checkDeepLink() {
   const params = new URLSearchParams(window.location.search);
   const indicatorName = params.get("indicator");
-  if (indicatorName && store) {
+  if (indicatorName && dashboard.store) {
     showModal(indicatorName, null, true);
   }
 }
@@ -2428,18 +2416,22 @@ function handleSearch(term) {
   const input = document.getElementById("search-input");
   const clearBtn = document.getElementById("clear-search");
   if (term !== undefined) input.value = term;
-  searchText = input.value.toLowerCase();
+  dashboard.search = input.value.toLowerCase();
 
-  if (clearBtn) clearBtn.style.display = searchText ? "block" : "none";
+  if (clearBtn) clearBtn.style.display = dashboard.search ? "block" : "none";
 
   // Populate suggestions from the first column (Indicators)
-  if (store && store.headers && store.headers.length > 0) {
-    const indicatorKey = store.headers[0];
+  if (
+    dashboard.store &&
+    dashboard.store.headers &&
+    dashboard.store.headers.length > 0
+  ) {
+    const indicatorKey = dashboard.store.headers[0];
     const dl = document.getElementById("search-suggestions");
     if (dl) {
-      const matches = store.rows
+      const matches = dashboard.store.rows
         .map((r) => String(r[indicatorKey] || ""))
-        .filter((v) => v.toLowerCase().includes(searchText))
+        .filter((v) => v.toLowerCase().includes(dashboard.search))
         .slice(0, 10);
       dl.innerHTML = [...new Set(matches)]
         .map((m) => `<option value="${m}">`)
@@ -2447,17 +2439,17 @@ function handleSearch(term) {
     }
   }
 
-  if (store) render(store);
+  if (dashboard.store) render(dashboard.store);
 }
 
 window.sortData = sortData;
 function sortData(key) {
-  if (currentSort.key === key) currentSort.dir *= -1;
+  if (dashboard.sort.key === key) dashboard.sort.dir *= -1;
   else {
-    currentSort.key = key;
-    currentSort.dir = 1;
+    dashboard.sort.key = key;
+    dashboard.sort.dir = 1;
   }
-  render(store);
+  render(dashboard.store);
 }
 
 window.shareApp = shareApp;
@@ -4061,8 +4053,6 @@ function render(json) {
     document.getElementById("ai-brief-card").style.display = "block";
     let briefText = json.aiSummary.brief;
     if (currentLang === "ne") briefText = toNepaliNumerals(briefText);
-    // Type out the brief with the shimmer effect and sound enabled
-    typeText(document.getElementById("ai-brief-text"), briefText, true);
 
     const container = document.getElementById("ai-brief-text");
     if (!document.getElementById("ai-visualizer")) {
@@ -4070,8 +4060,9 @@ function render(json) {
         "beforebegin",
         '<canvas id="ai-visualizer" width="400" height="40" style="width:100%; height:40px; margin-bottom:12px; border-radius:8px; opacity:0.6"></canvas>',
       );
+      audioEngine.startVisualizer(document.getElementById("ai-visualizer"));
     }
-    typeText(container, briefText, true);
+    typeText(container, briefText, true); // Type out with shimmer and sound
   }
 
   const url = window.location.origin;

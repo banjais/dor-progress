@@ -5,6 +5,7 @@ import { googleAI } from "@genkit-ai/google-genai";
  * Helper to initialize Genkit with a specific API Key.
  * In Genkit v1, it's best to define the instance once.
  */
+/** @type {import('genkit').Genkit | null} */
 let aiInstance = null;
 /** @returns {import('genkit').Genkit} */
 export function getAi(apiKey) {
@@ -27,54 +28,45 @@ export async function runProjectSummary(apiKey, input) {
   const ai = getAi(apiKey);
   if (!ai) throw new Error("Genkit not initialized. API Key required.");
 
-  const generateProjectSummary = ai.defineFlow(
-    {
-      name: "generateProjectSummary",
-      inputSchema: z.object({
-        rows: z.array(z.record(z.any())),
-        lang: z.enum(["en", "ne"]).default("en"),
-      }),
-      outputSchema: z.object({
-        brief: z.string(),
-      }),
-    },
-    async (input) => {
-      try {
-        const response = await ai.generate({
-          model: googleAI.model("gemini-2.5-flash"),
-          prompt: `
-          You are a world-class senior infrastructure analyst for the Department of Roads (DoR), Nepal.
-          Review the following project progress data:
-          ${JSON.stringify(input.rows)}
+  // Use the pre-defined flow
+  return await ai.run("runSummary", () => generateProjectSummary(ai, input));
+}
 
-          Your task is to generate a concise "Executive Briefing" in ${input.lang === "ne" ? "Nepali" : "English"}.
+/**
+ * Flow logic defined as a helper to avoid re-registration.
+ */
+async function generateProjectSummary(ai, input) {
+  try {
+    const response = await ai.generate({
+      model: googleAI.model("gemini-2.0-flash"),
+      prompt: `
+      You are a world-class senior infrastructure analyst for the Department of Roads (DoR), Nepal.
+      Review the following project progress data:
+      ${JSON.stringify(input.rows)}
 
-          Guidelines:
-          1. Identify the overall health of the road network projects.
-          2. Specifically call out any projects that are falling behind (critical status).
-          3. Mention one or two projects that are exceeding performance targets.
-          4. Use a professional, authoritative, and helpful tone.
-          5. Keep the briefing under 100 words so it fits well in the UI.
-        `,
-        });
+      Your task is to generate a concise "Executive Briefing" in ${input.lang === "ne" ? "Nepali" : "English"}.
 
-        if (
-          response.finishReason === "safety" ||
-          response.finishReason === "blocked"
-        ) {
-          return {
-            brief:
-              "This summary was blocked by safety filters. Please ensure project data adheres to department guidelines.",
-          };
-        }
-        return { brief: response.text };
-      } catch (e) {
-        console.error("[Genkit Flow Error]:", e);
-        // Using the same pattern for custom errors here
-        throw new Error("AI Summary Generation Failed", { cause: e });
-      }
-    },
-  );
+      Guidelines:
+      1. Identify the overall health of the road network projects.
+      2. Specifically call out any projects that are falling behind (critical status).
+      3. Mention one or two projects that are exceeding performance targets.
+      4. Use a professional, authoritative, and helpful tone.
+      5. Keep the briefing under 100 words so it fits well in the UI.
+    `,
+    });
 
-  return await ai.run("runSummary", () => generateProjectSummary(input));
+    if (
+      response.finishReason === "safety" ||
+      response.finishReason === "blocked"
+    ) {
+      return {
+        brief:
+          "This summary was blocked by safety filters. Please ensure project data adheres to department guidelines.",
+      };
+    }
+    return { brief: response.text };
+  } catch (e) {
+    console.error("[Genkit Flow Error]:", e);
+    throw new Error("AI Summary Generation Failed", { cause: e });
+  }
 }
