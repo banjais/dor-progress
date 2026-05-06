@@ -1,18 +1,60 @@
 {
-  "env": {
-    "browser": true,
-    "es2021": true,
-    "node": true,
-    "serviceworker": true
-  },
-  "extends": ["eslint:recommended", "prettier"],
+  "root": true,
+  "parser": "@typescript-eslint/parser",
   "parserOptions": {
     "ecmaVersion": "latest",
     "sourceType": "module"
   },
+  "plugins": [
+    "@typescript-eslint"
+  ],
+  "extends": [
+    "eslint:recommended",
+    "plugin:@typescript-eslint/recommended",
+    "prettier"
+  ],
+  "env": {
+    "es2022": true
+  },
   "rules": {
-    "no-unused-vars": "warn",
-    "no-console": "off",
-    "no-undef": "error"
-  }
+    "@typescript-eslint/no-explicit-any": "off",
+    "@typescript-eslint/no-unused-vars": [
+      "warn",
+      {
+        "argsIgnorePattern": "^_"
+      }
+    ],
+    "no-console": "off"
+  },
+  "overrides": [
+    {
+      "files": [
+        "src/main.js"
+      ],
+      "env": {
+        "browser": true
+      },
+      "globals": {
+        "PDFLib": "readonly",
+        "appCheck": "writable",
+        "FIREBASE_APPCHECK_DEBUG_TOKEN": "writable",
+        "store": "writable",
+        "currentLang": "writable",
+        "currentView": "writable",
+        "initialLang": "readonly",
+        "uiVolume": "writable",
+        "searchText": "writable",
+        "currentSort": "writable",
+        "systemRiskLevel": "writable"
+      }
+    },
+    {
+      "files": [
+        "src/worker.js"
+      ],
+      "env": {
+        "worker": true
+      }
+    }
+  ]
 }
