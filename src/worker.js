@@ -11,6 +11,7 @@ import { jwtVerify, createRemoteJWKSet } from "jose";
  * @property {string} DEBUG_MODE
  * @property {string} PUBLISHED_SHEET_ID
  * @property {string} RECAPTCHA_SITE_KEY
+ * @property {string} ADMIN_SECRET
  */
 
 /**
@@ -70,6 +71,55 @@ async function generateFingerprint(data) {
   const hashBuffer = await crypto.subtle.digest("SHA-256", msgUint8);
   const hashArray = Array.from(new Uint8Array(hashBuffer));
   return hashArray.map((b) => b.toString(16).padStart(2, "0")).join("");
+}
+
+/**
+ * Verifies the X-Admin-Secret header and Firebase App Check token.
+ * @param {Request} request
+ * @param {Env} env
+ * @returns {Promise<object | null>} Returns the App Check payload if successful, null otherwise.
+ * @throws {ServiceError} if authentication fails.
+ */
+async function verifyAdminAccess(request, env) {
+  const adminSecret = request.headers.get("X-Admin-Secret");
+  if (!adminSecret || adminSecret !== env.ADMIN_SECRET) {
+    throw new ServiceError("Unauthorized: Invalid Admin Secret", {
+      status: 401,
+    });
+  }
+
+  const appCheckToken = request.headers.get("X-Firebase-AppCheck");
+  if (!appCheckToken) {
+    throw new ServiceError("Unauthorized: No App Check token", { status: 401 });
+  }
+
+  const isLocalDev = env.APP_ENV === "development" && env.DEBUG_MODE === "true";
+
+  if (!isLocalDev) {
+    try {
+      const projectNumber = env.FIREBASE_PROJECT_NUMBER;
+      const { payload } = await jwtVerify(appCheckToken, JWKS, {
+        issuer: `https://firebaseappcheck.googleapis.com/${projectNumber}`,
+        audience: [
+          `projects/${projectNumber}`,
+          `projects/${env.FIREBASE_PROJECT_ID}`,
+        ],
+        clockTolerance: "1m",
+      });
+      return payload;
+    } catch (e) {
+      console.error(
+        "[Security] App Check verification failed for admin endpoint:",
+        /** @type {any} */ (e).message,
+      );
+      throw new ServiceError("Unauthorized: Invalid App Check Token", {
+        status: 401,
+        cause: e,
+      });
+    }
+  }
+  // In local dev, return a dummy payload
+  return { sub: "local-dev-admin", email: "dev@example.com" };
 }
 
 // Firebase App Check public keys URL
@@ -167,7 +217,7 @@ export default {
       }
     }
 
-    // Handle the /api/report endpoint
+    // Handle the /api/report endpoint (Live Data & AI Summary)
     if (url.pathname === "/api/report") {
       const appCheckToken = request.headers.get("X-Firebase-AppCheck");
 
@@ -341,7 +391,9 @@ export default {
 };
 
 /**
+ * Fetches and parses project data from the configured Google Sheet.
  * @param {Env} env
+ * @param {string} [lang="en"]
  * @returns {Promise<{headers: string[], rows: ProjectRow[]}>}
  */
 async function fetchProjectData(env, lang = "en") {

@@ -3,6 +3,7 @@ import translationsData from "./locales/translations.json" with { type: "json" }
 const WORKER_BASE = import.meta.env.VITE_API_BASE_URL || "";
 const APP_VERSION = import.meta.env.VITE_APP_VERSION || "unknown"; // Access the version from package.json
 const BUILD_ID = import.meta.env.VITE_BUILD_ID || "dev";
+const APP_ENV = import.meta.env.VITE_APP_ENV || "production";
 const COMMIT_SHA = import.meta.env.VITE_COMMIT_SHA || "dev";
 
 import { initializeApp } from "firebase/app";
@@ -11,7 +12,6 @@ import {
   ReCaptchaEnterpriseProvider,
   getToken,
 } from "firebase/app-check";
-import * as PDFLib from "pdf-lib";
 
 /**
  * World-Class Audio Engine
@@ -739,7 +739,7 @@ async function setupSecurity() {
     setTimeout(checkFreshInstall, 3000); // Check for backups after UI is stable
 
     // Initialize Audio Icon State
-    updateVolume(audioEngine.uiVolume);
+    updateVolume(uiVolume);
 
     // Version Badge Check
     const swVersion = await getActiveSwVersion();
@@ -1288,10 +1288,18 @@ function typeText(element, text, useSound = false) {
 }
 
 function showDiagnostics() {
-  if (!dashboard.store) return;
-  const criticalRows = dashboard.store.rows.filter(
-    (r) => r._status === "critical",
-  );
+  // Lock debug access: only allow diagnostics in development mode
+  if (APP_ENV === "production") {
+    console.warn("[Security] Diagnostic access denied in production.");
+    addToast(
+      "error",
+      currentLang === "en" ? "Access Denied" : "पहुँच अस्वीकृत",
+    );
+    return;
+  }
+
+  if (!store) return;
+  const criticalRows = store.rows.filter((r) => r._status === "critical");
   const t = I18N[currentLang];
   const dispCount =
     currentLang === "ne"
@@ -1352,8 +1360,8 @@ function showDiagnostics() {
 
   const diagListContainer = document.createElement("div");
   criticalRows.forEach((r) => {
-    const name = r[dashboard.store.headers[0]];
-    const prog = getProgress(r, dashboard.store.headers);
+    const name = r[store.headers[0]];
+    const prog = getProgress(r, store.headers);
     const dispProg = currentLang === "ne" ? toNepaliNumerals(prog) : prog;
 
     const itemDiv = document.createElement("div");
@@ -1401,8 +1409,8 @@ async function exportHealthReport() {
   if (!period) return;
 
   const [year, month] = period.split("-");
-  const originalStore = dashboard.store;
-  const originalView = dashboard.view;
+  const originalStore = store;
+  const originalView = currentView;
 
   // Generate Bikram Sambat date string using I18N months and Nepali numerals
   const bsYear = parseInt(year) + 57;
@@ -1453,7 +1461,7 @@ async function exportHealthReport() {
         : `कुल जोखिम स्कोर: ${dispScore}%`;
 
     // Temporarily switch to historical store and filter for critical
-    dashboard.store = json;
+    store = json;
     handleSearch("critical");
     setView("table");
 
@@ -1470,8 +1478,8 @@ async function exportHealthReport() {
       reportTitleEl.innerText = originalTitle;
       qrEl.src = originalQr;
       riskSummaryEl.style.display = "none";
-      dashboard.store = originalStore;
-      render(dashboard.store);
+      store = originalStore;
+      render(store);
       setView(originalView);
     }, 800);
   } catch (e) {
@@ -1883,13 +1891,6 @@ class Dashboard {
 }
 
 const dashboard = Dashboard.getInstance();
-
-// Global getter for currentLang to maintain backward compatibility
-Object.defineProperty(window, "currentLang", {
-  get: () => dashboard.lang,
-  configurable: true,
-});
-const initialLang = dashboard.lang;
 let deferredPrompt; // PWA prompt remains global as it interacts with browser events
 
 /**
@@ -2520,11 +2521,9 @@ function renderMiniChart(percent, showTrend = false) {
 
 window.showModal = showModal;
 function showModal(indicatorName) {
-  const r = dashboard.store.rows.find(
-    (row) => row[dashboard.store.headers[0]] === indicatorName,
-  );
+  const r = store.rows.find((row) => row[store.headers[0]] === indicatorName);
   if (!r) return;
-  const headers = dashboard.store.headers;
+  const headers = store.headers;
   const progress = getProgress(r, headers);
   const dispProg = currentLang === "ne" ? toNepaliNumerals(progress) : progress;
 
@@ -2640,7 +2639,7 @@ window.createSnapshotManual = async (e) => {
       btn.disabled = false;
       return;
     }
-    if (!dashboard.store) {
+    if (!store) {
       addToast("error", "No data");
       btn.innerText = originalText;
       btn.disabled = false;
@@ -2653,12 +2652,11 @@ window.createSnapshotManual = async (e) => {
         "X-Admin-Secret": adminKey,
       },
       body: JSON.stringify({
-        records: dashboard.store.rows || [],
+        records: store.rows || [],
         meta: {
           lastUpdate:
-            dashboard.store.lastUpdate ||
-            new Date().toISOString().split("T")[0],
-          total: dashboard.store.rows?.length || 0,
+            store.lastUpdate || new Date().toISOString().split("T")[0],
+          total: store.rows?.length || 0,
         },
       }),
     });
@@ -2770,7 +2768,7 @@ window.deleteSnapshot = async (date) => {
 
 window.showSettings = async () => {
   const t = I18N[currentLang];
-  const originalTheme = document.body.getAttribute("data-theme") || "light";
+  originalTheme = document.body.getAttribute("data-theme") || "light";
   const isLowData = localStorage.getItem("low-data") === "true";
   const isSystemFont = localStorage.getItem("system-font") === "true";
   const fontMultiplier = localStorage.getItem("font-multiplier") || "1";
@@ -2780,9 +2778,6 @@ window.showSettings = async () => {
   const isHighContrast = localStorage.getItem("high-contrast") === "true";
   const isGrayscale = localStorage.getItem("grayscale") === "true";
   const isSepia = localStorage.getItem("blue-light") === "true";
-  const uiVolume = audioEngine.uiVolume;
-  const uiPitch = audioEngine.uiPitch;
-  const currentSoundPack = audioEngine.currentSoundPack;
   const swVersion = await getActiveSwVersion();
 
   // Clear the "New Feature" badge
@@ -3402,14 +3397,18 @@ async function updateStorageUsageDisplay() {
 }
 
 window.clearDataCache = async () => {
-  if ("caches" in window) {
-    // Clear the data cache which stores our API responses
-    await caches.delete("road-data-v1");
+  if (navigator.serviceWorker && navigator.serviceWorker.controller) {
+    // Communicate with Service Worker to clear the correct cache (dor-data-v2)
+    navigator.serviceWorker.controller.postMessage({
+      action: "clear-data-cache",
+    });
     addToast(
       "success",
       currentLang === "en" ? "Data cache cleared!" : "डाटा क्यास मेटाइयो!",
     );
-    loadData();
+    setTimeout(() => loadData(true), 500);
+  } else {
+    addToast("error", "Service Worker unavailable");
   }
 };
 
@@ -3497,7 +3496,7 @@ window.toggleLowData = (enabled) => {
     );
   }
   // Immediately re-render the dashboard to reflect the change
-  if (dashboard.store) render(dashboard.store);
+  if (store) render(store);
 };
 
 window.toggleSystemFont = (enabled) => {
@@ -3868,7 +3867,7 @@ async function loadData(isForced = false) {
   }
 
   // Clear the store immediately to prevent "ghost" data while loading
-  dashboard.store = null;
+  store = null;
 
   const skeleton = Array(10)
     .fill(
@@ -3896,7 +3895,7 @@ async function loadData(isForced = false) {
         addToast("info", I18N[currentLang].forceThrottled);
       }
 
-      dashboard.store = json;
+      store = json;
       render(json);
 
       if (isForced) {
@@ -3936,17 +3935,17 @@ function render(json) {
   }
 
   // 1. FILTER
-  if (dashboard.search && dashboard.search !== "verify") {
+  if (searchText && searchText !== "verify") {
     rows = rows.filter((r) =>
       Object.values(r).some((v) =>
-        String(v).toLowerCase().includes(dashboard.search),
+        String(v).toLowerCase().includes(searchText),
       ),
     );
   }
 
   // Update Results Counter
   const resCounter = document.getElementById("results-count");
-  if (dashboard.search && rows.length > 0 && resCounter) {
+  if (searchText && rows.length > 0 && resCounter) {
     const dispNum =
       currentLang === "ne" ? toNepaliNumerals(rows.length) : rows.length;
     resCounter.innerText = `${dispNum} ${t.results}`;
@@ -3956,7 +3955,14 @@ function render(json) {
   }
 
   // hidden Verification Audit Tool
-  if (dashboard.search === "verify") {
+  if (searchText === "verify") {
+    // Prevent debug audit tool from being accessed in production
+    if (APP_ENV === "production") {
+      dashboard.search = "";
+      if (input) input.value = "";
+      return;
+    }
+
     console.group("Data Integrity Audit: Spreadsheet vs Dashboard");
     const rawTotal = json.rows.length;
     const rawCritical = json.rows.filter(
@@ -4008,30 +4014,28 @@ function render(json) {
   }
 
   // Pre-calculate search patterns for highlighting
-  const arabicSearch = toArabicNumerals(dashboard.search);
+  const arabicSearch = toArabicNumerals(searchText);
   const isNumericSearch =
-    dashboard.search &&
-    !isNaN(parseFloat(arabicSearch)) &&
-    isFinite(arabicSearch);
+    searchText && !isNaN(parseFloat(arabicSearch)) && isFinite(arabicSearch);
 
   let highlightRegex = null;
-  if (dashboard.search) {
+  if (searchText) {
     const pattern = isNumericSearch
       ? `(${arabicSearch}|${toNepaliNumerals(arabicSearch)})`
-      : `(${dashboard.search.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")})`;
+      : `(${searchText.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")})`;
     highlightRegex = new RegExp(pattern, "gi");
   }
 
   // 2. SORT
-  if (dashboard.sort.key) {
+  if (currentSort.key) {
     rows.sort((a, b) => {
-      const v1 = a[dashboard.sort.key] ?? "";
-      const v2 = b[dashboard.sort.key] ?? "";
+      const v1 = a[currentSort.key] ?? "";
+      const v2 = b[currentSort.key] ?? "";
       const n1 = parseFloat(String(v1).replace(/,/g, "").replace("%", ""));
       const n2 = parseFloat(String(v2).replace(/,/g, "").replace("%", ""));
-      if (!isNaN(n1) && !isNaN(n2)) return (n1 - n2) * dashboard.sort.dir;
+      if (!isNaN(n1) && !isNaN(n2)) return (n1 - n2) * currentSort.dir;
       return (
-        String(v1).localeCompare(String(v2), currentLang) * dashboard.sort.dir
+        String(v1).localeCompare(String(v2), currentLang) * currentSort.dir
       );
     });
   }
@@ -4042,7 +4046,7 @@ function render(json) {
   const critical = rows.filter((r) => r._status === "critical").length;
 
   // Global System Instability Metric (0 to 1)
-  dashboard.riskLevel = total > 0 ? critical / total : 0;
+  systemRiskLevel = total > 0 ? critical / total : 0;
 
   const percent = total > 0 ? Math.round((good / total) * 100) : 0;
   const dispTotal = currentLang === "ne" ? toNepaliNumerals(total) : total;
@@ -4092,17 +4096,17 @@ function render(json) {
 
   // Sortable headers: Works regardless of column count or content
   headers.forEach((h, i) => {
-    thead += `<th onclick="sortData('${h}'); event.stopPropagation()">${h} ${dashboard.sort.key === h ? (dashboard.sort.dir === 1 ? "↑" : "↓") : ""}</th>`;
+    thead += `<th onclick="sortData('${h}'); event.stopPropagation()">${h} ${currentSort.key === h ? (currentSort.dir === 1 ? "↑" : "↓") : ""}</th>`;
   });
   thead += "</tr>";
   document.getElementById("thead").innerHTML = thead;
 
   let tbody = "";
-  if (rows.length === 0 && dashboard.search) {
+  if (rows.length === 0 && searchText) {
     tbody = `<tr><td colspan="${headers.length + 1}" style="text-align:center; padding:3rem; opacity:0.7">
           <div style="font-size:2.5rem; margin-bottom:10px">🔍</div>
           <div style="font-weight:bold; color:var(--text)" data-i18n="noResults"></div>
-           <div style="font-size:0.9rem; margin-bottom:15px; opacity:0.8">"${dashboard.search}"</div>
+          <div style="font-size:0.9rem; margin-bottom:15px; opacity:0.8">"${searchText}"</div>
           <button onclick="clearSearch()" class="retry-btn" style="margin:0" data-i18n="retrySearch"></button>
         </td></tr>`;
   } else {
@@ -4146,11 +4150,11 @@ function render(json) {
   // 5. CARDS
   let cards = "";
   if (rows.length === 0) {
-    if (dashboard.search) {
+    if (searchText) {
       cards = `<div class="chart-card" style="text-align:center; grid-column: 1 / -1; padding: 4rem;">
             <div style="font-size:3rem; margin-bottom:10px">🔎</div>
             <p style="font-weight:bold; font-size:1.1rem; color:var(--text)" data-i18n="noResults"></p>
-             <p style="margin-bottom:15px; opacity:0.8">"${dashboard.search}"</p>
+            <p style="margin-bottom:15px; opacity:0.8">"${searchText}"</p>
             <button onclick="clearSearch()" class="retry-btn" data-i18n="retrySearch"></button>
           </div>`;
     } else {
@@ -4330,7 +4334,7 @@ initDelegation();
  * Includes Devanagari font support for Nepali translations.
  */
 window.generateClientPDF = async () => {
-  if (!dashboard.store || !dashboard.store.rows.length)
+  if (!store || !store.rows.length)
     return addToast("error", "No data to export");
 
   addToast(
@@ -4366,10 +4370,10 @@ window.generateClientPDF = async () => {
     const { width, height } = page.getSize();
     let yOffset = height - 50;
 
-    const colWidth = (width - 100) / dashboard.store.headers.length;
+    const colWidth = (width - 100) / store.headers.length;
 
     const drawTableHeader = (currentPage) => {
-      dashboard.store.headers.forEach((h, i) => {
+      store.headers.forEach((h, i) => {
         currentPage.drawText(h, {
           x: 50 + i * colWidth,
           y: yOffset,
@@ -4411,10 +4415,8 @@ window.generateClientPDF = async () => {
     yOffset -= 30;
 
     // 3. Draw KPI Summary
-    const totalRows = dashboard.store.rows.length;
-    const critical = dashboard.store.rows.filter(
-      (r) => r._status === "critical",
-    ).length;
+    const totalRows = store.rows.length;
+    const critical = store.rows.filter((r) => r._status === "critical").length;
     page.drawRectangle({
       x: 50,
       y: yOffset - 10,
@@ -4436,7 +4438,7 @@ window.generateClientPDF = async () => {
     drawTableHeader(page);
 
     // 5. Draw Table Rows
-    dashboard.store.rows.forEach((row, rowIndex) => {
+    store.rows.forEach((row, rowIndex) => {
       // Pagination Check: If we are near the bottom, add a new page
       if (yOffset < 50) {
         page = pdfDoc.addPage([595.28, 841.89]);
@@ -4444,7 +4446,7 @@ window.generateClientPDF = async () => {
         drawTableHeader(page);
       }
 
-      dashboard.store.headers.forEach((h, i) => {
+      store.headers.forEach((h, i) => {
         let text = String(row[h] || "");
         if (currentLang === "ne") text = toNepaliNumerals(text);
 
@@ -4475,10 +4477,40 @@ window.generateClientPDF = async () => {
   }
 };
 
+/**
+ * Frontend Security Shield
+ * Prevents unauthorized code copying, editing, and inspection.
+ */
+function lockFrontend() {
+  if (APP_ENV !== "production") return;
+
+  // Disable Right-Click
+  document.addEventListener("contextmenu", (e) => e.preventDefault());
+
+  // Disable F12, Ctrl+Shift+I (Inspect), Ctrl+Shift+J (Console), Ctrl+U (View Source)
+  document.addEventListener("keydown", (e) => {
+    if (
+      e.keyCode === 123 ||
+      (e.ctrlKey &&
+        e.shiftKey &&
+        (e.keyCode === 73 || e.keyCode === 74 || e.keyCode === 67)) ||
+      (e.ctrlKey && e.keyCode === 85)
+    ) {
+      e.preventDefault();
+      return false;
+    }
+  });
+
+  // Disable Text Selection globally
+  document.body.style.userSelect = "none";
+  document.addEventListener("selectstart", (e) => e.preventDefault());
+}
+
 // Initialize App via Security Handshake
 setupSecurity();
+lockFrontend();
 
 // Mobile: default to card view (better for small screens)
-if (window.innerWidth < 768 && dashboard.view === "table") {
+if (window.innerWidth < 768 && currentView === "table") {
   setView("cards");
 }
