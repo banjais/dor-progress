@@ -35,7 +35,7 @@ import { jwtVerify, createRemoteJWKSet } from "jose";
 class ServiceError extends Error {
   /**
    * @param {string} message
-   * @param {{ cause?: Error, status?: number }} [options]
+   * @param {{ cause?: any, status?: number }} [options]
    */
   constructor(message, options) {
     super(message, options);
@@ -46,14 +46,17 @@ class ServiceError extends Error {
 
 /**
  * Traverses and logs the entire Error.cause chain for deep debugging.
- * @param {Error} err
+ * @param {any} err
  */
 function logErrorChain(err) {
   if (!err) return;
-  console.error(`[Error Hierarchy] ${err.name}: ${err.message}`);
-  let cause = err.cause;
+  const e = /** @type {any} */ (err);
+  console.error(`[Error Hierarchy] ${e.name}: ${e.message}`);
+  let cause = e.cause;
   while (cause) {
-    console.error(`  ↳ [Cause] ${cause.name || "Error"}: ${cause.message}`);
+    console.error(
+      `  ↳ [Cause] ${cause.name || "Error"}: ${cause.message || cause}`,
+    );
     cause = cause.cause;
   }
 }
@@ -137,7 +140,9 @@ export default {
         const archives = list.keys
           .map((k) => ({
             date: k.name.replace("report:", ""),
-            summary: k.metadata?.summary || "Weekly progress snapshot.",
+            summary:
+              /** @type {any} */ (k.metadata)?.summary ||
+              "Weekly progress snapshot.",
           }))
           .sort((a, b) => b.date.localeCompare(a.date));
 
@@ -203,7 +208,10 @@ export default {
             payload.sub,
           );
         } catch (e) {
-          console.error("[Security] App Check verification failed:", e.message);
+          console.error(
+            "[Security] App Check verification failed:",
+            /** @type {any} */ (e).message,
+          );
           return new Response(
             JSON.stringify({ error: "Invalid App Check Token" }),
             {
@@ -241,7 +249,7 @@ export default {
               { status: 404 },
             );
           }
-          report = archivedData;
+          report = /** @type {ProjectReport} */ (archivedData);
         } else {
           // 1. Fetch live data from Google Sheets
           const projectData = await fetchProjectData(env);
@@ -276,7 +284,7 @@ export default {
                 // env.GOOGLE_GENAI_API_KEY must be set via 'wrangler secret put'
                 aiResult = await runProjectSummary(env.GOOGLE_GENAI_API_KEY, {
                   rows: report.rows,
-                  lang: lang,
+                  lang: /** @type {any} */ (lang),
                 });
 
                 // Cache the successful result in KV (expire after 24 hours)
@@ -289,7 +297,7 @@ export default {
                 break;
               } catch (aiError) {
                 console.warn(
-                  `Genkit summary attempt ${i + 1}/${maxRetries} failed: ${aiError.message}`,
+                  `Genkit summary attempt ${i + 1}/${maxRetries} failed: ${/** @type {any} */ (aiError).message}`,
                 );
                 if (i < maxRetries - 1) {
                   // Implement exponential backoff
@@ -312,12 +320,13 @@ export default {
           },
         });
       } catch (err) {
-        console.error("Error processing /api/report request:", err);
-        logErrorChain(err);
+        const e = /** @type {any} */ (err);
+        console.error("Error processing /api/report request:", e);
+        logErrorChain(e);
         return new Response(
-          JSON.stringify({ error: err.message || "Internal Server Error" }),
+          JSON.stringify({ error: e.message || "Internal Server Error" }),
           {
-            status: err.status || 500,
+            status: e.status || 500,
             headers: {
               "Content-Type": "application/json",
               "Access-Control-Allow-Origin": "*",
@@ -400,13 +409,15 @@ async function fetchProjectData(env, lang = "en") {
           h.includes("हाल सम्म को बार्षिक प्रगति"),
       );
 
-      const t = parseFloat(String(row[targetKey] || "0"));
-      const p = parseFloat(String(row[progKey] || "0"));
-      const progress = t > 0 ? Math.round((p / t) * 100) : 0;
+      if (targetKey && progKey) {
+        const t = parseFloat(String(row[targetKey] || "0"));
+        const p = parseFloat(String(row[progKey] || "0"));
+        const progress = t > 0 ? Math.round((p / t) * 100) : 0;
 
-      row._progress = progress;
-      row._status =
-        progress >= 80 ? "good" : progress >= 40 ? "stable" : "critical";
+        row._progress = progress;
+        row._status =
+          progress >= 80 ? "good" : progress >= 40 ? "stable" : "critical";
+      }
 
       return row;
     });
@@ -421,8 +432,9 @@ async function fetchProjectData(env, lang = "en") {
 
     return { headers, rows };
   } catch (error) {
-    console.error("[fetchProjectData Error]:", error.message);
+    const e = /** @type {any} */ (error);
+    console.error("[fetchProjectData Error]:", e.message);
     // Re-throwing allows the main fetch() try/catch to return a proper 500 response
-    throw new ServiceError("Data synchronization failed", { cause: error });
+    throw new ServiceError("Data synchronization failed", { cause: e });
   }
 }
