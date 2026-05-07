@@ -5,7 +5,7 @@
 # ============================================================
 
 # Google Gemini AI
-GEMINI_API_KEY=
+GOOGLE_GENAI_API_KEY=
 
 # Firebase / App Check
 FIREBASE_API_KEY=

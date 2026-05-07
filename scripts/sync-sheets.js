@@ -10,8 +10,6 @@ import crypto from "crypto";
 import { execSync } from "child_process";
 
 // 💡 Configured via environment variable for security and flexibility
-const isVerbose =
-  process.argv.includes("--verbose") || process.argv.includes("-v");
 const isDryRun = process.argv.includes("--dry-run");
 
 /**
@@ -73,7 +71,7 @@ async function syncTranslations() {
     try {
       // Load existing file to check fingerprint before writing
       baseline = JSON.parse(fs.readFileSync(OUTPUT_PATH, "utf8"));
-    } catch (e) {
+    } catch {
       /* ignore baseline if file is missing or invalid JSON */
     }
   }
@@ -253,7 +251,7 @@ async function syncTranslations() {
       execSync(`pnpm exec prettier --write "${OUTPUT_PATH}" "${PUBLIC_PATH}"`, {
         stdio: "ignore",
       });
-    } catch (e) {
+    } catch {
       console.warn(
         "⚠️  Note: Prettier formatting skipped (not installed or failed).",
       );
@@ -267,7 +265,9 @@ async function syncTranslations() {
     // In CI, don't fail the build if translations can't sync - use existing files
     // Check if we're in CI environment
     if (process.env.GITHUB_ACTIONS) {
-      console.warn("⚠️ CI mode: Using existing translations to continue build.");
+      console.warn(
+        "⚠️ CI mode: Using existing translations to continue build.",
+      );
       process.exit(0); // Exit successfully to not break CI
     }
     process.exit(1);

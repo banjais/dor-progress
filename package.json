@@ -24,10 +24,15 @@
   "lint-staged": {
     "*.ts": [
       "eslint --fix",
+      "prettier --write",
       "bash -c 'npx tsc --build'"
     ],
     "*.js": [
-      "eslint --fix"
+      "eslint --fix",
+      "prettier --write"
+    ],
+    "*.{css,html,json}": [
+      "prettier --write"
     ]
   },
   "dependencies": {

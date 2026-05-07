@@ -4,37 +4,9 @@
  */
 
 import { PDFDocument, rgb, StandardFonts } from "pdf-lib";
-import { Tiktoken } from "js-tiktoken/lite";
 import { Env } from "./shared/types";
 
 /**
- * Official Branding Constants from dor.gov.np
- */
-const BRANDING = {
-  primary: "#8D1B1B", // DoR Crimson Red
-  secondary: "#003893", // DoR Navy Blue
-  accent: "#FFD700", // Gold accent
-  success: "#2E7D32", // High contrast green
-  warning: "#ED6C02", // High contrast orange
-  error: "#D32F2F", // High contrast red
-  background: "#F4F7F9", // Soft, eye-appealing cool gray (not pure white)
-  surface: "#FFFFFF", // Card/Paper color
-  textPrimary: "#1A1A1A", // Deep Charcoal for maximum sharpness
-  textSecondary: "#455A64", // Muted Blue-Gray for secondary info
-};
-
-const BRANDING_DARK = {
-  primary: "#B71C1C", // Darker Crimson Red for contrast
-  secondary: "#1A237E", // Darker Navy Blue
-  accent: "#FFEB3B", // Brighter Gold for contrast
-  success: "#66BB6A", // Brighter Green
-  warning: "#FFB300", // Brighter Orange
-  error: "#EF5350", // Brighter Red
-  background: "#121212", // Very dark gray for background
-  surface: "#1E1E1E", // Slightly lighter dark gray for cards
-  textPrimary: "#E0E0E0", // Light gray for primary text
-  textSecondary: "#A0A0A0", // Muted light gray for secondary info
-};
 
 // Static dictionary for common road department terms to minimize Gemini usage
 const DICTIONARY: Record<string, Record<string, string>> = {
@@ -388,15 +360,11 @@ export default {
       );
     }
 
-    let force = url.searchParams.get("force") === "true";
-    let isForceThrottled = false;
+    const force = url.searchParams.get("force") === "true";
     if (force && !normalizedPath.startsWith("/api/admin/")) {
       const forceLimitKey = `limit:force_rate:${clientIp}`;
       const isThrottled = await this.getRedisCache(forceLimitKey, env);
-      if (isThrottled) {
-        force = false;
-        isForceThrottled = true;
-      } else {
+      if (!isThrottled) {
         await this.setRedisCache(forceLimitKey, "active", env, 120);
       }
     }
@@ -560,7 +528,9 @@ export default {
     // API: Serve translations.json
     if (normalizedPath === "/api/translations") {
       // Try KV first (cached)
-      const cached = await env.TRANSLATION_KV.get("translations", { type: "json" });
+      const cached = await env.TRANSLATION_KV.get("translations", {
+        type: "json",
+      });
       if (cached) {
         return new Response(JSON.stringify(cached), {
           headers: { ...securityHeaders, "Content-Type": "application/json" },
@@ -569,14 +539,20 @@ export default {
 
       // Fallback: try to fetch from hosting (public/translations.json)
       try {
-        const res = await fetch("https://dor-progress.web.app/translations.json");
+        const res = await fetch(
+          "https://dor-progress.web.app/translations.json",
+        );
         if (res.ok) {
           const translations = await res.json();
           // Cache in KV for future requests
           ctx.waitUntil(
-            env.TRANSLATION_KV.put("translations", JSON.stringify(translations), {
-              expirationTtl: 3600, // 1 hour
-            })
+            env.TRANSLATION_KV.put(
+              "translations",
+              JSON.stringify(translations),
+              {
+                expirationTtl: 3600, // 1 hour
+              },
+            ),
           );
           return new Response(JSON.stringify(translations), {
             headers: { ...securityHeaders, "Content-Type": "application/json" },
@@ -592,7 +568,7 @@ export default {
       });
     }
 
-// Public API: Translation endpoint
+    // Public API: Translation endpoint
 
     if (normalizedPath === "/api/translate") {
       // 1. Verify Firebase App Check token to prevent unauthorized API usage
@@ -665,10 +641,10 @@ export default {
       // Perform translation
       const result = await translateWithGemini(text, targetLang, env, lowData);
 
-// Set rate limit cache (1 minute) — only if not circuit-broken
-       if (result.source !== "circuit-breaker") {
-         await this.setRedisCache(translateKey, "active", env, 60);
-       }
+      // Set rate limit cache (1 minute) — only if not circuit-broken
+      if (result.source !== "circuit-breaker") {
+        await this.setRedisCache(translateKey, "active", env, 60);
+      }
 
       return new Response(
         JSON.stringify({
@@ -684,83 +660,110 @@ export default {
       );
     }
 
-     // Snapshot API routes (require admin auth)
-      if (normalizedPath.startsWith("/api/snapshot")) {
-        const adminSecret = request.headers.get("X-Admin-Secret");
-        if (
-          !adminSecret ||
-          !env.ADMIN_SECRET ||
-          !secureCompare(adminSecret, env.ADMIN_SECRET)
-        ) {
+    // Snapshot API routes (require admin auth)
+    if (normalizedPath.startsWith("/api/snapshot")) {
+      const adminSecret = request.headers.get("X-Admin-Secret");
+      if (
+        !adminSecret ||
+        !env.ADMIN_SECRET ||
+        !secureCompare(adminSecret, env.ADMIN_SECRET)
+      ) {
+        return new Response(JSON.stringify({ error: "Unauthorized" }), {
+          status: 401,
+          headers: { ...securityHeaders, "Content-Type": "application/json" },
+        });
+      }
+
+      // GET /api/snapshots - list all snapshots
+      if (request.method === "GET" && normalizedPath === "/api/snapshots") {
+        const list =
+          (await env.TRANSLATION_KV.get<SnapshotMetadata[]>(
+            SNAPSHOT_LIST_KEY,
+            "json",
+          )) || [];
+        return new Response(JSON.stringify({ snapshots: list }), {
+          headers: { ...securityHeaders, "Content-Type": "application/json" },
+        });
+      }
+
+      // GET /api/snapshot?date=YYYY-MM-DD - get specific snapshot PDF
+      if (request.method === "GET" && normalizedPath === "/api/snapshot") {
+        const date = url.searchParams.get("date");
+        if (!date) {
           return new Response(
-            JSON.stringify({ error: "Unauthorized" }),
-            { status: 401, headers: { ...securityHeaders, "Content-Type": "application/json" } },
+            JSON.stringify({ error: "Missing 'date' parameter" }),
+            {
+              status: 400,
+              headers: {
+                ...securityHeaders,
+                "Content-Type": "application/json",
+              },
+            },
           );
         }
-
-        // GET /api/snapshots - list all snapshots
-        if (request.method === "GET" && normalizedPath === "/api/snapshots") {
-          const list = await env.TRANSLATION_KV.get<SnapshotMetadata[]>(SNAPSHOT_LIST_KEY, "json") || [];
-          return new Response(JSON.stringify({ snapshots: list }), {
+        const pdf = await env.TRANSLATION_KV.get(
+          `snapshot:pdf:${date}`,
+          "arrayBuffer",
+        );
+        if (!pdf) {
+          return new Response(JSON.stringify({ error: "Snapshot not found" }), {
+            status: 404,
             headers: { ...securityHeaders, "Content-Type": "application/json" },
           });
         }
-
-        // GET /api/snapshot?date=YYYY-MM-DD - get specific snapshot PDF
-        if (request.method === "GET" && normalizedPath === "/api/snapshot") {
-          const date = url.searchParams.get("date");
-          if (!date) {
-            return new Response(
-              JSON.stringify({ error: "Missing 'date' parameter" }),
-              { status: 400, headers: { ...securityHeaders, "Content-Type": "application/json" } },
-            );
-          }
-          const pdf = await env.TRANSLATION_KV.get(`snapshot:pdf:${date}`, "arrayBuffer");
-          if (!pdf) {
-            return new Response(
-              JSON.stringify({ error: "Snapshot not found" }),
-              { status: 404, headers: { ...securityHeaders, "Content-Type": "application/json" } },
-            );
-          }
-          return new Response(pdf, {
-            headers: { ...securityHeaders, "Content-Type": "application/pdf" },
-          });
-        }
-
-        // POST /api/snapshot - trigger manual snapshot
-        if (request.method === "POST" && normalizedPath === "/api/snapshot") {
-          const data = (await request.json().catch(() => ({ records: [], meta: {} }))) as ProjectData;
-          const metadata = await createSnapshot(env, ctx, data);
-          return new Response(
-            JSON.stringify({ success: true, metadata }),
-            { status: 201, headers: { ...securityHeaders, "Content-Type": "application/json" } },
-          );
-        }
-
-        // DELETE /api/snapshot?date=YYYY-MM-DD - delete snapshot
-        if (request.method === "DELETE" && normalizedPath === "/api/snapshot") {
-          const date = url.searchParams.get("date");
-          if (!date) {
-            return new Response(
-              JSON.stringify({ error: "Missing 'date' parameter" }),
-              { status: 400, headers: { ...securityHeaders, "Content-Type": "application/json" } },
-            );
-          }
-          await env.TRANSLATION_KV.delete(`snapshot:pdf:${date}`);
-          await env.TRANSLATION_KV.delete(`snapshot:meta:${date}`);
-          const list = await env.TRANSLATION_KV.get<SnapshotMetadata[]>(SNAPSHOT_LIST_KEY, "json") || [];
-          const updated = list.filter((s) => s.date !== date);
-          await env.TRANSLATION_KV.put(SNAPSHOT_LIST_KEY, JSON.stringify(updated));
-          return new Response(
-            JSON.stringify({ success: true, deleted: date }),
-            { headers: { ...securityHeaders, "Content-Type": "application/json" } },
-          );
-        }
+        return new Response(pdf, {
+          headers: { ...securityHeaders, "Content-Type": "application/pdf" },
+        });
       }
 
-      // Default fallback
-      return new Response("DoR API Operational", { headers: securityHeaders });
-   },
+      // POST /api/snapshot - trigger manual snapshot
+      if (request.method === "POST" && normalizedPath === "/api/snapshot") {
+        const data = (await request
+          .json()
+          .catch(() => ({ records: [], meta: {} }))) as ProjectData;
+        const metadata = await createSnapshot(env, ctx, data);
+        return new Response(JSON.stringify({ success: true, metadata }), {
+          status: 201,
+          headers: { ...securityHeaders, "Content-Type": "application/json" },
+        });
+      }
+
+      // DELETE /api/snapshot?date=YYYY-MM-DD - delete snapshot
+      if (request.method === "DELETE" && normalizedPath === "/api/snapshot") {
+        const date = url.searchParams.get("date");
+        if (!date) {
+          return new Response(
+            JSON.stringify({ error: "Missing 'date' parameter" }),
+            {
+              status: 400,
+              headers: {
+                ...securityHeaders,
+                "Content-Type": "application/json",
+              },
+            },
+          );
+        }
+        await env.TRANSLATION_KV.delete(`snapshot:pdf:${date}`);
+        await env.TRANSLATION_KV.delete(`snapshot:meta:${date}`);
+        const list =
+          (await env.TRANSLATION_KV.get<SnapshotMetadata[]>(
+            SNAPSHOT_LIST_KEY,
+            "json",
+          )) || [];
+        const updated = list.filter((s) => s.date !== date);
+        await env.TRANSLATION_KV.put(
+          SNAPSHOT_LIST_KEY,
+          JSON.stringify(updated),
+        );
+        return new Response(JSON.stringify({ success: true, deleted: date }), {
+          headers: { ...securityHeaders, "Content-Type": "application/json" },
+        });
+      }
+    }
+
+    // Default fallback
+    return new Response("DoR API Operational", { headers: securityHeaders });
+  },
 
   // Cron Trigger for JWKS caching (already implemented)
   /**
@@ -770,7 +773,7 @@ export default {
   async scheduled(
     event: ScheduledEvent,
     env: Env,
-    ctx: ExecutionContext,
+    _ctx: ExecutionContext,
   ): Promise<void> {
     const response = await fetch(
       "https://firebaseappcheck.googleapis.com/v1/jwks",
@@ -1054,7 +1057,7 @@ function generateChecksum(data: unknown): string {
 
 async function generateSnapshotPdf(
   data: ProjectData,
-  env: Env,
+  _env: Env,
 ): Promise<{ pdfBytes: Uint8Array; metadata: SnapshotMetadata }> {
   const pdfDoc = await PDFDocument.create();
   const page = pdfDoc.addPage([595.28, 841.89]);
@@ -1144,7 +1147,11 @@ async function enforceRetentionPolicy(
   env: Env,
   ctx: ExecutionContext,
 ): Promise<void> {
-  const list = await env.TRANSLATION_KV.get<SnapshotMetadata[]>(SNAPSHOT_LIST_KEY, "json") || [];
+  const list =
+    (await env.TRANSLATION_KV.get<SnapshotMetadata[]>(
+      SNAPSHOT_LIST_KEY,
+      "json",
+    )) || [];
   if (list.length <= SNAPSHOT_RETENTION_COUNT) return;
 
   const toDelete = list.slice(SNAPSHOT_RETENTION_COUNT);
@@ -1168,19 +1175,29 @@ async function createSnapshot(
   );
 
   ctx.waitUntil(
-    env.TRANSLATION_KV.put(`snapshot:meta:${metadata.date}`, JSON.stringify(metadata), {
-      expirationTtl: 86400 * 60,
-    }),
+    env.TRANSLATION_KV.put(
+      `snapshot:meta:${metadata.date}`,
+      JSON.stringify(metadata),
+      {
+        expirationTtl: 86400 * 60,
+      },
+    ),
   );
 
-  const list = await env.TRANSLATION_KV.get<SnapshotMetadata[]>(SNAPSHOT_LIST_KEY, "json") || [];
+  const list =
+    (await env.TRANSLATION_KV.get<SnapshotMetadata[]>(
+      SNAPSHOT_LIST_KEY,
+      "json",
+    )) || [];
   const existingIndex = list.findIndex((s) => s.date === metadata.date);
   if (existingIndex >= 0) {
     list[existingIndex] = metadata;
   } else {
     list.unshift(metadata);
   }
-  ctx.waitUntil(env.TRANSLATION_KV.put(SNAPSHOT_LIST_KEY, JSON.stringify(list)));
+  ctx.waitUntil(
+    env.TRANSLATION_KV.put(SNAPSHOT_LIST_KEY, JSON.stringify(list)),
+  );
   ctx.waitUntil(enforceRetentionPolicy(env, ctx));
 
   return metadata;
