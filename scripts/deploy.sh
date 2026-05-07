@@ -20,7 +20,11 @@ REPO_PATH=$(git remote get-url origin | sed -E 's/.*github.com[:\/](.*)(\.git)?/
 
 if [ ! -d "node_modules" ]; then
     echo "📦 node_modules not found. Installing dependencies..."
-    npm install
+    # Attempt standard install, fallback to legacy-peer-deps if ERESOLVE occurs
+    if ! npm install; then
+        echo "⚠️  Standard install failed. Retrying with --legacy-peer-deps..."
+        npm install --legacy-peer-deps
+    fi
 fi
 
 echo "📊 Running project diagnostics..."

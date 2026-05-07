@@ -1,6 +1,17 @@
 // @ts-nocheck
 /* eslint-disable */
 
+const syncStyle = document.createElement("style");
+syncStyle.textContent = `
+  @keyframes toast-progress-loop {
+    0% { transform: scaleX(0); transform-origin: left; }
+    50% { transform: scaleX(1); transform-origin: left; }
+    50.1% { transform: scaleX(1); transform-origin: right; }
+    100% { transform: scaleX(0); transform-origin: right; }
+  }
+`;
+document.head.appendChild(syncStyle);
+
 import translationsData from "./locales/translations.json" with { type: "json" };
 
 const WORKER_BASE = import.meta.env.VITE_API_BASE_URL || "";
@@ -774,7 +785,15 @@ async function authenticatedFetch(path, options = {}, maxRetries = 3) {
         }
       }
 
-      const response = await fetch(url, { ...options, headers });
+      /** @type {RequestInit} */
+      const fetchConfig = {
+        ...options,
+        headers,
+        // Ensure body is correctly typed for the fetch API
+        body: options.body ? /** @type {BodyInit} */ (options.body) : undefined,
+      };
+
+      const response = await fetch(url, fetchConfig);
       if (response.ok) {
         const isFromCache = response.headers.get("X-From-Cache") === "true";
         const isStale = response.headers.get("X-Is-Stale") === "true";
@@ -782,6 +801,8 @@ async function authenticatedFetch(path, options = {}, maxRetries = 3) {
 
         if (isStale) {
           dashboard.addToast("info", t("dataSyncing"), 2000);
+          if (this.syncToast) this.syncToast.click();
+          this.syncToast = this.addToast("info", t("dataSyncing"), -1);
         } else if (isFromCache) {
           const ageStr = cacheTime
             ? getRelativeTimeString(parseInt(cacheTime))
@@ -875,13 +896,26 @@ function addToast(type, message, duration = 4000) {
 
   const toast = document.createElement("div");
   toast.className = `toast ${type}`;
-  const isPersistent = duration === 0;
+  const isSyncing = duration === -1;
+  const isPersistent = duration === 0 || isSyncing;
 
   const icons = { success: "✅", info: "ℹ️", error: "❌" };
   toast.innerHTML = `
         <span>${icons[type] || ""}</span>
         <span>${message}</span>
-        ${isPersistent ? "" : '<div class="toast-progress"><div class="toast-bar" style="animation-duration:' + duration + 'ms"></div></div>'}
+        ${
+          isSyncing
+            ? `
+          <div class="toast-progress">
+            <div class="toast-bar" style="width: 100%; animation: toast-progress-loop 2s infinite ease-in-out;"></div>
+          </div>`
+            : isPersistent
+              ? ""
+              : `
+          <div class="toast-progress">
+            <div class="toast-bar" style="animation-duration:${duration}ms"></div>
+          </div>`
+        }
       `;
 
   const bar = toast.querySelector(".toast-bar");
@@ -897,6 +931,7 @@ function addToast(type, message, duration = 4000) {
       if (remaining.length === 0) {
         dismissAllBtn.style.display = "none";
       }
+      if (toast === dashboard.syncToast) dashboard.syncToast = null;
     }, 300);
   };
 
@@ -926,6 +961,7 @@ function addToast(type, message, duration = 4000) {
   if (container.querySelectorAll(".toast").length > 1) {
     dismissAllBtn.style.display = "block";
   }
+  return toast;
 }
 
 function getRelativeTimeString(timestamp) {
@@ -1157,7 +1193,6 @@ async function fetchAiBriefBlob() {
   if (!text) return null;
   const isPremium = localStorage.getItem("premium-tts") === "true";
   const res = await authenticatedFetch(
-    `/api/tts?lang=${currentLang}&quality=${isPremium ? "premium" : "standard"}&text=${encodeURIComponent(text)}`,
     `/api/tts?lang=${dashboard.state.lang}&quality=${isPremium ? "premium" : "standard"}&text=${encodeURIComponent(text)}`,
   );
   if (!res.ok) throw new Error();
@@ -1811,6 +1846,8 @@ class Dashboard {
     this.latencyHistory = [];
     this.intentTimer = null;
     this.lastSnapshotUpdate = null;
+    this.syncToast = null;
+    this.addToast = addToast;
 
     this.initTimer();
     // Store the newly created instance
@@ -2508,31 +2545,39 @@ function handleSearch(term) {
   const input = document.getElementById("search-input");
   const clearBtn = document.getElementById("clear-search");
   if (term !== undefined) input.value = term;
-  dashboard.state.search = input.value.toLowerCase();
 
-  if (clearBtn)
-    clearBtn.style.display = dashboard.state.search ? "block" : "none";
+  const val = input.value.toLowerCase();
+  if (dashboard.state.search === val) return;
 
-  // Populate suggestions from the first column (Indicators)
-  if (
-    dashboard.state.store &&
-    dashboard.state.store.headers &&
-    dashboard.state.store.headers.length > 0
-  ) {
-    const indicatorKey = dashboard.state.store.headers[0];
-    const dl = document.getElementById("search-suggestions");
-    if (dl) {
-      const matches = dashboard.state.store.rows
-        .map((r) => String(r[indicatorKey] || ""))
-        .filter((v) => v.toLowerCase().includes(dashboard.state.search))
-        .slice(0, 10);
-      dl.innerHTML = [...new Set(matches)]
-        .map((m) => `<option value="${m}">`)
-        .join("");
+  // Debounce logic to prevent lag during typing
+  if (this.searchTimeout) clearTimeout(this.searchTimeout);
+  this.searchTimeout = setTimeout(() => {
+    dashboard.state.search = val;
+
+    if (clearBtn)
+      clearBtn.style.display = dashboard.state.search ? "block" : "none";
+
+    // Populate suggestions from the first column (Indicators)
+    if (
+      dashboard.state.store &&
+      dashboard.state.store.headers &&
+      dashboard.state.store.headers.length > 0
+    ) {
+      const indicatorKey = dashboard.state.store.headers[0];
+      const dl = document.getElementById("search-suggestions");
+      if (dl) {
+        const matches = dashboard.state.store.rows
+          .map((r) => String(r[indicatorKey] || ""))
+          .filter((v) => v.toLowerCase().includes(dashboard.state.search))
+          .slice(0, 10);
+        dl.innerHTML = [...new Set(matches)]
+          .map((m) => `<option value="${m}">`)
+          .join("");
+      }
     }
-  }
 
-  if (dashboard.state.store) dashboard.render();
+    if (dashboard.state.store) dashboard.render();
+  }, 150);
 }
 
 window.sortData = sortData;
@@ -3817,6 +3862,10 @@ if ("serviceWorker" in navigator) {
   navigator.serviceWorker.addEventListener("message", (event) => {
     if (event.data && event.data.action === "api-data-updated") {
       console.log("[SW Notification] Fresh data available. Updating UI...");
+      if (dashboard.syncToast) {
+        dashboard.syncToast.click();
+        dashboard.syncToast = null;
+      }
       // Trigger a silent reload (isForced = false)
       // This will pull the fresh data from the now-updated SW cache
       dashboard.loadData(false);

@@ -34,7 +34,7 @@ export function getAi(apiKey) {
  * Generates the executive summary briefing for the DoR MIS Dashboard.
  *
  * @param {string} apiKey
- * @param {{rows: ProjectRow[], lang: 'en' | 'ne'}} input
+ * @param {{rows: ProjectRow[], lang: 'en' | 'ne', mainSheet?: Record<string, any>}} input
  * @returns {Promise<AiSummary>}
  */
 export async function runProjectSummary(apiKey, input) {
@@ -49,7 +49,7 @@ export async function runProjectSummary(apiKey, input) {
  * Flow logic defined as a helper to avoid re-registration.
  *
  * @param {import('genkit').Genkit} ai
- * @param {{rows: ProjectRow[], lang: 'en' | 'ne'}} input
+ * @param {{rows: ProjectRow[], lang: 'en' | 'ne', mainSheet?: Record<string, any>}} input
  * @returns {Promise<AiSummary>}
  */
 async function generateProjectSummary(ai, input) {
@@ -58,6 +58,9 @@ async function generateProjectSummary(ai, input) {
       model: googleAI.model("gemini-2.0-flash"),
       prompt: `
       You are a world-class senior infrastructure analyst for the Department of Roads (DoR), Nepal.
+      
+      Global Context: ${input.mainSheet ? JSON.stringify(input.mainSheet) : "Standard MIS context."}
+
       Review the following project progress data:
       ${JSON.stringify(input.rows)}
 

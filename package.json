@@ -41,7 +41,7 @@
   },
   "devDependencies": {
     "@cloudflare/workers-types": "^4.20260426.1",
-    "@eslint/js": "^10.0.1",
+    "@eslint/js": "^9.39.4",
     "@genkit-ai/google-genai": "^1.16.1",
     "@types/node": "^20.12.7",
     "@typescript-eslint/eslint-plugin": "^8.59.1",
@@ -49,7 +49,7 @@
     "concurrently": "^9.0.0",
     "dotenv": "^17.4.2",
     "esbuild": "^0.28.0",
-    "eslint": "^10.3.0",
+    "eslint": "9.39.4",
     "eslint-config-prettier": "^10.1.8",
     "eslint-plugin-n": "^17.24.0",
     "eslint-plugin-react": "^7.37.5",

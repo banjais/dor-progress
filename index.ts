@@ -1,3 +1,4 @@
+/// <reference types="@cloudflare/workers-types" />
 /**
  * Cloudflare Worker for DoR Progress Report
  * Features: Per-value translation, English key retention, and KV Caching.
@@ -138,6 +139,88 @@ function makeCacheKey(text: string, targetLang: string): string {
     hash = hash & hash; // Keep as 32-bit
   }
   return `trans:${targetLang}:${hash.toString(16)}`;
+}
+
+/**
+ * Identity-Aware Rate Limiting
+ */
+async function checkRateLimit(
+  id: string,
+  env: Env,
+  ctx: ExecutionContext,
+  tier: "L1" | "L2" | "both" = "both",
+): Promise<boolean> {
+  const now = Date.now();
+
+  // Tier 1: Memory (Fast Shield)
+  if (tier === "L1" || tier === "both") {
+    if (RATE_LIMIT_MAP.size > 10000) RATE_LIMIT_MAP.clear();
+    const record = RATE_LIMIT_MAP.get(id);
+    if (
+      record &&
+      now < record.reset &&
+      record.count > RATE_LIMIT_MAX_REQUESTS
+    ) {
+      return true;
+    }
+    if (!record || now > record.reset) {
+      RATE_LIMIT_MAP.set(id, { count: 1, reset: now + RATE_LIMIT_WINDOW_MS });
+    } else {
+      record.count++;
+    }
+  }
+
+  // Tier 2: Redis (Global Identity-based Guard)
+  if (tier === "L2" || tier === "both") {
+    const windowKey = Math.floor(now / 60000);
+    const redisKey = `rate:global:${id}:${windowKey}`;
+
+    const globalCount = await incrRedis(redisKey, env);
+    if (globalCount === 1) {
+      ctx.waitUntil(expireRedis(redisKey, 60, env));
+    }
+    if (globalCount !== null && globalCount > 150) {
+      return true;
+    }
+  }
+  return false;
+}
+
+async function getRedisCache(key: string, env: Env): Promise<string | null> {
+  if (!env.UPSTASH_REDIS_REST_URL) return "CONFIG_ERROR";
+  const baseUrl = env.UPSTASH_REDIS_REST_URL.replace(/\/$/, "");
+  const res = await fetch(`${baseUrl}/get/${key}`, {
+    headers: { Authorization: `Bearer ${env.UPSTASH_REDIS_REST_TOKEN}` },
+  });
+  if (!res.ok) return null;
+  const data = (await res.json()) as { result?: string };
+  return data.result ?? null;
+}
+
+async function setRedisCache(key: string, val: string, env: Env, ttl: number = 604800): Promise<void> {
+  if (!env.UPSTASH_REDIS_REST_URL) return;
+  const baseUrl = env.UPSTASH_REDIS_REST_URL.replace(/\/$/, "");
+  const cmd = ["SET", key, val, "EX", ttl];
+  await fetch(`${baseUrl}`, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${env.UPSTASH_REDIS_REST_TOKEN}` },
+    body: JSON.stringify(cmd),
+  });
+}
+
+async function incrRedis(key: string, env: Env): Promise<number | null> {
+  if (!env.UPSTASH_REDIS_REST_URL) return null;
+  const res = await fetch(`${env.UPSTASH_REDIS_REST_URL.replace(/\/$/, "")}/incr/${key}`, {
+    headers: { Authorization: `Bearer ${env.UPSTASH_REDIS_REST_TOKEN}` },
+  });
+  return res.ok ? ((await res.json()) as { result: number }).result : null;
+}
+
+async function expireRedis(key: string, ttl: number, env: Env): Promise<void> {
+  if (!env.UPSTASH_REDIS_REST_URL) return;
+  await fetch(`${env.UPSTASH_REDIS_REST_URL.replace(/\/$/, "")}/expire/${key}/${ttl}`, {
+    headers: { Authorization: `Bearer ${env.UPSTASH_REDIS_REST_TOKEN}` },
+  });
 }
 
 /**
@@ -361,9 +444,9 @@ export default {
     const force = url.searchParams.get("force") === "true";
     if (force && !normalizedPath.startsWith("/api/admin/")) {
       const forceLimitKey = `limit:force_rate:${clientIp}`;
-      const isThrottled = await this.getRedisCache(forceLimitKey, env);
+      const isThrottled = await getRedisCache(forceLimitKey, env);
       if (!isThrottled) {
-        await this.setRedisCache(forceLimitKey, "active", env, 120);
+        await setRedisCache(forceLimitKey, "active", env, 120);
       }
     }
 
@@ -371,7 +454,7 @@ export default {
     // We only run the fast Memory check (L1) globally to shield the worker
     const isLimited =
       !normalizedPath.startsWith("/api/admin/") &&
-      (await this.checkRateLimit(clientIp, env, ctx, "L1"));
+      (await checkRateLimit(clientIp, env, ctx, "L1"));
     if (isLimited) {
       return new Response(
         JSON.stringify({ error: "Too Many Requests: Rate limit exceeded." }),
@@ -446,7 +529,7 @@ export default {
           health.status = "DEGRADED";
         }
 
-        const redisTest = await this.getRedisCache("system:health_ping", env);
+        const redisTest = await getRedisCache("system:health_ping", env);
         health.redis =
           redisTest !== "CONFIG_ERROR" && redisTest !== null
             ? "CONNECTED"
@@ -617,7 +700,7 @@ export default {
 
       // 2. Identity-Aware Rate Limiting (L2 - Global)
       // Use the App ID from the token as the Redis key instead of IP
-      const isAppLimited = await this.checkRateLimit(
+      const isAppLimited = await checkRateLimit(
         verification.appId || clientIp,
         env,
         ctx,
@@ -654,7 +737,7 @@ export default {
 
       // Basic rate limiting for public endpoint (stricter)
       const translateKey = `limit:translate:${clientIp}`;
-      const isRateLimited = await this.getRedisCache(translateKey, env);
+      const isRateLimited = await getRedisCache(translateKey, env);
       if (isRateLimited) {
         return new Response(
           JSON.stringify({ error: "Rate limit exceeded. Try again later." }),
@@ -670,7 +753,7 @@ export default {
 
       // Set rate limit cache (1 minute) — only if not circuit-broken
       if (result.source !== "circuit-breaker") {
-        await this.setRedisCache(translateKey, "active", env, 60);
+        await setRedisCache(translateKey, "active", env, 60);
       }
 
       return new Response(
@@ -847,101 +930,6 @@ export default {
       }
     })());
   },
-
-  async checkRateLimit(
-    id: string,
-    env: Env,
-    ctx: ExecutionContext,
-    tier: "L1" | "L2" | "both" = "both",
-  ): Promise<boolean> {
-    const now = Date.now();
-
-    // Tier 1: Memory (Fast Shield)
-    if (tier === "L1" || tier === "both") {
-      if (RATE_LIMIT_MAP.size > 10000) RATE_LIMIT_MAP.clear();
-      const record = RATE_LIMIT_MAP.get(id);
-      if (
-        record &&
-        now < record.reset &&
-        record.count > RATE_LIMIT_MAX_REQUESTS
-      ) {
-        return true;
-      }
-      if (!record || now > record.reset) {
-        RATE_LIMIT_MAP.set(id, { count: 1, reset: now + RATE_LIMIT_WINDOW_MS });
-      } else {
-        record.count++;
-      }
-    }
-
-    // Tier 2: Redis (Global Identity-based Guard)
-    if (tier === "L2" || tier === "both") {
-      const windowKey = Math.floor(now / 60000);
-      const redisKey = `rate:global:${id}:${windowKey}`;
-
-      // Increment global counter
-      const globalCount = await this.incrRedis(redisKey, env);
-
-      // Set expiry on first request
-      if (globalCount === 1) {
-        ctx.waitUntil(this.expireRedis(redisKey, 60, env));
-      }
-
-      // Global limit (stricter for L2)
-      if (globalCount !== null && globalCount > 150) {
-        return true;
-      }
-    }
-
-    return false;
-  },
-
-  async getRedisCache(key: string, env: Env): Promise<string | null> {
-    if (!env.UPSTASH_REDIS_REST_URL) return "CONFIG_ERROR";
-    const baseUrl = env.UPSTASH_REDIS_REST_URL.replace(/\/$/, "");
-    const res = await fetch(`${baseUrl}/get/${key}`, {
-      headers: { Authorization: `Bearer ${env.UPSTASH_REDIS_REST_TOKEN}` },
-    });
-    if (!res.ok) return null;
-    const data = (await res.json()) as { result?: string };
-    return data.result ?? null;
-  },
-
-  async setRedisCache(
-    key: string,
-    val: string,
-    env: Env,
-    ttl: number = 604800,
-  ): Promise<void> {
-    if (!env.UPSTASH_REDIS_REST_URL) return;
-    const baseUrl = env.UPSTASH_REDIS_REST_URL.replace(/\/$/, "");
-    const cmd = ["SET", key, val, "EX", ttl];
-    await fetch(`${baseUrl}`, {
-      method: "POST",
-      headers: { Authorization: `Bearer ${env.UPSTASH_REDIS_REST_TOKEN}` },
-      body: JSON.stringify(cmd),
-    });
-  },
-
-  async incrRedis(key: string, env: Env): Promise<number | null> {
-    if (!env.UPSTASH_REDIS_REST_URL) return null;
-    const baseUrl = env.UPSTASH_REDIS_REST_URL.replace(/\/$/, "");
-    const res = await fetch(`${baseUrl}/incr/${key}`, {
-      headers: { Authorization: `Bearer ${env.UPSTASH_REDIS_REST_TOKEN}` },
-    });
-    if (!res.ok) return null;
-    const data = (await res.json()) as { result: number };
-    return data.result;
-  },
-
-  async expireRedis(key: string, ttl: number, env: Env): Promise<void> {
-    if (!env.UPSTASH_REDIS_REST_URL) return;
-    const baseUrl = env.UPSTASH_REDIS_REST_URL.replace(/\/$/, "");
-    await fetch(`${baseUrl}/expire/${key}/${ttl}`, {
-      headers: { Authorization: `Bearer ${env.UPSTASH_REDIS_REST_TOKEN}` },
-    });
-  },
-  // ... (Other helpers)
 };
 
 /**

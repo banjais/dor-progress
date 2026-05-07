@@ -20,6 +20,10 @@ import { jwtVerify, createRemoteJWKSet } from "jose";
 
 /**
  * @typedef {object} AiSummary
+ * @property {"good" | "moderate" | "critical"} [overallHealth]
+ * @property {string[]} [criticalProjects]
+ * @property {string[]} [exceedingProjects]
+ * @property {Array<{text: string, severity: "low" | "medium" | "high"}>} [discrepancies]
  * @property {string} brief
  */
 
@@ -44,6 +48,13 @@ class ServiceError extends Error {
     this.status = options?.status || 500;
   }
 }
+
+/**
+ * Remote JWK Set for Firebase App Check verification.
+ */
+const JWKS = createRemoteJWKSet(
+  new URL("https://firebaseappcheck.googleapis.com/v1/jwks"),
+);
 
 /**
  * Traverses and logs the entire Error.cause chain for deep debugging.
@@ -122,17 +133,13 @@ async function verifyAdminAccess(request, env) {
   return { sub: "local-dev-admin", email: "dev@example.com" };
 }
 
-// Firebase App Check public keys URL
-const JWKS = createRemoteJWKSet(
-  new URL("https://firebaseappcheck.googleapis.com/v1/jwks"),
-);
-
 export default {
   /**
    * @param {Request} request
    * @param {Env} env
+   * @param {ExecutionContext} ctx
    */
-  async fetch(request, env) {
+  async fetch(request, env, ctx) {
     const url = new URL(request.url);
 
     // Health Check & Ping
@@ -188,12 +195,16 @@ export default {
           limit: 50,
         });
         const archives = list.keys
-          .map((k) => ({
-            date: k.name.replace("report:", ""),
-            summary:
-              /** @type {any} */ (k.metadata)?.summary ||
-              "Weekly progress snapshot.",
-          }))
+          .map((k) => {
+            const metadata = /** @type {ProjectReport & {created?: string}} */ (
+              k.metadata || {}
+            );
+            return {
+              date: k.name.replace("report:", ""),
+              summary: metadata.aiSummary?.brief || "Weekly progress snapshot.",
+              created: metadata.created || "",
+            };
+          })
           .sort((a, b) => b.date.localeCompare(a.date));
 
         return new Response(JSON.stringify(archives), {
@@ -301,7 +312,11 @@ export default {
           }
           report = /** @type {ProjectReport} */ (archivedData);
         } else {
-          // 1. Fetch live data from Google Sheets
+          // 1. Fetch live data from Google Sheets (with internal caching)
+          const cache = caches.default;
+          const sheetId = env.PUBLISHED_SHEET_ID;
+          const cacheUrl = `https://docs.google.com/spreadsheets/d/e/${sheetId}/pub?output=csv`;
+
           const projectData = await fetchProjectData(env);
           report = {
             headers: projectData.headers,
@@ -334,14 +349,16 @@ export default {
                 // env.GOOGLE_GENAI_API_KEY must be set via 'wrangler secret put'
                 aiResult = await runProjectSummary(env.GOOGLE_GENAI_API_KEY, {
                   rows: report.rows,
-                  lang: /** @type {any} */ (lang),
+                  lang: lang,
                 });
 
                 // Cache the successful result in KV (expire after 24 hours)
                 if (aiResult && aiResult.brief && env.REPORTS_KV) {
-                  await env.REPORTS_KV.put(cacheKey, JSON.stringify(aiResult), {
-                    expirationTtl: 86400, // 24 hours
-                  });
+                  ctx.waitUntil(
+                    env.REPORTS_KV.put(cacheKey, JSON.stringify(aiResult), {
+                      expirationTtl: 86400, // 24 hours
+                    }),
+                  );
                 }
                 // If successful, break the retry loop
                 break;
@@ -393,10 +410,9 @@ export default {
 /**
  * Fetches and parses project data from the configured Google Sheet.
  * @param {Env} env
- * @param {string} [lang="en"]
  * @returns {Promise<{headers: string[], rows: ProjectRow[]}>}
  */
-async function fetchProjectData(env, lang = "en") {
+async function fetchProjectData(env) {
   try {
     const sheetId = env.PUBLISHED_SHEET_ID;
     if (!sheetId) {
@@ -405,9 +421,22 @@ async function fetchProjectData(env, lang = "en") {
       });
     }
 
-    // Construct the URL for the published Google Sheet as CSV
     const publishedUrl = `https://docs.google.com/spreadsheets/d/e/${sheetId}/pub?output=csv`;
-    const response = await fetch(publishedUrl);
+    const cache = caches.default;
+
+    // Try fetching from Cloudflare edge cache first (Short TTL: 5 minutes)
+    let response = await cache.match(publishedUrl);
+
+    if (!response) {
+      response = await fetch(publishedUrl);
+      if (response.ok) {
+        // Clone the response to modify headers for the cache
+        const cachedResponse = new Response(response.clone().body, response);
+        cachedResponse.headers.set("Cache-Control", "public, s-maxage=300");
+        // We don't have 'event' scope here to use waitUntil, but top-level fetch handles it
+        await cache.put(publishedUrl, cachedResponse);
+      }
+    }
 
     if (!response.ok) {
       throw new ServiceError(

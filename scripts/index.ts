@@ -2,7 +2,7 @@
  * Backend Registry Validator
  * This script is called by GitHub Actions to ensure all AI flows/tools load correctly.
  */
-import { getAi } from "../ai-service";
+import { getAi } from "../src/ai-service.js";
 
 // Initialize with dummy key or env for registry check
 const ai = getAi(process.env.GEMINI_API_KEY || "dummy-key");
