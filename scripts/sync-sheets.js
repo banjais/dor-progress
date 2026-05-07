@@ -248,7 +248,7 @@ async function syncTranslations() {
     // 4. Post-sync Formatting Step
     try {
       console.log("✨ Formatting generated files...");
-      execSync(`pnpm exec prettier --write "${OUTPUT_PATH}" "${PUBLIC_PATH}"`, {
+      execSync(`npx prettier --write "${OUTPUT_PATH}" "${PUBLIC_PATH}"`, {
         stdio: "ignore",
       });
     } catch {

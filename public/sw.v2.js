@@ -332,6 +332,10 @@ self.addEventListener("fetch", (event) => {
             const headers = new Headers(cachedResponse.headers);
             headers.set("X-From-Cache", "true");
             headers.set("X-Is-Stale", "true");
+            const dateHeader = cachedResponse.headers.get("date");
+            if (dateHeader) {
+              headers.set("X-Cache-Time", new Date(dateHeader).getTime().toString());
+            }
             return new Response(cachedResponse.body, {
               status: cachedResponse.status,
               statusText: cachedResponse.statusText,

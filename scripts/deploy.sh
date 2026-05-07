@@ -77,6 +77,12 @@ echo ""
 echo "🔍 Running type checks..."
 npx tsc --noEmit
 
+echo "🔍 Running ESLint compatibility check..."
+if ! npx eslint src/**/*.{js,ts} --max-warnings 0; then
+    echo "❌ Error: ESLint plugins are incompatible with the current environment."
+    exit 1
+fi
+
 echo "🧪 Running translation integrity tests..."
 npm test -- translations
 
@@ -100,7 +106,6 @@ if [ "$DRY_RUN_FLAG" == "--dry-run" ]; then
     echo "⏭️  Dry run: Skipping Git push and version tagging."
 else
     git add . && git commit -m "$MSG" && git push origin "$CURRENT_BRANCH"
-fi
     echo "🤖 GitHub Auto Deploy & Cloudflare Auto Deploy will now trigger based on this push."
 fi
 

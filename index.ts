@@ -6,9 +6,7 @@
 import { PDFDocument, rgb, StandardFonts } from "pdf-lib";
 import { Env } from "./shared/types";
 
-/**
-
-// Static dictionary for common road department terms to minimize Gemini usage
+/** Static dictionary for common road department terms to minimize Gemini usage */
 const DICTIONARY: Record<string, Record<string, string>> = {
   ne: {
     "On Track": "ट्र्याकमा",
@@ -153,12 +151,12 @@ export async function translateWithGemini(
 ): Promise<{
   translated: string;
   source:
-    | "dictionary"
-    | "gemini"
-    | "cache"
-    | "fallback"
-    | "circuit-breaker"
-    | "low-data";
+  | "dictionary"
+  | "gemini"
+  | "cache"
+  | "fallback"
+  | "circuit-breaker"
+  | "low-data";
 }> {
   // 1. Circuit breaker check
   if (await isCircuitBreakerOpen(env)) {
@@ -421,13 +419,13 @@ export default {
             const isString = typeof v === "string";
             results[k] = isString
               ? {
-                  status: "LOADED",
-                  length: v.length,
-                  preview:
-                    v.length > 8
-                      ? `${v.substring(0, 4)}...${v.slice(-4)}`
-                      : "****",
-                }
+                status: "LOADED",
+                length: v.length,
+                preview:
+                  v.length > 8
+                    ? `${v.substring(0, 4)}...${v.slice(-4)}`
+                    : "****",
+              }
               : { status: "LOADED", type: typeof v };
           } else {
             results[k] = { status: "NOT_FOUND" };
@@ -501,7 +499,36 @@ export default {
         );
       }
 
-      // Future admin routes (idempotency, cache-purge, etc.) go here
+      // Admin API: Purge specific translations or the entire manifest
+      if (normalizedPath === "/api/admin/purge-cache" && request.method === "POST") {
+        const body = (await request.json().catch(() => ({}))) as {
+          text?: string;
+          targetLang?: string;
+          type?: "manifest" | "entry";
+        };
+
+        // Option A: Purge the entire translations.json manifest
+        if (body.type === "manifest") {
+          await env.TRANSLATION_KV.delete("translations");
+          return new Response(JSON.stringify({ success: true, message: "Translations manifest purged." }), {
+            headers: { ...securityHeaders, "Content-Type": "application/json" },
+          });
+        }
+
+        // Option B: Purge a specific translation entry (requires original text and lang)
+        if (body.text && body.targetLang) {
+          const key = makeCacheKey(body.text, body.targetLang);
+          await env.TRANSLATION_KV.delete(key);
+          return new Response(JSON.stringify({ success: true, purgedKey: key }), {
+            headers: { ...securityHeaders, "Content-Type": "application/json" },
+          });
+        }
+
+        return new Response(JSON.stringify({ error: "Invalid parameters. Provide 'type: manifest' or both 'text' and 'targetLang'." }), {
+          status: 400,
+          headers: { ...securityHeaders, "Content-Type": "application/json" },
+        });
+      }
     }
 
     // Public API: Client Config (Firebase/Recaptcha keys)
@@ -701,7 +728,7 @@ export default {
             },
           );
         }
-        const pdf = await env.TRANSLATION_KV.get(
+        const { value: pdf, metadata } = await env.TRANSLATION_KV.getWithMetadata<SnapshotMetadata>(
           `snapshot:pdf:${date}`,
           "arrayBuffer",
         );
@@ -712,7 +739,7 @@ export default {
           });
         }
         return new Response(pdf, {
-          headers: { ...securityHeaders, "Content-Type": "application/pdf" },
+          headers: { ...securityHeaders, "Content-Type": "application/pdf", "X-From-Cache": "true", "X-Cache-Time": metadata?.createdAt ? new Date(metadata.createdAt).getTime().toString() : "" },
         });
       }
 
@@ -721,6 +748,21 @@ export default {
         const data = (await request
           .json()
           .catch(() => ({ records: [], meta: {} }))) as ProjectData;
+
+        const isDryRun = url.searchParams.get("dryRun") === "true";
+
+        if (isDryRun) {
+          const { pdfBytes, metadata } = await generateSnapshotPdf(data, env);
+          return new Response(pdfBytes, {
+            headers: {
+              ...securityHeaders,
+              "Content-Type": "application/pdf",
+              "X-Snapshot-Metadata": JSON.stringify(metadata),
+              "Content-Disposition": `inline; filename="snapshot-dryrun-${metadata.date}.pdf"`,
+            },
+          });
+        }
+
         const metadata = await createSnapshot(env, ctx, data);
         return new Response(JSON.stringify({ success: true, metadata }), {
           status: 201,
@@ -773,16 +815,37 @@ export default {
   async scheduled(
     event: ScheduledEvent,
     env: Env,
-    _ctx: ExecutionContext,
+    ctx: ExecutionContext,
   ): Promise<void> {
-    const response = await fetch(
-      "https://firebaseappcheck.googleapis.com/v1/jwks",
-    );
-    const jwks = await response.json();
-    await env.TRANSLATION_KV.put("system:firebase_jwks", JSON.stringify(jwks), {
-      expirationTtl: 86400, // Hard expiry after 24h
-      metadata: { created: Date.now() },
-    });
+    // 1. Refresh JWKS Cache (Existing logic)
+    ctx.waitUntil((async () => {
+      const response = await fetch("https://firebaseappcheck.googleapis.com/v1/jwks");
+      const jwks = await response.json();
+      await env.TRANSLATION_KV.put("system:firebase_jwks", JSON.stringify(jwks), {
+        expirationTtl: 86400,
+        metadata: { created: Date.now() },
+      });
+    })());
+
+    // 2. Automated Weekly Snapshot
+    // This runs based on the CRON schedule (e.g., every Sunday)
+    ctx.waitUntil((async () => {
+      try {
+        console.log("[Cron] Starting automated snapshot...");
+        // Fetch the actual data from the Google Sheet
+        const projectData = await fetchProjectData(env);
+
+        // Create the snapshot
+        // The metadata will automatically include the BS Date via our helper
+        const metadata = await createSnapshot(env, ctx, {
+          records: projectData.rows,
+          meta: { lastUpdate: new Date().toISOString() }
+        });
+        console.log(`[Cron] Snapshot created successfully for ${metadata.date} (${metadata.bsDate})`);
+      } catch (err) {
+        console.error("[Cron] Snapshot failed:", err);
+      }
+    })());
   },
 
   async checkRateLimit(
@@ -928,7 +991,7 @@ async function verifyAppCheckToken(
       );
 
     let jwks = cachedJwks as any;
-    const isStale = !metadata || Date.now() - metadata.created > 3600000; // Soft expire after 1 hour
+    const isStale = !metadata || Date.now() - (metadata.created || 0) > 3600000; // Soft expire after 1 hour
     const kidMissing = !jwks || !jwks.keys.some((k: any) => k.kid === kid);
 
     // If KID is missing (rotation detected) or cache is empty, fetch blockingly
@@ -1013,12 +1076,73 @@ interface SnapshotMetadata {
   bsDate?: string;
 }
 
+interface AiSummary {
+  brief: string;
+}
+
+interface ProjectReport {
+  headers: string[];
+  rows: any[];
+  lastUpdate: string;
+  aiSummary: AiSummary | null;
+}
+
 interface ProjectData {
   records: unknown[];
   meta: {
     lastUpdate?: string;
     total?: number;
   };
+}
+
+/**
+ * Generates a SHA-256 fingerprint for a dataset to handle AI caching.
+ */
+async function generateFingerprint(data: any[]): Promise<string> {
+  const msgUint8 = new TextEncoder().encode(JSON.stringify(data));
+  const hashBuffer = await crypto.subtle.digest("SHA-256", msgUint8);
+  const hashArray = Array.from(new Uint8Array(hashBuffer));
+  return hashArray.map((b) => b.toString(16).padStart(2, "0")).join("");
+}
+
+/**
+ * Generates an executive summary using Gemini 2.0 Flash.
+ */
+async function generateAiSummary(rows: any[], lang: string, env: Env): Promise<string> {
+  if (!env.GEMINI_API_KEY) throw new Error("Missing Gemini API Key");
+
+  const prompt = `
+    You are a world-class senior infrastructure analyst for the Department of Roads (DoR), Nepal.
+    Review the following project progress data:
+    ${JSON.stringify(rows.slice(0, 40))} 
+
+    Your task is to generate a concise "Executive Briefing" in ${lang === "ne" ? "Nepali (Devanagari)" : "English"}.
+
+    Guidelines:
+    1. Identify the overall health of the road network projects.
+    2. Specifically call out any projects that are falling behind (critical status).
+    3. Mention one or two projects that are exceeding performance targets.
+    4. Use a professional, authoritative, and helpful tone.
+    5. Keep the briefing under 100 words.
+    Return ONLY the summary text.
+  `;
+
+  const response = await fetch(
+    `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${env.GEMINI_API_KEY}`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        contents: [{ parts: [{ text: prompt }] }],
+        generationConfig: { temperature: 0.3, maxOutputTokens: 400 }
+      })
+    }
+  );
+
+  if (!response.ok) throw new Error(`Gemini Summary Error: ${response.status}`);
+
+  const data = await response.json() as any;
+  return data.candidates?.[0]?.content?.parts?.[0]?.text?.trim() || "Summary unavailable.";
 }
 
 function getBsDate(): string {
@@ -1055,11 +1179,85 @@ function generateChecksum(data: unknown): string {
   return Math.abs(hash).toString(16);
 }
 
+/**
+ * Fetches and parses project data from the configured Google Sheet.
+ * Adapted for use within the Worker environment.
+ */
+async function fetchProjectData(env: Env) {
+  const sheetId = env.PUBLISHED_SHEET_ID;
+  if (!sheetId) throw new Error("Google Sheet ID is not configured.");
+
+  const publishedUrl = `https://docs.google.com/spreadsheets/d/e/${sheetId}/pub?output=csv`;
+  const response = await fetch(publishedUrl);
+
+  if (!response.ok) throw new Error(`Sheet fetch failed: ${response.statusText}`);
+
+  const csvText = await response.text();
+  const lines = csvText.split(/\r?\n/).filter((line) => line.trim() !== "");
+
+  if (lines.length === 0) return { headers: [], rows: [] };
+
+  const rawHeaders = lines[0]
+    .split(/,(?=(?:(?:[^"]*"){2})*[^"]*$)/)
+    .map((h) => h.replace(/^"|"$/g, "").trim());
+
+  const headers = rawHeaders.map((h) => h.replace(/[\u200B-\u200D\uFEFF]/g, ""));
+
+  const rows = lines.slice(1).map((line) => {
+    const values = line.split(/,(?=(?:(?:[^"]*"){2})*[^"]*$)/).map((v) => v.replace(/^"|"$/g, "").trim());
+    const row: Record<string, any> = {};
+
+    headers.forEach((header, i) => {
+      let rawValue = values[i] || "";
+      const cleanValue = rawValue.replace(/,/g, "");
+      if (!isNaN(Number(cleanValue)) && cleanValue.trim() !== "") {
+        row[header] = Number(cleanValue);
+      } else {
+        row[header] = rawValue;
+      }
+    });
+
+    // Dynamic calculation of progress/status
+    const targetKey = headers.find(h => h.includes("Annual Target") || h.includes("लक्ष्य"));
+    const progKey = headers.find(h => h.includes("Annual Progress") || h.includes("प्रगति"));
+
+    if (targetKey && progKey) {
+      const t = parseFloat(String(row[targetKey] || "0"));
+      const p = parseFloat(String(row[progKey] || "0"));
+      const progress = t > 0 ? Math.round((p / t) * 100) : 0;
+      row._progress = progress;
+      row._status = progress >= 80 ? "good" : progress >= 40 ? "stable" : "critical";
+    }
+
+    return row;
+  });
+
+  return { headers, rows };
+}
+
 async function generateSnapshotPdf(
   data: ProjectData,
   _env: Env,
 ): Promise<{ pdfBytes: Uint8Array; metadata: SnapshotMetadata }> {
   const pdfDoc = await PDFDocument.create();
+
+  // Check if data contains a specific update date from the sheet
+  // If your sheet has a 'Last Update' header, you can extract it here
+  let displayDate = new Date().toISOString().split("T")[0];
+
+  // Try to find a date in the records if it exists
+  if (data.records.length > 0) {
+    const firstRecord = data.records[0] as Record<string, any>;
+    const possibleDateKeys = ["Update Date", "मिति", "Date"];
+    for (const key of possibleDateKeys) {
+      if (firstRecord[key]) {
+        // If the date in the sheet is already Nepali, we use it directly
+        // Otherwise, we stick to current date for the primary index
+        break;
+      }
+    }
+  }
+
   const page = pdfDoc.addPage([595.28, 841.89]);
   const font = await pdfDoc.embedFont(StandardFonts.Helvetica);
   const fontBold = await pdfDoc.embedFont(StandardFonts.HelveticaBold);

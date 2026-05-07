@@ -778,14 +778,16 @@ async function authenticatedFetch(path, options = {}, maxRetries = 3) {
       if (response.ok) {
         const isFromCache = response.headers.get("X-From-Cache") === "true";
         const isStale = response.headers.get("X-Is-Stale") === "true";
+        const cacheTime = response.headers.get("X-Cache-Time");
 
         if (isStale) {
           dashboard.addToast("info", t("dataSyncing"), 2000);
         } else if (isFromCache) {
-          dashboard.addToast(
-            "info",
-            dashboard.state.lang === "en" ? "Using cache" : "क्यास प्रयोग",
-          );
+          const ageStr = cacheTime
+            ? getRelativeTimeString(parseInt(cacheTime))
+            : "";
+          const msg = t("usingCache") + (ageStr ? ` (${ageStr})` : "");
+          dashboard.addToast("info", msg);
         }
         return response;
       }
@@ -926,29 +928,17 @@ function addToast(type, message, duration = 4000) {
   }
 }
 
-function getRelativeTimeString() {
-  if (!dashboard.lastFetchTime) return "";
-  const diff = Math.floor((Date.now() - dashboard.lastFetchTime) / 1000);
-  const t = I18N[currentLang];
-  if (diff < 10) return t.justNow;
-  const i18n = I18N[dashboard.state.lang];
-  if (diff < 10) return i18n.justNow;
-  if (diff < 60)
-    return (
-      (currentLang === "ne" ? toNepaliNumerals(diff) : diff) +
-      " " +
-      t.secsAgo(dashboard.state.lang === "ne" ? toNepaliNumerals(diff) : diff) +
-      " " +
-      i18n.secsAgo
-    );
+function getRelativeTimeString(timestamp) {
+  const time = timestamp || dashboard.lastFetchTime;
+  if (!time) return "";
+  const diff = Math.floor((Date.now() - time) / 1000);
+
+  if (diff < 10) return t("justNow");
+  if (diff < 60) return t("secsAgo", diff);
   const mins = Math.floor(diff / 60);
-  return (
-    (currentLang === "ne" ? toNepaliNumerals(mins) : mins) +
-    " " +
-    t.minsAgo(dashboard.state.lang === "ne" ? toNepaliNumerals(mins) : mins) +
-    " " +
-    i18n.minsAgo
-  );
+  if (mins < 60) return t("minsAgo", mins);
+  const hours = Math.floor(mins / 60);
+  return t("hoursAgo", hours);
 }
 
 function toNepaliNumerals(num) {
@@ -1495,6 +1485,7 @@ const I18N = {
     update: "अन्तिम अपडेट",
     live: "● प्रत्यक्ष",
     offline: "● अफलाइन",
+    cached: "● क्यास",
     loading: "लोडिङ",
     search: "खोज",
     progress: "प्रगति",
@@ -1532,8 +1523,10 @@ const I18N = {
     poweredBy: "द्वारा संचालित",
     ago: "पटक अघि",
     justNow: "भर्खरै",
-    secsAgo: "सेकेन्ड अघि",
-    minsAgo: "मिनेट अघि",
+    secsAgo: "{{count}} सेकेन्ड अघि",
+    minsAgo: "{{count}} मिनेट अघि",
+    hoursAgo: "{{count}} घण्टा अघि",
+    usingCache: "क्यास प्रयोग",
     noResults: "नतिजा भेटिएन",
     retrySearch: "सफाइ",
     results: "नतिजाहरू",
@@ -1641,6 +1634,7 @@ const I18N = {
     update: "Updated",
     live: "● LIVE",
     offline: "● OFFLINE",
+    cached: "● CACHED",
     loading: "Loading",
     search: "Search",
     progress: "PROGRESS",
@@ -1662,8 +1656,10 @@ const I18N = {
     poweredBy: "Powered by",
     ago: "refreshes ago",
     justNow: "Just now",
-    secsAgo: "s ago",
-    minsAgo: "m ago",
+    secsAgo: "{{count}}s ago",
+    minsAgo: "{{count}}m ago",
+    hoursAgo: "{{count}}h ago",
+    usingCache: "Using cache",
     noResults: "No results",
     retrySearch: "Clear",
     results: "Results",
@@ -1937,10 +1933,16 @@ class Dashboard {
         this.render();
         if (isForced) this.addToast("success", t("cacheCleared"));
 
+        const isFromCache = res.headers.get("X-From-Cache") === "true";
         const status = document.getElementById("status");
         if (status) {
-          status.innerText = t("live");
-          status.style.color = "#4ade80";
+          if (isFromCache) {
+            status.innerText = t("cached");
+            status.style.color = "#fbbf24"; // Amber color for cached/archived data
+          } else {
+            status.innerText = t("live");
+            status.style.color = "#4ade80"; // Green for fresh live data
+          }
         }
         updateConnStrength(duration);
       }
@@ -2302,11 +2304,14 @@ async function fetchWeeklyHistory() {
     .map(
       (h) => `
         <div class="chart-card">
-          <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px">
-            <b style="font-size:1.1rem">📅 ${h.date}</b>
+          <div style="display:flex; justify-content:space-between; align-items:start; margin-bottom:10px">
+            <div>
+              <b style="font-size:1.1rem">📅 ${h.date}</b>
+              ${h.bsDate ? `<div style="font-size:0.75rem; color:var(--primary); font-weight:bold; margin-top:2px">${dashboard.state.lang === "ne" ? toNepaliNumerals(h.bsDate) : h.bsDate}</div>` : ""}
+            </div>
             <button onclick="downloadPdf('${h.date}')" style="border:none; cursor:pointer; font-size:0.7rem; background:var(--critical); color:white; padding:4px 8px; border-radius:4px">PDF</button>
           </div>
-          <p style="font-size:0.8rem; opacity:0.8">${h.summary}</p>
+          <p style="font-size:0.8rem; opacity:0.8">${h.bsDate ? `${t("total")}: ${dashboard.state.lang === "ne" ? toNepaliNumerals(h.recordCount) : h.recordCount}` : h.summary || "Weekly progress snapshot."}</p>
           <button onclick="loadSnapshot('${h.date}')" style="width:100%; margin-top:10px; border:1px solid var(--primary); background:none; color:var(--primary); padding:8px; border-radius:8px; cursor:pointer; font-weight:bold">View Data</button>
         </div>
       `,
@@ -2378,7 +2383,7 @@ async function downloadPdf(date) {
       btn.innerHTML = `<span class="spinner" style="border-top-color:var(--primary); width:16px; height:16px;"></span> ${t.downloading} 0%`;
     }
 
-    const res = await authenticatedFetch(`/api/pdf?date=${date}`);
+    const res = await authenticatedFetch(`/api/snapshot?date=${date}`);
 
     if (res.ok) {
       const contentLength = res.headers.get("Content-Length");
