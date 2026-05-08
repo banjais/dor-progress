@@ -753,6 +753,8 @@ export default {
         );
       }
 
+      const texts = [text];
+
       // Basic rate limiting for public endpoint (stricter)
       const translateKey = `limit:translate:${clientIp}`;
       const isRateLimited = await getRedisCache(translateKey, env);

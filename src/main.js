@@ -473,7 +473,6 @@ class SpeechEngine {
 
       if (this.webSpeechApiAvailable) {
         this.utterance = new SpeechSynthesisUtterance(this.originalText);
-        this.utterance.lang = currentLang === "ne" ? "ne-NP" : "en-US";
         this.utterance.lang = dashboard.state.lang === "ne" ? "ne-NP" : "en-US";
         this.utterance.rate = parseFloat(
           localStorage.getItem("tts-rate") || "0.95",
@@ -1013,7 +1012,6 @@ async function startVoiceSearch() {
   }
 
   const recognition = new SpeechRecognition();
-  recognition.lang = currentLang === "ne" ? "ne-NP" : "en-US"; // Set language for recognition
   recognition.lang = dashboard.state.lang === "ne" ? "ne-NP" : "en-US"; // Set language for recognition
   recognition.interimResults = false; // Only return final results
   recognition.maxAlternatives = 1;
@@ -1103,7 +1101,6 @@ async function startVoiceSearch() {
   recognition.onerror = (event) => {
     cleanup();
     if (event.error === "not-allowed") {
-      addToast("error", currentLang === "en" ? "Mic denied" : "अनुमति छैन");
       dashboard.addToast(
         "error",
         dashboard.state.lang === "en" ? "Mic denied" : "अनुमति छैन",
@@ -1159,7 +1156,7 @@ async function shareAiBrief() {
 
 window.translateAiBrief = translateAiBrief;
 async function translateAiBrief() {
-  const targetLang = currentLang === "en" ? "ne" : "en";
+  const targetLang = dashboard.state.lang === "en" ? "ne" : "en";
   const btn = document.getElementById("ai-translate-btn");
   btn.classList.add("spinning");
 
@@ -1305,17 +1302,14 @@ function showDiagnostics() {
     return;
   }
 
+  const store = dashboard.state.store;
   if (!store) return;
-  const t = I18N[currentLang];
-  if (!dashboard.state.store) return;
-  const criticalRows = dashboard.state.store.rows.filter(
-    (r) => r._status === "critical",
-  );
+  const criticalRows = store.rows.filter((r) => r._status === "critical");
   const i18n = I18N[dashboard.state.lang];
-  const dispCount = currentLang === "ne";
-  dashboard.state.lang === "ne"
-    ? toNepaliNumerals(criticalRows.length)
-    : criticalRows.length;
+  const dispCount =
+    dashboard.state.lang === "ne"
+      ? toNepaliNumerals(criticalRows.length)
+      : criticalRows.length;
 
   // Calculate "Last Month" as default
   const now = new Date();
@@ -1325,7 +1319,7 @@ function showDiagnostics() {
   let html = `
         <div class="modal-header"> 
           <h3 style="color:var(--critical); margin:0;">🚨 System Diagnostics</h3>
-          <p style="font-size:0.8rem; opacity:0.8; margin:5px 0 0;">${dispCount} ${currentLang === "ne" ? "सूचकहरूलाई तत्काल ध्यान दिनु आवश्यक छ।" : "indicators require immediate attention."}</p>
+          <p style="font-size:0.8rem; opacity:0.8; margin:5px 0 0;">${dispCount} ${dashboard.state.lang === "ne" ? "सूचकहरूलाई तत्काल ध्यान दिनु आवश्यक छ।" : "indicators require immediate attention."}</p>
         </div>
         <div style="max-height: 400px; overflow-y: auto; margin-top:15px;">
           <div style="margin-bottom: 15px; padding: 12px; background: var(--bg); border-radius: 12px; border: 1px solid var(--border);">
@@ -1349,12 +1343,10 @@ function showDiagnostics() {
   diagY.innerHTML = [currentADYear, currentADYear - 1, currentADYear - 2]
     .map(
       (y) =>
-        `<option value="${y}">${currentLang === "ne" ? toNepaliNumerals(y + 57) + " वि.सं." : y + " AD"}</option>`,
-      `<option value="${y}">${dashboard.state.lang === "ne" ? toNepaliNumerals(y + 57) + " वि.सं." : y + " AD"}</option>`,
+        `<option value="${y}">${dashboard.state.lang === "ne" ? toNepaliNumerals(y + 57) + " वि.सं." : y + " AD"}</option>`,
     )
     .join("");
 
-  diagM.innerHTML = I18N[currentLang].months;
   diagM.innerHTML = i18n.months
     .map(
       (m, i) =>
@@ -1373,8 +1365,8 @@ function showDiagnostics() {
 
   const diagListContainer = document.createElement("div");
   criticalRows.forEach((r) => {
-    const name = r[dashboard.state.store.headers[0]];
-    const prog = getProgress(r, dashboard.state.store.headers);
+    const name = r[store.headers[0]];
+    const prog = getProgress(r, store.headers);
     const dispProg =
       dashboard.state.lang === "ne" ? toNepaliNumerals(prog) : prog;
 
@@ -1415,7 +1407,7 @@ function showDiagnostics() {
   document
     .getElementById("close-diag-modal-btn")
     ?.addEventListener("click", closeModal);
-  document.getElementById("lbl-diag-period").textContent = t("diagPeriod");
+  document.getElementById("lbl-diag-period").textContent = i18n.diagPeriod;
 }
 
 async function exportHealthReport() {
@@ -4247,11 +4239,11 @@ function render(json) {
   document.getElementById("thead").innerHTML = thead;
 
   let tbody = "";
-  if (rows.length === 0 && searchText) {
+  if (rows.length === 0 && dashboard.state.search) {
     tbody = `<tr><td colspan="${headers.length + 1}" style="text-align:center; padding:3rem; opacity:0.7">
           <div style="font-size:2.5rem; margin-bottom:10px">🔍</div>
           <div style="font-weight:bold; color:var(--text)" data-i18n="noResults"></div>
-          <div style="font-size:0.9rem; margin-bottom:15px; opacity:0.8">"${searchText}"</div>
+          <div style="font-size:0.9rem; margin-bottom:15px; opacity:0.8">"${dashboard.state.search}"</div>
           <button onclick="clearSearch()" class="retry-btn" style="margin:0" data-i18n="retrySearch"></button>
         </td></tr>`;
   } else {
@@ -4275,7 +4267,6 @@ function render(json) {
         }
 
         // Convert to Nepali numerals AFTER potential highlighting
-        if (currentLang === "ne") val = toNepaliNumerals(val);
 
         const isStatus = h.toLowerCase().includes("status") || i === 0;
         const color = isStatus
@@ -4295,11 +4286,11 @@ function render(json) {
   // 5. CARDS
   let cards = "";
   if (rows.length === 0) {
-    if (searchText) {
+    if (dashboard.state.search) {
       cards = `<div class="chart-card" style="text-align:center; grid-column: 1 / -1; padding: 4rem;">
             <div style="font-size:3rem; margin-bottom:10px">🔎</div>
             <p style="font-weight:bold; font-size:1.1rem; color:var(--text)" data-i18n="noResults"></p>
-            <p style="margin-bottom:15px; opacity:0.8">"${searchText}"</p>
+            <p style="margin-bottom:15px; opacity:0.8">"${dashboard.state.search}"</p>
             <button onclick="clearSearch()" class="retry-btn" data-i18n="retrySearch"></button>
           </div>`;
     } else {
@@ -4307,8 +4298,7 @@ function render(json) {
     }
   } else {
     rows.forEach((r) => {
-      const nameKey = headers[0];
-      const name = r[nameKey] || "—";
+      const name = r[headers[0]] || "—";
 
       const annTargetKey = headers.find(
         (h) => h.includes("Annual Target") || h.includes("बार्षिक लक्ष्य"),
@@ -4331,9 +4321,9 @@ function render(json) {
       const totPerc = totT > 0 ? Math.round((totP / totT) * 100) : 0;
 
       const dispAnn =
-        currentLang === "ne" ? toNepaliNumerals(annPerc) : annPerc;
+        dashboard.state.lang === "ne" ? toNepaliNumerals(annPerc) : annPerc;
       const dispTot =
-        currentLang === "ne" ? toNepaliNumerals(totPerc) : totPerc;
+        dashboard.state.lang === "ne" ? toNepaliNumerals(totPerc) : totPerc;
 
       const annColor = annPerc < 50 ? "var(--critical)" : "var(--primary)";
       const annPulseClass = annPerc < 20 ? "pulse-critical" : "";
@@ -4341,7 +4331,7 @@ function render(json) {
       let details = "";
       headers.slice(1, 6).forEach((h, i) => {
         if (r[h])
-          details += `<div style="font-size:0.75rem;margin-bottom:4px"><span style="color:var(--text-light)">${h}:</span> <span style="font-weight:600">${currentLang === "ne" ? toNepaliNumerals(r[h]) : r[h]}</span></div>`; // Use textContent for safety
+          details += `<div style="font-size:0.75rem;margin-bottom:4px"><span style="color:var(--text-light)">${h}:</span> <span style="font-weight:600">${dashboard.state.lang === "ne" ? toNepaliNumerals(r[h]) : r[h]}</span></div>`; // Use textContent for safety
       });
       cards += `
             <div class="data-card" data-indicator="${name}" onclick="showModal('${name.replace(/'/g, "\\'")}', this, true)">
@@ -4381,14 +4371,14 @@ function render(json) {
   // 6. CHARTS
   let chartHtml = "";
   if (rows.length === 0) {
-    chartHtml = `<p style='padding:2rem;text-align:center;opacity:0.5'>${I18N[currentLang].noDataToVisualize}</p>`;
+    chartHtml = `<p style='padding:2rem;text-align:center;opacity:0.5'>${I18N[dashboard.state.lang].noDataToVisualize}</p>`;
   } else {
     rows.forEach((r) => {
-      const nameKey = headers[0];
-      const name = r[nameKey] || "—";
+      const name = r[headers[0]] || "—";
 
       const prog = getProgress(r, headers);
-      const dispProg = currentLang === "ne" ? toNepaliNumerals(prog) : prog;
+      const dispProg =
+        dashboard.state.lang === "ne" ? toNepaliNumerals(prog) : prog;
       const color =
         prog >= 80
           ? "var(--good)"
@@ -4412,7 +4402,7 @@ function render(json) {
             .slice(1, 4)
             .map(
               (h) =>
-                `<span>${h}: <b>${currentLang === "ne" ? toNepaliNumerals(r[h]) : r[h]}</b></span>`,
+                `<span>${h}: <b>${dashboard.state.lang === "ne" ? toNepaliNumerals(r[h]) : r[h]}</b></span>`,
             )
             .join(" | ")}
         </div>
@@ -4479,12 +4469,14 @@ initDelegation();
  * Includes Devanagari font support for Nepali translations.
  */
 window.generateClientPDF = async () => {
+  const store = dashboard.state.store;
   if (!store || !store.rows.length)
-    return addToast("error", "No data to export");
+    return dashboard.addToast("error", "No data to export");
 
-  addToast(
+  const lang = dashboard.state.lang;
+  dashboard.addToast(
     "info",
-    currentLang === "en" ? "Generating PDF..." : "PDF तयार गर्दै...",
+    lang === "en" ? "Generating PDF..." : "PDF तयार गर्दै...",
   );
 
   try {
@@ -4493,7 +4485,7 @@ window.generateClientPDF = async () => {
 
     // 1. Optimized Font Embedding
     let mainFont;
-    if (currentLang === "ne") {
+    if (lang === "ne") {
       const fontUrl = `https://fonts.gstatic.com/s/notosansdevanagari/v28/wf5m9WB_V9fNqbfVp-9ueS5mF-X_S-zY.ttf`;
       const fontBytes = await fetch(fontUrl).then((res) => res.arrayBuffer());
       mainFont = await pdfDoc.embedFont(fontBytes);
@@ -4548,7 +4540,7 @@ window.generateClientPDF = async () => {
     }
 
     // Center Title
-    const title = I18N[currentLang].reportTitle;
+    const title = I18N[lang].reportTitle;
     const titleWidth = mainFont.widthOfTextAtSize(title, 14);
     page.drawText(title, {
       x: width / 2 - titleWidth / 2,
@@ -4569,7 +4561,7 @@ window.generateClientPDF = async () => {
       height: 40,
       color: rgb(0.95, 0.95, 0.95),
     });
-    const kpiText = `${I18N[currentLang].total}: ${currentLang === "ne" ? toNepaliNumerals(totalRows) : totalRows} | ${I18N[currentLang].attention}: ${currentLang === "ne" ? toNepaliNumerals(critical) : critical}`;
+    const kpiText = `${I18N[lang].total}: ${lang === "ne" ? toNepaliNumerals(totalRows) : totalRows} | ${I18N[lang].attention}: ${lang === "ne" ? toNepaliNumerals(critical) : critical}`;
     page.drawText(kpiText, {
       x: 60,
       y: yOffset,
@@ -4583,17 +4575,16 @@ window.generateClientPDF = async () => {
     drawTableHeader(page);
 
     // 5. Draw Table Rows
-    store.rows.forEach((row, rowIndex) => {
-      // Pagination Check: If we are near the bottom, add a new page
+    store.rows.forEach((row) => {
       if (yOffset < 50) {
-        page = pdfDoc.addPage([595.28, 841.89]);
+        const newPage = pdfDoc.addPage([595.28, 841.89]);
         yOffset = height - 50;
-        drawTableHeader(page);
+        drawTableHeader(newPage);
       }
 
       store.headers.forEach((h, i) => {
         let text = String(row[h] || "");
-        if (currentLang === "ne") text = toNepaliNumerals(text);
+        if (lang === "ne") text = toNepaliNumerals(text);
 
         page.drawText(text.substring(0, 30), {
           x: 50 + i * colWidth,
@@ -4618,7 +4609,7 @@ window.generateClientPDF = async () => {
     link.click();
   } catch (err) {
     console.error(err);
-    addToast("error", "Failed to generate PDF");
+    dashboard.addToast("error", "Failed to generate PDF");
   }
 };
 
@@ -4656,6 +4647,6 @@ setupSecurity();
 lockFrontend();
 
 // Mobile: default to card view (better for small screens)
-if (window.innerWidth < 768 && currentView === "table") {
-  setView("cards");
+if (window.innerWidth < 768 && dashboard.state.view === "table") {
+  dashboard.setView("cards");
 }
