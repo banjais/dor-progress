@@ -1,5 +1,6 @@
 import { runProjectSummary } from "./ai-service.js";
-import { jwtVerify, createRemoteJWKSet, type JWTPayload } from "jose";
+import { jwtVerify, createRemoteJWKSet } from "jose";
+import { z } from "zod";
 
 export interface Env {
   REPORTS_KV: KVNamespace;
@@ -20,6 +21,10 @@ export interface AiSummary {
   criticalProjects?: string[];
   exceedingProjects?: string[];
   discrepancies?: Array<{ text: string; severity: "low" | "medium" | "high" }>;
+  extractedData?: {
+    headers: string[];
+    rows: ProjectRow[];
+  };
   brief: string;
 }
 
@@ -43,9 +48,17 @@ const JWKS = createRemoteJWKSet(
   new URL("https://firebaseappcheck.googleapis.com/v1/jwks"),
 );
 
-let cachedAdminSecret: string | null = null;
-let lastSecretFetch = 0;
-const SECRET_CACHE_TTL = 300000;
+const CORS_HEADERS = {
+  "Content-Type": "application/json",
+  "Access-Control-Allow-Origin": "*",
+};
+
+function jsonResponse(data: any, status = 200): Response {
+  return new Response(JSON.stringify(data), {
+    status,
+    headers: CORS_HEADERS,
+  });
+}
 
 function logErrorChain(err: any): void {
   if (!err) return;
@@ -59,28 +72,61 @@ function logErrorChain(err: any): void {
   }
 }
 
-async function generateFingerprint(data: ProjectRow[]): Promise<string> {
-  const msgUint8 = new TextEncoder().encode(JSON.stringify(data));
-  const hashBuffer = await crypto.subtle.digest("SHA-256", msgUint8);
-  const hashArray = Array.from(new Uint8Array(hashBuffer as ArrayBuffer));
+async function generateFingerprint(buffer: ArrayBuffer): Promise<string> {
+  const hashBuffer = await crypto.subtle.digest("SHA-256", buffer);
+  const hashArray = Array.from(new Uint8Array(hashBuffer));
   return hashArray.map((b) => b.toString(16).padStart(2, "0")).join("");
 }
+
+async function verifyAppCheck(request: Request, env: Env): Promise<void> {
+  // Define environments where App Check should be bypassed (e.g., for local development or testing)
+  const bypassEnvironments = ["development", "test"];
+  if (bypassEnvironments.includes(env.APP_ENV)) {
+    console.warn(`App Check bypassed for ${env.APP_ENV} environment.`);
+    return;
+  }
+
+  const token = request.headers.get("X-Firebase-AppCheck");
+  if (!token) {
+    throw new ServiceError("Unauthorized: No App Check token", { status: 401 });
+  }
+
+  try {
+    const projectNumber = env.FIREBASE_PROJECT_NUMBER;
+    await jwtVerify(token, JWKS, {
+      issuer: `https://firebaseappcheck.googleapis.com/${projectNumber}`,
+      audience: [
+        `projects/${projectNumber}`,
+        `projects/${env.FIREBASE_PROJECT_ID}`,
+      ],
+      clockTolerance: "1m",
+    });
+  } catch (e) {
+    throw new ServiceError("Invalid App Check Token", { status: 401 });
+  }
+}
+
+// Schema for /api/report parameters
+const ReportRequestSchema = z.object({
+  lang: z.enum(["en", "ne"]).default("en"),
+  date: z
+    .string()
+    .regex(/^\d{4}-\d{2}-\d{2}$/)
+    .optional(),
+  force: z.preprocess((val) => val === "true", z.boolean()).default(false),
+  isLowData: z.boolean().default(false),
+});
 
 const handler: ExportedHandler<Env> = {
   async fetch(request, env, ctx) {
     const url = new URL(request.url);
 
     if (url.pathname === "/api/ping" || url.pathname === "/api/health") {
-      return new Response(JSON.stringify({ status: "ok", time: Date.now() }), {
-        headers: {
-          "Content-Type": "application/json",
-          "Access-Control-Allow-Origin": "*",
-        },
-      });
+      return jsonResponse({ status: "ok", time: Date.now() });
     }
 
     if (url.pathname === "/api/client-config") {
-      const config = {
+      return jsonResponse({
         firebase: {
           apiKey: env.GOOGLE_GENAI_API_KEY,
           authDomain: `${env.FIREBASE_PROJECT_ID}.firebaseapp.com`,
@@ -90,31 +136,12 @@ const handler: ExportedHandler<Env> = {
           appId: `1:${env.FIREBASE_PROJECT_NUMBER}:web:dynamic`,
         },
         recaptchaKey: env.RECAPTCHA_SITE_KEY,
-      };
-      return new Response(JSON.stringify(config), {
-        headers: {
-          "Content-Type": "application/json",
-          "Access-Control-Allow-Origin": "*",
-        },
       });
     }
 
     if (url.pathname === "/api/reports") {
-      const appCheckToken = request.headers.get("X-Firebase-AppCheck");
-      const isLocalDev =
-        env.APP_ENV === "development" && env.DEBUG_MODE === "true";
-
-      if (!appCheckToken && !isLocalDev) {
-        return new Response(JSON.stringify({ error: "Unauthorized" }), {
-          status: 401,
-          headers: {
-            "Content-Type": "application/json",
-            "Access-Control-Allow-Origin": "*",
-          },
-        });
-      }
-
       try {
+        await verifyAppCheck(request, env);
         const list = await env.REPORTS_KV.list({
           prefix: "report:",
           limit: 50,
@@ -132,76 +159,44 @@ const handler: ExportedHandler<Env> = {
           })
           .sort((a, b) => b.date.localeCompare(a.date));
 
-        return new Response(JSON.stringify(archives), {
-          headers: {
-            "Content-Type": "application/json",
-            "Access-Control-Allow-Origin": "*",
-          },
-        });
-      } catch (err) {
+        return jsonResponse(archives);
+      } catch (err: any) {
         logErrorChain(err);
-        return new Response(
-          JSON.stringify({ error: "Failed to fetch archives list" }),
-          {
-            status: 500,
-            headers: {
-              "Content-Type": "application/json",
-              "Access-Control-Allow-Origin": "*",
-            },
-          },
+        return jsonResponse(
+          { error: err.message || "Failed to fetch archives list" },
+          err.status || 500,
         );
       }
     }
 
     if (url.pathname === "/api/report") {
-      const appCheckToken = request.headers.get("X-Firebase-AppCheck");
-      if (!appCheckToken) {
-        return new Response(
-          JSON.stringify({ error: "Unauthorized: No token" }),
-          {
-            status: 401,
-            headers: {
-              "Content-Type": "application/json",
-              "Access-Control-Allow-Origin": "*",
-            },
-          },
-        );
-      }
+      try {
+        // 1. Validate Input using Zod
+        const validation = ReportRequestSchema.safeParse({
+          lang: url.searchParams.get("lang"),
+          date: url.searchParams.get("date") || undefined,
+          force: url.searchParams.get("force"),
+          isLowData: request.headers.get("X-Low-Data") === "true",
+        });
 
-      const isLocalDev =
-        env.APP_ENV === "development" && env.DEBUG_MODE === "true";
-      if (!isLocalDev) {
-        try {
-          const projectNumber = env.FIREBASE_PROJECT_NUMBER;
-          await jwtVerify(appCheckToken, JWKS, {
-            issuer: `https://firebaseappcheck.googleapis.com/${projectNumber}`,
-            audience: [
-              `projects/${projectNumber}`,
-              `projects/${env.FIREBASE_PROJECT_ID}`,
-            ],
-            clockTolerance: "1m",
-          });
-        } catch (e) {
-          return new Response(
-            JSON.stringify({ error: "Invalid App Check Token" }),
+        if (!validation.success) {
+          return jsonResponse(
             {
-              status: 401,
-              headers: {
-                "Content-Type": "application/json",
-                "Access-Control-Allow-Origin": "*",
-              },
+              error: "Validation Failed",
+              details: validation.error.format(),
             },
+            400,
           );
         }
-      }
 
-      const lang = url.searchParams.get("lang") === "ne" ? "ne" : "en";
-      const date = url.searchParams.get("date");
-      const isLowData = request.headers.get("X-Low-Data") === "true";
-      const forceRefresh = url.searchParams.get("force") === "true";
+        const { lang, date, force: forceRefresh, isLowData } = validation.data;
 
-      try {
+        await verifyAppCheck(request, env);
+
         let report: ProjectReport;
+        let fingerprint: string | undefined;
+        let pdfBuffer: ArrayBuffer | undefined;
+
         if (date) {
           const archivedData = (await env.REPORTS_KV.get(`report:${date}`, {
             type: "json",
@@ -212,17 +207,18 @@ const handler: ExportedHandler<Env> = {
             });
           report = archivedData;
         } else {
-          const projectData = await fetchProjectData(env);
+          pdfBuffer = await fetchProjectPdf(env);
+          fingerprint = await generateFingerprint(pdfBuffer);
+
           report = {
-            headers: projectData.headers,
-            rows: projectData.rows,
+            headers: [],
+            rows: [],
             lastUpdate: new Date().toISOString().split("T")[0],
             aiSummary: null,
           };
         }
 
-        if (!isLowData) {
-          const fingerprint = await generateFingerprint(report.rows);
+        if (!isLowData && !report.aiSummary && fingerprint && pdfBuffer) {
           const cacheKey = `ai_summary_${lang}_${fingerprint}`;
           let aiResult = forceRefresh
             ? null
@@ -230,11 +226,18 @@ const handler: ExportedHandler<Env> = {
                 type: "json",
               })) as AiSummary | null);
 
-          if (!aiResult) {
-            for (let i = 0; i < 3; i++) {
+          if (!aiResult && pdfBuffer) {
+            let binary = "";
+            const bytes = new Uint8Array(pdfBuffer);
+            for (let i = 0; i < bytes.byteLength; i++) {
+              binary += String.fromCharCode(bytes[i]);
+            }
+            const pdfBase64 = btoa(binary);
+
+            for (let i = 0; i < 2; i++) {
               try {
                 aiResult = await runProjectSummary(env.GOOGLE_GENAI_API_KEY, {
-                  rows: report.rows,
+                  pdfBase64,
                   lang,
                 });
                 if (aiResult?.brief) {
@@ -246,31 +249,26 @@ const handler: ExportedHandler<Env> = {
                 }
                 break;
               } catch (aiError) {
-                if (i === 2) throw aiError;
-                await new Promise((r) => setTimeout(r, 1000 * Math.pow(2, i)));
+                if (i === 1) throw aiError;
+                await new Promise((r) => setTimeout(r, 2000));
               }
             }
           }
           report.aiSummary = aiResult;
+
+          // Populate report data from AI extraction
+          if (aiResult?.extractedData) {
+            report.headers = aiResult.extractedData.headers;
+            report.rows = aiResult.extractedData.rows;
+          }
         }
 
-        return new Response(JSON.stringify(report), {
-          headers: {
-            "Content-Type": "application/json",
-            "Access-Control-Allow-Origin": "*",
-          },
-        });
+        return jsonResponse(report);
       } catch (err: any) {
         logErrorChain(err);
-        return new Response(
-          JSON.stringify({ error: err.message || "Internal Server Error" }),
-          {
-            status: err.status || 500,
-            headers: {
-              "Content-Type": "application/json",
-              "Access-Control-Allow-Origin": "*",
-            },
-          },
+        return jsonResponse(
+          { error: err.message || "Internal Server Error" },
+          err.status || 500,
         );
       }
     }
@@ -281,79 +279,37 @@ const handler: ExportedHandler<Env> = {
 
 export default handler;
 
-async function fetchProjectData(
-  env: Env,
-): Promise<{ headers: string[]; rows: ProjectRow[] }> {
+async function fetchProjectPdf(env: Env): Promise<ArrayBuffer> {
   const sheetId = env.PUBLISHED_SHEET_ID;
   if (!sheetId)
     throw new ServiceError("Google Sheet ID is not configured.", {
       status: 500,
     });
 
-  const publishedUrl = `https://docs.google.com/spreadsheets/d/e/${sheetId}/pub?output=csv`;
-  const cache = caches.default;
+  const publishedUrl = `https://docs.google.com/spreadsheets/d/e/${sheetId}/pub?output=pdf`;
+  const cache = await caches.open("google-sheet-cache");
 
   let response = await cache.match(publishedUrl);
   if (!response) {
     response = await fetch(publishedUrl);
-    if (response.ok) {
-      const cachedResponse = new Response(response.clone().body, response);
-      cachedResponse.headers.set("Cache-Control", "public, s-maxage=300");
+    if (response && response.ok) {
+      const cachedResponse = new Response(response.clone().body, {
+        status: response.status,
+        statusText: response.statusText,
+        headers: { ...Object.fromEntries(response.headers as any) },
+      });
+      cachedResponse.headers.set("Cache-Control", "public, max-age=300");
       await cache.put(publishedUrl, cachedResponse);
     }
   }
 
-  if (!response.ok)
-    throw new ServiceError(`Failed to fetch sheet: ${response.statusText}`, {
-      status: response.status,
-    });
-
-  const csvText = await response.text();
-  const lines = csvText.split(/\r?\n/).filter((line) => line.trim() !== "");
-  if (lines.length === 0) return { headers: [], rows: [] };
-
-  const rawHeaders = lines[0]
-    .split(/,(?=(?:(?:[^"]*"){2})*[^"]*$)/)
-    .map((h) => h.replace(/^"|"$/g, "").trim());
-  const headers = rawHeaders.map((h) =>
-    h.replace(/[\u200B-\u200D\uFEFF]/g, ""),
-  );
-
-  const rows = lines.slice(1).map((line) => {
-    const values = line
-      .split(/,(?=(?:(?:[^"]*"){2})*[^"]*$)/)
-      .map((v) => v.replace(/^"|"$/g, "").trim());
-    const row: ProjectRow = {};
-
-    headers.forEach((header, i) => {
-      let rawValue = values[i] || "";
-      const cleanValue = rawValue.replace(/,/g, "");
-      if (cleanValue.trim() !== "" && !isNaN(Number(cleanValue))) {
-        row[header as string] = Number(cleanValue);
-      } else {
-        row[header as string] = rawValue;
-      }
-    });
-
-    const targetKey = headers.find(
-      (h) => h.includes("Annual Target") || h.includes("बार्षिक लक्ष्य"),
-    );
-    const progKey = headers.find(
-      (h) =>
-        h.includes("Annual Progress") ||
-        h.includes("हाल सम्म को बार्षिक प्रगति"),
+  if (!response || !response.ok)
+    throw new ServiceError(
+      `Failed to fetch PDF report: ${response?.statusText || "Unknown Error"}`,
+      {
+        status: response?.status || 500,
+      },
     );
 
-    if (targetKey && progKey) {
-      const t = parseFloat(String(row[targetKey] || "0"));
-      const p = parseFloat(String(row[progKey] || "0"));
-      const progress = t > 0 ? Math.round((p / t) * 100) : 0;
-      row._progress = progress;
-      row._status =
-        progress >= 80 ? "good" : progress >= 40 ? "stable" : "critical";
-    }
-    return row;
-  });
-
-  return { headers, rows };
+  return await response.arrayBuffer();
 }

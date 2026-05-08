@@ -34,4 +34,17 @@ declare global {
   interface ProjectReport extends SharedProjectReport {
     created?: string;
   }
+
+  /**
+   * Bridge the gap between generic Uint8Arrays and Worker APIs.
+   * This helps when libraries return Uint8Array<ArrayBufferLike>.
+   */
+  type BodyInit =
+    | string
+    | ArrayBuffer
+    | ArrayBufferView
+    | ReadableStream
+    | FormData
+    | URLSearchParams
+    | Uint8Array<any>;
 }

@@ -1845,6 +1845,9 @@ class Dashboard {
     this.lastFetchTime = null;
     this.latencyHistory = [];
     this.intentTimer = null;
+    this.dynamicCache = JSON.parse(
+      localStorage.getItem("dynamicTranslations") || "{}",
+    );
     this.lastSnapshotUpdate = null;
     this.syncToast = null;
     this.addToast = addToast;
@@ -2008,8 +2011,14 @@ let deferredPrompt; // PWA prompt remains global as it interacts with browser ev
  * Translation Helper
  * Priority: Dynamic JSON from Sheet > Hardcoded I18N fallback > Key name
  */
+let translationQueue = new Set();
+let translationTimeout = null;
+
 const t = (key, count) => {
+  if (!key) return "";
   const currentLang = dashboard.state.lang;
+  const isNepali = currentLang === "ne";
+
   let finalKey = key;
 
   if (count !== undefined) {
@@ -2018,8 +2027,10 @@ const t = (key, count) => {
 
     // Optimized lookup for plural/standard keys
     const lookup = [
+      dynamicCache[pKey],
       translationsData?.[currentLang]?.[pKey],
       I18N[currentLang]?.[pKey],
+      dynamicCache[key],
       translationsData?.[currentLang]?.[key],
       I18N[currentLang]?.[key],
     ];
@@ -2032,9 +2043,20 @@ const t = (key, count) => {
   }
 
   let text =
+    dynamicCache[finalKey] ||
     translationsData?.[currentLang]?.[finalKey] ||
     I18N[currentLang]?.[finalKey] ||
-    key;
+    null;
+
+  // AUTO-DETECTION LOGIC:
+  // If translation is missing and we aren't in English, queue for AI
+  if (text === null && isNepali && !translationQueue.has(key)) {
+    translationQueue.add(key);
+    if (translationTimeout) clearTimeout(translationTimeout);
+    translationTimeout = setTimeout(() => processTranslationQueue(), 1000);
+  }
+
+  text = text || key;
 
   if (count !== undefined) {
     const displayCount = currentLang === "ne" ? toNepaliNumerals(count) : count;
@@ -2042,6 +2064,40 @@ const t = (key, count) => {
   }
   return text;
 };
+
+async function processTranslationQueue() {
+  if (translationQueue.size === 0) return;
+
+  const keysToTranslate = Array.from(translationQueue);
+  translationQueue.clear();
+
+  try {
+    const res = await authenticatedFetch(
+      `/api/translate?targetLang=${dashboard.state.lang}`,
+      {
+        method: "POST",
+        body: JSON.stringify({ texts: keysToTranslate }),
+      },
+    );
+
+    if (res.ok) {
+      const data = await res.json();
+      data.results.forEach((item) => {
+        dynamicCache[item.original] = item.translated;
+      });
+      localStorage.setItem(
+        "dynamicTranslations",
+        JSON.stringify(this.dynamicCache),
+      );
+
+      // Re-trigger render and UI updates with new translations
+      if (dashboard.state.store) dashboard.render();
+      applyTranslations();
+    }
+  } catch (e) {
+    console.error("[Auto-Translate] Batch failed", e);
+  }
+}
 
 /**
  * Scans the DOM for elements with data-i18n attributes and updates them.
@@ -4185,7 +4241,7 @@ function render(json) {
 
   // Sortable headers: Works regardless of column count or content
   headers.forEach((h, i) => {
-    thead += `<th onclick="sortData('${h}'); event.stopPropagation()">${h} ${currentSort.key === h ? (currentSort.dir === 1 ? "↑" : "↓") : ""}</th>`;
+    thead += `<th onclick="sortData('${h}'); event.stopPropagation()">${t(h)} ${dashboard.state.sort.key === h ? (dashboard.state.sort.dir === 1 ? "↑" : "↓") : ""}</th>`;
   });
   thead += "</tr>";
   document.getElementById("thead").innerHTML = thead;
@@ -4212,7 +4268,7 @@ function render(json) {
             </div>
           </td>`;
       headers.forEach((h, i) => {
-        let val = i === 0 ? t(r[h]) : (r[h] ?? "");
+        let val = t(r[h]); // Translate ALL data content automatically
 
         if (highlightRegex) {
           val = String(val).replace(highlightRegex, "<b>$1</b>");

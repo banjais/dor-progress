@@ -5,29 +5,25 @@
  */
 
 import { PDFDocument, rgb, StandardFonts } from "pdf-lib";
-import { Env } from "./shared/types";
+import { Env } from "./shared/types.js";
+import dictionaryData from "./translations.json" with { type: "json" };
 
-/** Static dictionary for common road department terms to minimize Gemini usage */
-const DICTIONARY: Record<string, Record<string, string>> = {
-  ne: {
-    "On Track": "ट्र्याकमा",
-    Delayed: "ढिलाइ",
-    "In Progress": "सञ्चालनमा",
-    Critical: "गम्भीर",
-    "Asphalt Paving": "कालोपत्रे",
-    "Drainage Work": "ढल निर्माण",
-    km: "कि.मि.",
-    m: "मिटर",
-    Nos: "संख्या",
-    Hello: "नमस्ते",
-    Road: "सडक",
-    Construction: "निर्माण",
-    Traffic: "यातायात",
-    Blocked: "अवरुद्ध",
-    Open: "खुला",
-    Closed: "बन्द",
-  },
-};
+/** 
+ * Derive TranslationKey from the 'ne' keys in the JSON.
+ * This ensures the type and data stay perfectly in sync.
+ */
+type TranslationKey = keyof (typeof dictionaryData)["ne"];
+const DICTIONARY = dictionaryData as Record<string, Record<TranslationKey, string>>;
+
+/** Supported language codes automatically derived from the DICTIONARY keys */
+type SupportedLang = keyof typeof DICTIONARY;
+
+/**
+ * Type guard to check if a string is a supported language in the dictionary.
+ */
+function isSupportedLang(lang: string): lang is SupportedLang {
+  return Object.keys(DICTIONARY).includes(lang);
+}
 
 // Circuit breaker constants
 const FAIL_COUNT_KEY = "system:gemini_failure_count";
@@ -268,8 +264,9 @@ export async function translateWithGemini(
   }
 
   // 3. Dictionary fallback (exact match)
-  const dict = DICTIONARY[targetLang as keyof typeof DICTIONARY];
-  if (dict) {
+  if (isSupportedLang(targetLang)) {
+    // Inside this block, targetLang is narrowed to SupportedLang
+    const dict = DICTIONARY[targetLang];
     const exact = dict[text];
     if (exact) {
       await env.TRANSLATION_KV.put(cacheKey, exact, {
@@ -769,26 +766,24 @@ export default {
         );
       }
 
-      // Perform translation
-      const result = await translateWithGemini(text, targetLang, env, lowData);
+      // Process translations (batch or single)
+      const results = await Promise.all(
+        texts.map(t => translateWithGemini(t, targetLang, env, lowData))
+      );
 
-      // Set rate limit cache (1 minute) — only if not circuit-broken
-      if (result.source !== "circuit-breaker") {
+      // Set rate limit cache if any were not circuit-broken
+      if (results.some(r => r.source !== "circuit-breaker")) {
         await setRedisCache(translateKey, "active", env, 60);
       }
 
-      return new Response(
-        JSON.stringify({
-          original: text,
-          translated: result.translated,
-          targetLang,
-          source: result.source,
-        }),
-        {
-          status: 200,
-          headers: { ...securityHeaders, "Content-Type": "application/json" },
-        },
-      );
+      const responseData = request.method === "POST"
+        ? { results: results.map((r, i) => ({ original: texts[i], translated: r.translated, source: r.source })) }
+        : { original: texts[0], translated: results[0].translated, source: results[0].source };
+
+      return new Response(JSON.stringify(responseData), {
+        status: 200,
+        headers: { ...securityHeaders, "Content-Type": "application/json" },
+      });
     }
 
     // Snapshot API routes (require admin auth)
@@ -865,7 +860,7 @@ export default {
 
         if (isDryRun) {
           const { pdfBytes, metadata } = await generateSnapshotPdf(data, env);
-          return new Response(pdfBytes, {
+          return new Response(pdfBytes.buffer as ArrayBuffer, {
             headers: {
               ...securityHeaders,
               "Content-Type": "application/pdf",
@@ -1403,7 +1398,7 @@ async function createSnapshot(
   const { pdfBytes, metadata } = await generateSnapshotPdf(data, env);
 
   ctx.waitUntil(
-    env.TRANSLATION_KV.put(`snapshot:pdf:${metadata.date}`, pdfBytes.buffer, {
+    env.TRANSLATION_KV.put(`snapshot:pdf:${metadata.date}`, pdfBytes.buffer as ArrayBuffer, {
       expirationTtl: 86400 * 60,
     }),
   );

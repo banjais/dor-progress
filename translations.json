@@ -1,0 +1,20 @@
+{
+    "ne": {
+        "On Track": "ट्र्याकमा",
+        "Delayed": "ढिलाइ",
+        "In Progress": "सञ्चालनमा",
+        "Critical": "गम्भीर",
+        "Asphalt Paving": "कालोपत्रे",
+        "Drainage Work": "ढल निर्माण",
+        "km": "कि.मि.",
+        "m": "मिटर",
+        "Nos": "संख्या",
+        "Hello": "नमस्ते",
+        "Road": "सडक",
+        "Construction": "निर्माण",
+        "Traffic": "यातायात",
+        "Blocked": "अवरुद्ध",
+        "Open": "खुला",
+        "Closed": "बन्द"
+    }
+}
