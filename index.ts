@@ -50,6 +50,20 @@ const RATE_LIMIT_MAX_REQUESTS = 60; // Max requests per window
 const RATE_LIMIT_WINDOW_MS = 60000; // 1 minute window
 
 /**
+ * In-memory cache for the admin secret to avoid redundant KV calls.
+ */
+let cachedAdminSecret: string | null = null;
+let lastSecretFetch = 0;
+const SECRET_CACHE_TTL = 300_000; // 5 minutes
+
+/**
+ * In-memory cache for the JWKS public keys.
+ */
+let cachedJwks: any = null;
+let lastJwksFetch = 0;
+const JWKS_CACHE_TTL = 3600_000; // 1 hour
+
+/**
  * Check if circuit breaker is open (Gemini repeatedly failing)
  */
 async function isCircuitBreakerOpen(env: Env): Promise<boolean> {
@@ -466,11 +480,19 @@ export default {
     }
 
     if (normalizedPath.startsWith("/api/admin/")) {
-      const adminSecret = request.headers.get("X-Admin-Secret");
+      const providedSecret = request.headers.get("X-Admin-Secret");
+
+      const now = Date.now();
+      if (!cachedAdminSecret || (now - lastSecretFetch > SECRET_CACHE_TTL)) {
+        cachedAdminSecret = await env.TRANSLATION_KV.get("config:admin_secret");
+        lastSecretFetch = now;
+      }
+      const storedSecret = cachedAdminSecret;
+
       if (
-        !adminSecret ||
-        !env.ADMIN_SECRET ||
-        !secureCompare(adminSecret, env.ADMIN_SECRET)
+        !providedSecret ||
+        !storedSecret ||
+        !secureCompare(providedSecret, storedSecret)
       ) {
         return new Response("Unauthorized", {
           status: 401,
@@ -484,7 +506,6 @@ export default {
           "UPSTASH_REDIS_REST_URL",
           "UPSTASH_REDIS_REST_TOKEN",
           "GEMINI_API_KEY",
-          "ADMIN_SECRET",
           "FIREBASE_PROJECT_ID",
           "FIREBASE_API_KEY",
           "FIREBASE_AUTH_DOMAIN",
@@ -772,11 +793,19 @@ export default {
 
     // Snapshot API routes (require admin auth)
     if (normalizedPath.startsWith("/api/snapshot")) {
-      const adminSecret = request.headers.get("X-Admin-Secret");
+      const providedSecret = request.headers.get("X-Admin-Secret");
+
+      const now = Date.now();
+      if (!cachedAdminSecret || (now - lastSecretFetch > SECRET_CACHE_TTL)) {
+        cachedAdminSecret = await env.TRANSLATION_KV.get("config:admin_secret");
+        lastSecretFetch = now;
+      }
+      const storedSecret = cachedAdminSecret;
+
       if (
-        !adminSecret ||
-        !env.ADMIN_SECRET ||
-        !secureCompare(adminSecret, env.ADMIN_SECRET)
+        !providedSecret ||
+        !storedSecret ||
+        !secureCompare(providedSecret, storedSecret)
       ) {
         return new Response(JSON.stringify({ error: "Unauthorized" }), {
           status: 401,
@@ -972,14 +1001,26 @@ async function verifyAppCheckToken(
 
     // 4. Fetch JWKS with Stale-While-Revalidate (SWR) pattern
     const jwksKey = "system:firebase_jwks";
-    const { value: cachedJwks, metadata } =
-      await env.TRANSLATION_KV.getWithMetadata<{ created: number }>(
-        jwksKey,
-        "json",
-      );
+    const now_ms = Date.now();
 
-    let jwks = cachedJwks as any;
-    const isStale = !metadata || Date.now() - (metadata.created || 0) > 3600000; // Soft expire after 1 hour
+    // Check In-Memory Cache first
+    let kvMetadata: { created: number } | null = null;
+    if (!cachedJwks || (now_ms - lastJwksFetch > JWKS_CACHE_TTL)) {
+      const { value: kvJwks, metadata } =
+        await env.TRANSLATION_KV.getWithMetadata<any, { created: number }>(
+          jwksKey,
+          "json",
+        );
+
+      kvMetadata = metadata;
+      if (kvJwks) {
+        cachedJwks = kvJwks;
+        lastJwksFetch = kvMetadata?.created || now_ms;
+      }
+    }
+
+    let jwks = cachedJwks;
+    const isStale = !lastJwksFetch || now_ms - lastJwksFetch > 3600000; // Soft expire after 1 hour
     const kidMissing = !jwks || !jwks.keys.some((k: any) => k.kid === kid);
 
     // If KID is missing (rotation detected) or cache is empty, fetch blockingly
@@ -994,6 +1035,8 @@ async function verifyAppCheckToken(
           metadata: { created: Date.now() },
         }),
       );
+      cachedJwks = jwks;
+      lastJwksFetch = Date.now();
     }
     // If cache is just stale but usable, use it and refresh in background
     else if (isStale) {
@@ -1172,7 +1215,7 @@ function generateChecksum(data: unknown): string {
  * Adapted for use within the Worker environment.
  */
 async function fetchProjectData(env: Env) {
-  const sheetId = env.PUBLISHED_SHEET_ID;
+  const sheetId = (env as any).PUBLISHED_SHEET_ID;
   if (!sheetId) throw new Error("Google Sheet ID is not configured.");
 
   const publishedUrl = `https://docs.google.com/spreadsheets/d/e/${sheetId}/pub?output=csv`;
@@ -1187,15 +1230,15 @@ async function fetchProjectData(env: Env) {
 
   const rawHeaders = lines[0]
     .split(/,(?=(?:(?:[^"]*"){2})*[^"]*$)/)
-    .map((h) => h.replace(/^"|"$/g, "").trim());
+    .map((h: string) => h.replace(/^"|"$/g, "").trim());
 
-  const headers = rawHeaders.map((h) => h.replace(/[\u200B-\u200D\uFEFF]/g, ""));
+  const headers = rawHeaders.map((h: string) => h.replace(/[\u200B-\u200D\uFEFF]/g, ""));
 
-  const rows = lines.slice(1).map((line) => {
-    const values = line.split(/,(?=(?:(?:[^"]*"){2})*[^"]*$)/).map((v) => v.replace(/^"|"$/g, "").trim());
+  const rows = lines.slice(1).map((line: string) => {
+    const values = line.split(/,(?=(?:(?:[^"]*"){2})*[^"]*$)/).map((v: string) => v.replace(/^"|"$/g, "").trim());
     const row: Record<string, any> = {};
 
-    headers.forEach((header, i) => {
+    headers.forEach((header: string, i: number) => {
       let rawValue = values[i] || "";
       const cleanValue = rawValue.replace(/,/g, "");
       if (!isNaN(Number(cleanValue)) && cleanValue.trim() !== "") {
@@ -1206,8 +1249,13 @@ async function fetchProjectData(env: Env) {
     });
 
     // Dynamic calculation of progress/status
-    const targetKey = headers.find(h => h.includes("Annual Target") || h.includes("लक्ष्य"));
-    const progKey = headers.find(h => h.includes("Annual Progress") || h.includes("प्रगति"));
+    const targetKey = headers.find(
+      (h: string) => h.includes("Annual Target") || h.includes("बार्षिक लक्ष्य"),
+    );
+    const progKey = headers.find(
+      (h: string) =>
+        h.includes("Annual Progress") || h.includes("हाल सम्म को बार्षिक प्रगति"),
+    );
 
     if (targetKey && progKey) {
       const t = parseFloat(String(row[targetKey] || "0"));
@@ -1355,7 +1403,7 @@ async function createSnapshot(
   const { pdfBytes, metadata } = await generateSnapshotPdf(data, env);
 
   ctx.waitUntil(
-    env.TRANSLATION_KV.put(`snapshot:pdf:${metadata.date}`, pdfBytes, {
+    env.TRANSLATION_KV.put(`snapshot:pdf:${metadata.date}`, pdfBytes.buffer, {
       expirationTtl: 86400 * 60,
     }),
   );
