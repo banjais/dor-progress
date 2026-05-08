@@ -19,7 +19,8 @@
     "src/**/*",
     "scripts/**/*",
     "shared/**/*.ts",
-    "index.ts"
+    "index.ts",
+    "ai-service.ts"
   ],
   "exclude": [
     "node_modules",

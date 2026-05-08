@@ -1,39 +1,7 @@
 import { runProjectSummary } from "./ai-service.js";
 import { jwtVerify, createRemoteJWKSet } from "jose";
 import { z } from "zod";
-
-export interface Env {
-  REPORTS_KV: KVNamespace;
-  GOOGLE_GENAI_API_KEY: string;
-  FIREBASE_PROJECT_NUMBER: string;
-  FIREBASE_PROJECT_ID: string;
-  APP_ENV: string;
-  DEBUG_MODE: string;
-  PUBLISHED_SHEET_ID: string;
-  RECAPTCHA_SITE_KEY: string;
-  ADMIN_SECRET: string;
-}
-
-export type ProjectRow = Record<string, string | number>;
-
-export interface AiSummary {
-  overallHealth?: "good" | "moderate" | "critical";
-  criticalProjects?: string[];
-  exceedingProjects?: string[];
-  discrepancies?: Array<{ text: string; severity: "low" | "medium" | "high" }>;
-  extractedData?: {
-    headers: string[];
-    rows: ProjectRow[];
-  };
-  brief: string;
-}
-
-export interface ProjectReport {
-  headers: string[];
-  rows: ProjectRow[];
-  lastUpdate: string;
-  aiSummary: AiSummary | null;
-}
+import { Env, AiSummary, ProjectReport } from "../shared/types.js";
 
 class ServiceError extends Error {
   status: number;
@@ -81,7 +49,7 @@ async function generateFingerprint(buffer: ArrayBuffer): Promise<string> {
 async function verifyAppCheck(request: Request, env: Env): Promise<void> {
   // Define environments where App Check should be bypassed (e.g., for local development or testing)
   const bypassEnvironments = ["development", "test"];
-  if (bypassEnvironments.includes(env.APP_ENV)) {
+  if (env.APP_ENV && bypassEnvironments.includes(env.APP_ENV)) {
     console.warn(`App Check bypassed for ${env.APP_ENV} environment.`);
     return;
   }
@@ -91,14 +59,20 @@ async function verifyAppCheck(request: Request, env: Env): Promise<void> {
     throw new ServiceError("Unauthorized: No App Check token", { status: 401 });
   }
 
+  const projectNumber = env.FIREBASE_PROJECT_NUMBER;
+  const projectId = env.FIREBASE_PROJECT_ID;
+
+  if (!projectNumber || !projectId) {
+    throw new ServiceError(
+      "Server configuration error: Firebase Project info missing",
+      { status: 500 },
+    );
+  }
+
   try {
-    const projectNumber = env.FIREBASE_PROJECT_NUMBER;
     await jwtVerify(token, JWKS, {
       issuer: `https://firebaseappcheck.googleapis.com/${projectNumber}`,
-      audience: [
-        `projects/${projectNumber}`,
-        `projects/${env.FIREBASE_PROJECT_ID}`,
-      ],
+      audience: [`projects/${projectNumber}`, `projects/${projectId}`],
       clockTolerance: "1m",
     });
   } catch (e) {
@@ -173,7 +147,7 @@ const handler: ExportedHandler<Env> = {
       try {
         // 1. Validate Input using Zod
         const validation = ReportRequestSchema.safeParse({
-          lang: url.searchParams.get("lang"),
+          lang: url.searchParams.get("lang") || undefined, // Handle null from searchParams
           date: url.searchParams.get("date") || undefined,
           force: url.searchParams.get("force"),
           isLowData: request.headers.get("X-Low-Data") === "true",
@@ -236,7 +210,10 @@ const handler: ExportedHandler<Env> = {
 
             for (let i = 0; i < 2; i++) {
               try {
-                aiResult = await runProjectSummary(env.GOOGLE_GENAI_API_KEY, {
+                const apiKey = env.GOOGLE_GENAI_API_KEY || env.GEMINI_API_KEY;
+                if (!apiKey) throw new Error("AI API Key not configured");
+
+                aiResult = await runProjectSummary(apiKey, {
                   pdfBase64,
                   lang,
                 });

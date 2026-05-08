@@ -9,7 +9,7 @@ import { z } from "zod";
 /**
  * @typedef {object} AiSummary
  * @property {string} brief
- * @property {"good" | "moderate" | "critical"} overallHealth
+ * @property {"good" | "moderate" | "critical"} [overallHealth]
  * @property {string[]} [criticalProjects]
  * @property {string[]} [exceedingProjects]
  * @property {Array<{text: string, severity: "low" | "medium" | "high"}>} [discrepancies]
@@ -20,7 +20,7 @@ import { z } from "zod";
 
 const AiSummarySchema = z.object({
   brief: z.string().describe("A concise executive briefing under 100 words."),
-  overallHealth: z.enum(["good", "moderate", "critical"]),
+  overallHealth: z.enum(["good", "moderate", "critical"]).optional(),
   criticalProjects: z.array(z.string()).optional(),
   exceedingProjects: z.array(z.string()).optional(),
   discrepancies: z
@@ -87,7 +87,7 @@ async function generateProjectSummary(ai, input, maxRetries = 2) {
   for (let attempt = 0; attempt <= maxRetries; attempt++) {
     try {
       const response = await ai.generate({
-        model: googleAI.model("gemini-2.0-flash"),
+        model: googleAI.model("gemini-2.5-flash"),
         output: { schema: AiSummarySchema },
         prompt: [
           {

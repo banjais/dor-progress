@@ -2,6 +2,7 @@ name = "dor-progress"
 account_id = "052a34d4627b5c02d0bff84ff1c0f906"
 main = "index.ts"
 compatibility_date = "2026-04-23"
+compatibility_flags = [ "nodejs_compat" ]
 minify = true
 
 [[kv_namespaces]]

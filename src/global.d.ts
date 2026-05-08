@@ -18,15 +18,7 @@ import {
 
 declare global {
   interface Env extends SharedEnv {
-    PUBLISHED_SHEET_ID: string;
-    GOOGLE_GENAI_API_KEY: string;
-    REPORTS_KV: KVNamespace;
-    FIREBASE_PROJECT_NUMBER: string;
-    FIREBASE_PROJECT_ID: string;
-    APP_ENV: string;
-    DEBUG_MODE: string;
-    RECAPTCHA_SITE_KEY: string;
-    ADMIN_SECRET: string;
+    // Specific overrides for global scope if necessary, otherwise inherits SharedEnv
     VITE_API_BASE_URL?: string;
   }
   interface ProjectRow extends SharedProjectRow {}

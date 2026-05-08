@@ -82,6 +82,7 @@ class AudioEngine {
     this.musicBuffer = null;
     this.analyser = null;
     this.duckLevel = 0.3;
+    this.bufferPool = new Map(); // Centralized cache for pre-rendered UI sounds
 
     this.uiVolume = parseFloat(localStorage.getItem("ui-volume") || "0.5");
     this.lastVolume = this.uiVolume > 0 ? this.uiVolume : 0.5;
@@ -120,9 +121,59 @@ class AudioEngine {
       this.analyser.fftSize = 64;
       this.musicGain.connect(this.analyser);
 
+      await this.preRenderAll();
       this.updateVolumes();
     } catch (e) {
       console.warn("Audio Engine initialization failed:", e.message);
+      this.isBroken = true;
+    }
+  }
+
+  /**
+   * Pre-renders all synthesized UI sound profiles into reusable AudioBuffers.
+   * This acts as our "pool," shifting work from real-time synthesis to memory playback.
+   */
+  async preRenderAll() {
+    const sampleRate = this.ctx.sampleRate;
+    for (const [packName, profiles] of Object.entries(
+      AudioEngine.SOUND_PROFILES,
+    )) {
+      for (const [soundId, profile] of Object.entries(profiles)) {
+        const buffer = await this._renderProfileToBuffer(profile, sampleRate);
+        this.bufferPool.set(`${packName}:${soundId}`, buffer);
+      }
+    }
+  }
+
+  /**
+   * Internal helper using OfflineAudioContext to "bake" a sound profile.
+   */
+  async _renderProfileToBuffer(profile, sampleRate) {
+    const length = Math.ceil(sampleRate * profile.d);
+    const offlineCtx = new OfflineAudioContext(1, length, sampleRate);
+
+    try {
+      const osc = offlineCtx.createOscillator();
+      const gain = offlineCtx.createGain();
+
+      osc.type = profile.type;
+      osc.frequency.setValueAtTime(profile.f1, 0);
+      if (profile.f2) {
+        osc.frequency.exponentialRampToValueAtTime(profile.f2, profile.d);
+      }
+
+      gain.gain.setValueAtTime(profile.g, 0);
+      gain.gain.exponentialRampToValueAtTime(0.0001, profile.d);
+
+      osc.connect(gain);
+      gain.connect(offlineCtx.destination);
+
+      osc.start(0);
+      osc.stop(profile.d);
+
+      return await offlineCtx.startRendering();
+    } catch (e) {
+      console.error("[Audio Engine] Pre-render failed:", e);
       this.isBroken = true;
     }
   }
@@ -188,6 +239,7 @@ class AudioEngine {
       () => {
         try {
           source.stop();
+          source.disconnect();
         } catch (e) {}
       },
       fadeDuration * 1000 + 100,
@@ -209,6 +261,9 @@ class AudioEngine {
       const source = this.ctx.createBufferSource();
       source.buffer = audioBuffer;
       source.connect(this.uiGain); // Connect to UI gain for volume control
+      source.onended = () => {
+        source.disconnect();
+      };
       source.start();
     } catch (e) {
       console.error("[Audio Engine] Play blob failed:", e);
@@ -244,34 +299,25 @@ class AudioEngine {
     try {
       if (this.ctx.state === "suspended") await this.ctx.resume();
 
-      const profile =
-        AudioEngine.SOUND_PROFILES[
-          localStorage.getItem("sound-pack") || "modern"
-        ]?.[id];
-      if (!profile) return;
+      const pack = localStorage.getItem("sound-pack") || "modern";
+      const buffer = this.bufferPool.get(`${pack}:${id}`);
 
-      const osc = this.ctx.createOscillator();
-      const gain = this.ctx.createGain();
+      if (!buffer) {
+        // Fallback to real-time synthesis if buffer isn't ready
+        console.warn(`[Audio Engine] Buffer for ${pack}:${id} not found.`);
+        return;
+      }
+
+      const source = this.ctx.createBufferSource();
       const pitch = parseFloat(localStorage.getItem("ui-pitch") || "1.0");
 
-      osc.type = profile.type;
-      osc.frequency.setValueAtTime(profile.f1 * pitch, this.ctx.currentTime);
-      if (profile.f2)
-        osc.frequency.exponentialRampToValueAtTime(
-          profile.f2 * pitch,
-          this.ctx.currentTime + profile.d,
-        );
-
-      gain.gain.setValueAtTime(profile.g, this.ctx.currentTime);
-      gain.gain.exponentialRampToValueAtTime(
-        0.0001,
-        this.ctx.currentTime + profile.d,
-      );
-
-      osc.connect(gain);
-      gain.connect(this.uiGain);
-      osc.start();
-      osc.stop(this.ctx.currentTime + profile.d);
+      source.buffer = buffer;
+      source.playbackRate.value = pitch; // Handle dynamic pitch changes via playback speed
+      source.connect(this.uiGain);
+      source.onended = () => {
+        source.disconnect();
+      };
+      source.start();
     } catch (e) {
       console.error("UI Sound error:", e);
     }
@@ -558,8 +604,10 @@ class SpeechEngine {
         this.currentBlobAudioSource.connect(this.audio.uiGain); // Connect to UI gain for volume control
         this.currentBlobAudioSource.start();
 
-        this.currentBlobAudioSource.onended = () => {
+        const source = this.currentBlobAudioSource;
+        source.onended = () => {
           this.audio.stopMusic(2.0);
+          source.disconnect();
           container.innerText = this.originalText;
           this.resetUI();
           this.currentBlobAudioSource = null;

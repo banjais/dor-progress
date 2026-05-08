@@ -43,6 +43,7 @@
     "@cloudflare/workers-types": "^4.20260426.1",
     "@eslint/js": "^9.39.4",
     "@genkit-ai/google-genai": "^1.16.1",
+    "@google/generative-ai": "^0.24.1",
     "@types/node": "^20.12.7",
     "@typescript-eslint/eslint-plugin": "^8.59.1",
     "@typescript-eslint/parser": "^8.59.1",

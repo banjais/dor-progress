@@ -5,8 +5,23 @@
  */
 
 import { PDFDocument, rgb, StandardFonts } from "pdf-lib";
-import { Env } from "./shared/types.js";
+import {
+  Env,
+  AiSummary,
+  ProjectReport,
+  ProjectRow,
+  ProjectData,
+  SnapshotMetadata,
+  Jwks,
+  Jwk,
+} from "./shared/types.js";
+import { runProjectSummary, runTranslation } from "./ai-service.js";
+import aiPromptsData from "./ai-prompts.json" with { type: "json" };
 import dictionaryData from "./translations.json" with { type: "json" };
+
+/** Snapshot System Constants (Moved up to prevent hoisting errors) */
+const SNAPSHOT_RETENTION_COUNT = 30;
+const SNAPSHOT_LIST_KEY = "snapshot:list";
 
 /** 
  * Derive TranslationKey from the 'ne' keys in the JSON.
@@ -15,6 +30,10 @@ import dictionaryData from "./translations.json" with { type: "json" };
 type TranslationKey = keyof (typeof dictionaryData)["ne"];
 const DICTIONARY = dictionaryData as Record<string, Record<TranslationKey, string>>;
 
+// Type for AI prompts
+type AiPrompts = typeof aiPromptsData;
+const AI_PROMPTS: AiPrompts = aiPromptsData;
+
 /** Supported language codes automatically derived from the DICTIONARY keys */
 type SupportedLang = keyof typeof DICTIONARY;
 
@@ -22,7 +41,7 @@ type SupportedLang = keyof typeof DICTIONARY;
  * Type guard to check if a string is a supported language in the dictionary.
  */
 function isSupportedLang(lang: string): lang is SupportedLang {
-  return Object.keys(DICTIONARY).includes(lang);
+  return lang in DICTIONARY;
 }
 
 // Circuit breaker constants
@@ -55,7 +74,7 @@ const SECRET_CACHE_TTL = 300_000; // 5 minutes
 /**
  * In-memory cache for the JWKS public keys.
  */
-let cachedJwks: any = null;
+let cachedJwks: Jwks | null = null;
 let lastJwksFetch = 0;
 const JWKS_CACHE_TTL = 3600_000; // 1 hour
 
@@ -75,6 +94,23 @@ async function isCircuitBreakerOpen(env: Env): Promise<boolean> {
     await env.TRANSLATION_KV.delete(FAIL_COUNT_KEY);
   }
   return false;
+}
+
+/**
+ * Helper to verify admin secret with timing-attack resistant comparison and caching.
+ */
+async function verifyAdminSecret(request: Request, env: Env): Promise<boolean> {
+  const providedSecret = request.headers.get("X-Admin-Secret");
+  if (!providedSecret) return false;
+
+  const now = Date.now();
+  if (!cachedAdminSecret || (now - lastSecretFetch > SECRET_CACHE_TTL)) {
+    cachedAdminSecret = await env.TRANSLATION_KV.get("config:admin_secret");
+    lastSecretFetch = now;
+  }
+
+  if (!cachedAdminSecret) return false;
+  return secureCompare(providedSecret, cachedAdminSecret);
 }
 
 /**
@@ -267,7 +303,7 @@ export async function translateWithGemini(
   if (isSupportedLang(targetLang)) {
     // Inside this block, targetLang is narrowed to SupportedLang
     const dict = DICTIONARY[targetLang];
-    const exact = dict[text];
+    const exact = dict[text as TranslationKey];
     if (exact) {
       await env.TRANSLATION_KV.put(cacheKey, exact, {
         expirationTtl: 86400 * 30,
@@ -294,79 +330,17 @@ export async function translateWithGemini(
   }
 
   // 5. Gemini AI translation (if key configured)
-  if (!env.GEMINI_API_KEY || env.GEMINI_API_KEY.trim().length === 0) {
+  const apiKey = env.GOOGLE_GENAI_API_KEY || env.GEMINI_API_KEY;
+  if (!apiKey || apiKey.trim().length === 0) {
     // No Gemini configured — return original text
     return { translated: text, source: "fallback" };
   }
 
   try {
-    // Construct prompt for translation
-    const prompt = `Translate the following English text to ${targetLang === "ne" ? "Nepali (Devanagari script)" : targetLang}. 
-Preserve numbers, units (km, m, Nos), proper nouns, and technical terms. 
-Return ONLY the translated text with no additional commentary.
-
-Text: "${text}"
-
-Translation:`;
-
-    const geminiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${env.GEMINI_API_KEY}`;
-    const response = await fetch(geminiUrl, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        contents: [
-          {
-            parts: [{ text: prompt }],
-            role: "user",
-          },
-        ],
-        generationConfig: {
-          temperature: 0.2,
-          maxOutputTokens: 512,
-          topP: 0.95,
-          topK: 40,
-        },
-        safetySettings: [
-          {
-            category: "HARM_CATEGORY_HARASSMENT",
-            threshold: "BLOCK_MEDIUM_AND_ABOVE",
-          },
-          {
-            category: "HARM_CATEGORY_HATE_SPEECH",
-            threshold: "BLOCK_MEDIUM_AND_ABOVE",
-          },
-          {
-            category: "HARM_CATEGORY_SEXUALLY_EXPLICIT",
-            threshold: "BLOCK_MEDIUM_AND_ABOVE",
-          },
-          {
-            category: "HARM_CATEGORY_DANGEROUS_CONTENT",
-            threshold: "BLOCK_MEDIUM_AND_ABOVE",
-          },
-        ],
-      }),
+    const translated = await runTranslation(apiKey, {
+      text,
+      targetLang
     });
-
-    if (!response.ok) {
-      const errorBody = await response.text();
-      throw new Error(`Gemini API ${response.status}: ${errorBody}`);
-    }
-
-    const data = (await response.json()) as {
-      candidates?: Array<{
-        content?: {
-          parts?: Array<{ text?: string }>;
-        };
-      }>;
-    };
-    const candidate = data.candidates?.[0];
-    if (!candidate?.content?.parts?.[0]?.text) {
-      throw new Error("Invalid Gemini response structure");
-    }
-
-    let translated = candidate.content.parts[0].text.trim();
-    // Remove surrounding quotes if present
-    translated = translated.replace(/^["']|["']$/g, "").trim();
 
     // Cache successful translation for 7 days
     await env.TRANSLATION_KV.put(cacheKey, translated, {
@@ -477,25 +451,10 @@ export default {
     }
 
     if (normalizedPath.startsWith("/api/admin/")) {
-      const providedSecret = request.headers.get("X-Admin-Secret");
-
-      const now = Date.now();
-      if (!cachedAdminSecret || (now - lastSecretFetch > SECRET_CACHE_TTL)) {
-        cachedAdminSecret = await env.TRANSLATION_KV.get("config:admin_secret");
-        lastSecretFetch = now;
+      if (!(await verifyAdminSecret(request, env))) {
+        return new Response("Unauthorized", { status: 401, headers: securityHeaders });
       }
-      const storedSecret = cachedAdminSecret;
 
-      if (
-        !providedSecret ||
-        !storedSecret ||
-        !secureCompare(providedSecret, storedSecret)
-      ) {
-        return new Response("Unauthorized", {
-          status: 401,
-          headers: securityHeaders,
-        });
-      }
       if (normalizedPath === "/api/admin/config-check") {
         // List all critical environment variables to check their loading status
         const keys: (keyof Env)[] = [
@@ -736,33 +695,32 @@ export default {
         );
       }
 
-      const text = url.searchParams.get("text");
       const targetLang = url.searchParams.get("targetLang") || "ne";
       // Check for custom X-Low-Data header or standard Save-Data header
       const lowData =
         request.headers.get("X-Low-Data") === "true" ||
         request.headers.get("Save-Data") === "on";
 
-      if (!text) {
-        return new Response(
-          JSON.stringify({ error: "Missing 'text' query parameter" }),
-          {
-            status: 400,
-            headers: { ...securityHeaders, "Content-Type": "application/json" },
-          },
-        );
+      let texts: string[] = [];
+      const queryText = url.searchParams.get("text");
+
+      if (queryText) {
+        texts = [queryText];
+      } else if (request.method === "POST") {
+        // Support batching via POST JSON body, fallback to query param
+        const body = (await request.json().catch(() => ({}))) as { texts?: string[]; text?: string };
+        if (Array.isArray(body.texts)) {
+          texts = body.texts;
+        } else if (body.text) {
+          texts = [body.text];
+        }
       }
 
-      const texts = [text];
-
-      // Basic rate limiting for public endpoint (stricter)
-      const translateKey = `limit:translate:${clientIp}`;
-      const isRateLimited = await getRedisCache(translateKey, env);
-      if (isRateLimited) {
+      if (texts.length === 0) {
         return new Response(
-          JSON.stringify({ error: "Rate limit exceeded. Try again later." }),
+          JSON.stringify({ error: "Missing 'text' or 'texts' parameter" }),
           {
-            status: 429,
+            status: 400,
             headers: { ...securityHeaders, "Content-Type": "application/json" },
           },
         );
@@ -772,6 +730,10 @@ export default {
       const results = await Promise.all(
         texts.map(t => translateWithGemini(t, targetLang, env, lowData))
       );
+
+      // Basic rate limiting for public endpoint (stricter)
+      const translateKey = `limit:translate:${clientIp}`;
+      const isRateLimited = await getRedisCache(translateKey, env);
 
       // Set rate limit cache if any were not circuit-broken
       if (results.some(r => r.source !== "circuit-breaker")) {
@@ -790,20 +752,7 @@ export default {
 
     // Snapshot API routes (require admin auth)
     if (normalizedPath.startsWith("/api/snapshot")) {
-      const providedSecret = request.headers.get("X-Admin-Secret");
-
-      const now = Date.now();
-      if (!cachedAdminSecret || (now - lastSecretFetch > SECRET_CACHE_TTL)) {
-        cachedAdminSecret = await env.TRANSLATION_KV.get("config:admin_secret");
-        lastSecretFetch = now;
-      }
-      const storedSecret = cachedAdminSecret;
-
-      if (
-        !providedSecret ||
-        !storedSecret ||
-        !secureCompare(providedSecret, storedSecret)
-      ) {
+      if (!(await verifyAdminSecret(request, env))) {
         return new Response(JSON.stringify({ error: "Unauthorized" }), {
           status: 401,
           headers: { ...securityHeaders, "Content-Type": "application/json" },
@@ -861,8 +810,8 @@ export default {
         const isDryRun = url.searchParams.get("dryRun") === "true";
 
         if (isDryRun) {
-          const { pdfBytes, metadata } = await generateSnapshotPdf(data, env);
-          return new Response(pdfBytes.buffer as ArrayBuffer, {
+          const { pdfBytes, metadata } = await generateSnapshotPdf(data, env, ctx);
+          return new Response(pdfBytes, {
             headers: {
               ...securityHeaders,
               "Content-Type": "application/pdf",
@@ -872,8 +821,8 @@ export default {
           });
         }
 
-        const metadata = await createSnapshot(env, ctx, data);
-        return new Response(JSON.stringify({ success: true, metadata }), {
+        const snapshotMeta = await createSnapshot(env, ctx, data);
+        return new Response(JSON.stringify({ success: true, metadata: snapshotMeta }), {
           status: 201,
           headers: { ...securityHeaders, "Content-Type": "application/json" },
         });
@@ -922,7 +871,7 @@ export default {
    * without impacting user request latency.
    */
   async scheduled(
-    event: ScheduledEvent,
+    _event: ScheduledEvent,
     env: Env,
     ctx: ExecutionContext,
   ): Promise<void> {
@@ -956,7 +905,7 @@ export default {
       }
     })());
   },
-};
+}; // End of export default
 
 /**
  * Cryptographically verifies a Firebase App Check token using Web Crypto API.
@@ -1004,7 +953,7 @@ async function verifyAppCheckToken(
     let kvMetadata: { created: number } | null = null;
     if (!cachedJwks || (now_ms - lastJwksFetch > JWKS_CACHE_TTL)) {
       const { value: kvJwks, metadata } =
-        await env.TRANSLATION_KV.getWithMetadata<any, { created: number }>(
+        await env.TRANSLATION_KV.getWithMetadata<Jwks, { created: number }>(
           jwksKey,
           "json",
         );
@@ -1018,7 +967,7 @@ async function verifyAppCheckToken(
 
     let jwks = cachedJwks;
     const isStale = !lastJwksFetch || now_ms - lastJwksFetch > 3600000; // Soft expire after 1 hour
-    const kidMissing = !jwks || !jwks.keys.some((k: any) => k.kid === kid);
+    const kidMissing = !jwks || !jwks.keys.some((k: Jwk) => k.kid === kid);
 
     // If KID is missing (rotation detected) or cache is empty, fetch blockingly
     if (kidMissing) {
@@ -1051,7 +1000,7 @@ async function verifyAppCheckToken(
       );
     }
 
-    const jwk = jwks.keys.find((k: any) => k.kid === kid);
+    const jwk = jwks.keys.find((k: Jwk) => k.kid === kid);
     if (!jwk) return { valid: false };
 
     // Import key into Web Crypto
@@ -1092,37 +1041,6 @@ function secureCompare(a: string, b: string): boolean {
   return r === 0;
 }
 
-// Snapshot System
-const SNAPSHOT_RETENTION_COUNT = 30;
-const SNAPSHOT_LIST_KEY = "snapshot:list";
-
-interface SnapshotMetadata {
-  date: string;
-  recordCount: number;
-  checksum: string;
-  createdAt: string;
-  bsDate?: string;
-}
-
-interface AiSummary {
-  brief: string;
-}
-
-interface ProjectReport {
-  headers: string[];
-  rows: any[];
-  lastUpdate: string;
-  aiSummary: AiSummary | null;
-}
-
-interface ProjectData {
-  records: unknown[];
-  meta: {
-    lastUpdate?: string;
-    total?: number;
-  };
-}
-
 /**
  * Generates a SHA-256 fingerprint for a dataset to handle AI caching.
  */
@@ -1136,44 +1054,21 @@ async function generateFingerprint(data: any[]): Promise<string> {
 /**
  * Generates an executive summary using Gemini 2.0 Flash.
  */
-async function generateAiSummary(rows: any[], lang: string, env: Env): Promise<string> {
-  if (!env.GEMINI_API_KEY) throw new Error("Missing Gemini API Key");
+async function generateAiSummary(rows: ProjectRow[], lang: "en" | "ne", env: Env): Promise<string> {
+  const apiKey = env.GOOGLE_GENAI_API_KEY || env.GEMINI_API_KEY;
+  if (!apiKey) return "Summary unavailable: API key not configured.";
 
-  const prompt = `
-    You are a world-class senior infrastructure analyst for the Department of Roads (DoR), Nepal.
-    Review the following project progress data:
-    ${JSON.stringify(rows.slice(0, 40))} 
-
-    Your task is to generate a concise "Executive Briefing" in ${lang === "ne" ? "Nepali (Devanagari)" : "English"}.
-
-    Guidelines:
-    1. Identify the overall health of the road network projects.
-    2. Specifically call out any projects that are falling behind (critical status).
-    3. Mention one or two projects that are exceeding performance targets.
-    4. Use a professional, authoritative, and helpful tone.
-    5. Keep the briefing under 100 words.
-    Return ONLY the summary text.
-  `;
-
-  const response = await fetch(
-    `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${env.GEMINI_API_KEY}`,
-    {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        contents: [{ parts: [{ text: prompt }] }],
-        generationConfig: { temperature: 0.3, maxOutputTokens: 400 }
-      })
-    }
-  );
-
-  if (!response.ok) throw new Error(`Gemini Summary Error: ${response.status}`);
-
-  const data = await response.json() as any;
-  return data.candidates?.[0]?.content?.parts?.[0]?.text?.trim() || "Summary unavailable.";
+  try {
+    const result = await runProjectSummary(apiKey, { rows, lang });
+    return result.brief;
+  } catch (err) {
+    console.error("Consolidated Summary Error:", err);
+    await recordGeminiFailure(env);
+    return "Summary unavailable due to a technical error.";
+  }
 }
 
-function getBsDate(): string {
+function getBsDate(date: Date = new Date()): string {
   const bsYear = 2082;
   const bsMonths = [
     { name: "बैशाख", days: 30 },
@@ -1189,9 +1084,9 @@ function getBsDate(): string {
     { name: "फाल्गुण", days: 29 },
     { name: "चैत", days: 30 },
   ];
-  const today = new Date();
-  const bsDay = today.getDate();
-  const bsMonthIndex = today.getMonth();
+
+  const bsDay = date.getDate();
+  const bsMonthIndex = date.getMonth();
   const bsMonth = bsMonths[bsMonthIndex]?.name || "असार";
   return `${bsYear} साल ${bsMonth} ${bsDay}`;
 }
@@ -1211,8 +1106,8 @@ function generateChecksum(data: unknown): string {
  * Fetches and parses project data from the configured Google Sheet.
  * Adapted for use within the Worker environment.
  */
-async function fetchProjectData(env: Env) {
-  const sheetId = (env as any).PUBLISHED_SHEET_ID;
+async function fetchProjectData(env: Env): Promise<{ headers: string[]; rows: ProjectRow[] }> {
+  const sheetId = env.PUBLISHED_SHEET_ID;
   if (!sheetId) throw new Error("Google Sheet ID is not configured.");
 
   const publishedUrl = `https://docs.google.com/spreadsheets/d/e/${sheetId}/pub?output=csv`;
@@ -1270,7 +1165,8 @@ async function fetchProjectData(env: Env) {
 
 async function generateSnapshotPdf(
   data: ProjectData,
-  _env: Env,
+  env: Env,
+  ctx: ExecutionContext,
 ): Promise<{ pdfBytes: Uint8Array; metadata: SnapshotMetadata }> {
   const pdfDoc = await PDFDocument.create();
 
@@ -1284,15 +1180,31 @@ async function generateSnapshotPdf(
     const possibleDateKeys = ["Update Date", "मिति", "Date"];
     for (const key of possibleDateKeys) {
       if (firstRecord[key]) {
-        // If the date in the sheet is already Nepali, we use it directly
-        // Otherwise, we stick to current date for the primary index
+        displayDate = String(firstRecord[key]);
         break;
       }
     }
   }
 
   const page = pdfDoc.addPage([595.28, 841.89]);
-  const font = await pdfDoc.embedFont(StandardFonts.Helvetica);
+
+  // Fetch and embed Noto Sans Devanagari to support Nepali characters
+  const fontKey = "system:font:noto_sans_devanagari";
+  let fontBytes = await env.TRANSLATION_KV.get(fontKey, "arrayBuffer");
+
+  if (!fontBytes) {
+    const fontUrl = "https://fonts.gstatic.com/s/notosansdevanagari/v28/wf5m9WB_V9fNqbfVp-9ueS5mF-X_S-zY.ttf";
+    const res = await fetch(fontUrl);
+    if (!res.ok) throw new Error("Failed to fetch Noto Sans font from CDN");
+    fontBytes = await res.arrayBuffer();
+    ctx.waitUntil(env.TRANSLATION_KV.put(fontKey, fontBytes));
+  }
+
+  if (!fontBytes || fontBytes.byteLength === 0) {
+    throw new Error("Font initialization failed: font bytes are empty.");
+  }
+  const font = await pdfDoc.embedFont(fontBytes as ArrayBuffer);
+
   const fontBold = await pdfDoc.embedFont(StandardFonts.HelveticaBold);
   const { height } = page.getSize();
 
@@ -1301,7 +1213,7 @@ async function generateSnapshotPdf(
   page.drawText("DoR Progress Snapshot Report", {
     x: 50,
     y,
-    size: 24,
+    size: 22,
     font: fontBold,
     color: rgb(0.2, 0.2, 0.6),
   });
@@ -1338,7 +1250,7 @@ async function generateSnapshotPdf(
   y -= 20;
 
   const records = data.records || [];
-  for (let i = 0; i < Math.min(records.length, 50); i++) {
+  for (let i = 0; i < Math.min(records.length, 50); i++) { // Limit to 50 records for brevity in PDF
     const record = records[i] as Record<string, unknown>;
     const text = `${i + 1}. ${JSON.stringify(record).substring(0, 100)}`;
     page.drawText(text, {
@@ -1364,7 +1276,7 @@ async function generateSnapshotPdf(
   const pdfBytes = await pdfDoc.save();
 
   const metadata: SnapshotMetadata = {
-    date: today,
+    date: displayDate,
     recordCount: records.length,
     checksum: generateChecksum(data),
     createdAt: new Date().toISOString(),
@@ -1397,10 +1309,10 @@ async function createSnapshot(
   ctx: ExecutionContext,
   data: ProjectData,
 ): Promise<SnapshotMetadata> {
-  const { pdfBytes, metadata } = await generateSnapshotPdf(data, env);
+  const { pdfBytes, metadata } = await generateSnapshotPdf(data, env, ctx);
 
   ctx.waitUntil(
-    env.TRANSLATION_KV.put(`snapshot:pdf:${metadata.date}`, pdfBytes.buffer as ArrayBuffer, {
+    env.TRANSLATION_KV.put(`snapshot:pdf:${metadata.date}`, pdfBytes, {
       expirationTtl: 86400 * 60,
     }),
   );
