@@ -53,7 +53,7 @@ export class AudioEngine {
       this.analyser.fftSize = 64;
       this.musicGain.connect(this.analyser);
       await this.preRenderAll();
-      this.updateVolumes();
+      await this.updateVolumes();
     } catch (e) {
       console.warn("Audio Engine initialization failed:", e.message);
       this.isBroken = true;
@@ -120,6 +120,8 @@ export class AudioEngine {
       );
       source.connect(this.uiGain);
       source.start();
-    } catch (e) {}
+    } catch (e) {
+      // Silently fail audio playback errors
+    }
   }
 }

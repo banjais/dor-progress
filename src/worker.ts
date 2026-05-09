@@ -315,7 +315,7 @@ const handler: ExportedHandler<Env> = {
     return new Response("Not Found", { status: 404 });
   },
 
-  async scheduled(event: any, env: Env, ctx: ExecutionContext) {
+  scheduled(event: any, env: Env, ctx: ExecutionContext) {
     console.log("[Auto-Archive] Starting scheduled task...");
     ctx.waitUntil(handleAutoArchive(env));
   },
