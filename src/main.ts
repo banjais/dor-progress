@@ -1399,11 +1399,14 @@ class Dashboard {
     document.getElementById("tbody").innerHTML = skeleton;
 
     try {
+      const params = new URLSearchParams(window.location.search);
+      const date = params.get("date");
       const fetchOptions = isForced ? { cache: "no-store" } : {};
-      const res = await authenticatedFetch(
-        `/api/report?lang=${this.state.lang}${isForced ? "&force=true" : ""}`,
-        fetchOptions,
-      );
+      const endpoint = date
+        ? `/api/report?date=${date}&lang=${this.state.lang}`
+        : `/api/report?lang=${this.state.lang}${isForced ? "&force=true" : ""}`;
+
+      const res = await authenticatedFetch(endpoint, fetchOptions);
       const json = await res.json();
       if (json && json.headers) {
         const fetchEnd = performance.now();
@@ -1876,16 +1879,22 @@ async function fetchWeeklyHistory() {
   let html = weeklyArchives
     .map(
       (h) => `
-        <div class="chart-card">
+        <div class="chart-card archive-item" style="display:flex; flex-direction:column; justify-content:space-between">
           <div style="display:flex; justify-content:space-between; align-items:start; margin-bottom:10px">
             <div>
               <b style="font-size:1.1rem">📅 ${h.date}</b>
               ${h.bsDate ? `<div style="font-size:0.75rem; color:var(--primary); font-weight:bold; margin-top:2px">${dashboard.state.lang === "ne" ? toNepaliNumerals(h.bsDate) : h.bsDate}</div>` : ""}
             </div>
-            <button onclick="downloadPdf('${h.date}')" style="border:none; cursor:pointer; font-size:0.7rem; background:var(--critical); color:white; padding:4px 8px; border-radius:4px">PDF</button>
+            <div style="display:flex; gap:5px">
+              <button onclick="shareSnapshot('${h.date}')" class="icon-btn" title="Share Link" style="width:28px; height:28px; font-size:0.8rem; background:rgba(0,0,0,0.05); border-radius:6px">🔗</button>
+              <button onclick="downloadPdf('${h.date}')" style="border:none; cursor:pointer; font-size:0.7rem; background:var(--critical); color:white; padding:4px 8px; border-radius:6px; height:28px">PDF</button>
+            </div>
           </div>
-          <p style="font-size:0.8rem; opacity:0.8">${h.bsDate ? `${t("total")}: ${dashboard.state.lang === "ne" ? toNepaliNumerals(h.recordCount) : h.recordCount}` : h.summary || "Weekly progress snapshot."}</p>
-          <button onclick="loadSnapshot('${h.date}')" style="width:100%; margin-top:10px; border:1px solid var(--primary); background:none; color:var(--primary); padding:8px; border-radius:8px; cursor:pointer; font-weight:bold">View Data</button>
+          <p style="font-size:0.8rem; opacity:0.8; margin-bottom:12px">${h.bsDate ? `${t("total")}: ${dashboard.state.lang === "ne" ? toNepaliNumerals(h.recordCount) : h.recordCount}` : h.summary || "Weekly progress snapshot."}</p>
+          <div style="display:flex; gap:8px;">
+            <button onclick="loadSnapshot('${h.date}')" style="flex:2; border:1px solid var(--primary); background:none; color:var(--primary); padding:10px; border-radius:8px; cursor:pointer; font-weight:bold">${t("viewData")}</button>
+            <button onclick="quickPrintSnapshot('${h.date}')" title="Direct Print" style="flex:1; border:1px solid var(--border); background:rgba(0,0,0,0.03); color:var(--text); padding:10px; border-radius:8px; cursor:pointer; font-size:1rem">🖨️</button>
+          </div>
         </div>
       `,
     )
