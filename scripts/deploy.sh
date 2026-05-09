@@ -29,6 +29,21 @@ echo "📊 Running project diagnostics..."
 npm run info
 
 echo "🔍 Checking GitHub Workflow placement..."
+# 0.1 Cloudflare Binding Validation
+if [ "$DRY_RUN_FLAG" != "--dry-run" ]; then
+    echo "🔑 Validating Cloudflare KV Bindings..."
+    # Check if the specific KV IDs in wrangler.toml are accessible to the current user
+    if npx wrangler kv:namespace list > .kv_list.json 2>/dev/null; then
+        for BINDING in "TRANSLATION_KV" "REPORTS_KV"; do
+            if ! grep -q "$BINDING" .kv_list.json; then
+                echo "⚠️  Warning: Binding '$BINDING' not found in your Cloudflare account."
+                echo "   Run 'npx wrangler kv:namespace create $BINDING' to fix this."
+            fi
+        done
+        rm .kv_list.json
+    fi
+fi
+
 if [ ! -d ".github/workflows" ] || [ -z "$(ls -A .github/workflows/*.{yml,yaml} 2>/dev/null)" ]; then
     echo "⚠️  Warning: No GitHub Workflows found in .github/workflows/. CI/CD will not trigger."
 else

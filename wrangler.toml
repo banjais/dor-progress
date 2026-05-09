@@ -7,11 +7,22 @@ minify = true
 
 [[kv_namespaces]]
 binding = "TRANSLATION_KV"
-id = "d032e134adec47ab85ea1b5a8c18caab"
+id = "d032e134adec47ab85ea1b5a8c18caab" # Production Translation KV
 
 [[kv_namespaces]]
 binding = "REPORTS_KV"
-id = "d227b9c9f28d44e7887e4153a79d396a"
+# In a CI/CD pipeline, you can override this ID using the 
+# CLOUDFLARE_REPORTS_KV_ID environment variable or via environments below.
+id = "d227b9c9f28d44e7887e4153a79d396a" 
+
+[env.staging]
+[[kv_namespaces]]
+binding = "TRANSLATION_KV"
+id = "STAGING_TRANSLATION_KV_ID" # TODO: Replace with actual Staging KV ID
+
+[[kv_namespaces]]
+binding = "REPORTS_KV"
+id = "STAGING_KV_ID_HERE"
 
 # Durable Objects removed – not available in current Cloudflare plan
 # [[durable_objects.bindings]]
