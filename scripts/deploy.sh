@@ -138,7 +138,11 @@ npm test -- translations
 echo "🧪 Running tests..."
 npm test
 
-# 6. Full Build (compile + copy + inject + verify)
+# 6. Versioning
+npm version "$BUMP" --no-git-tag-version
+VERSION=$(node -p "require('./package.json').version")
+
+# 7. Full Build (compile + copy + inject + verify)
 echo "🏗️  Starting Fresh Build..."
 npm run build
 
@@ -152,9 +156,7 @@ npm run verify-build
 echo "🧹 Pruning non-asset files from public..."
 npx tsx scripts/prune-public.ts
 
-# 7. Versioning
-npm version "$BUMP" --no-git-tag-version
-VERSION=$(node -p "require('./package.json').version")
+# 8. Git Sync & Deployment
 MSG="${2:-Manual deployment update}"
 
 # 8. Git Sync via Helper
