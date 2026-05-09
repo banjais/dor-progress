@@ -87,7 +87,7 @@ async function generateProjectSummary(ai, input, maxRetries = 2) {
   for (let attempt = 0; attempt <= maxRetries; attempt++) {
     try {
       const response = await ai.generate({
-        model: googleAI.model("gemini-2.5-flash"),
+        model: googleAI.model("gemini-1.5-flash"),
         output: { schema: AiSummarySchema },
         prompt: [
           {

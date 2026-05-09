@@ -9,6 +9,10 @@ minify = true
 binding = "TRANSLATION_KV"
 id = "d032e134adec47ab85ea1b5a8c18caab"
 
+[[kv_namespaces]]
+binding = "REPORTS_KV"
+id = "d227b9c9f28d44e7887e4153a79d396a"
+
 # Durable Objects removed – not available in current Cloudflare plan
 # [[durable_objects.bindings]]
 # name = "RATE_LIMITER"

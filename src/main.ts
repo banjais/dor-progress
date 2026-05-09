@@ -1456,6 +1456,32 @@ class Dashboard {
       document.getElementById("loader").style.display = "none";
     }
   }
+
+  toggleLang() {
+    const next = this.state.lang === "en" ? "ne" : "en";
+    this.setLang(next);
+    this.audio.playUi("click");
+  }
+
+  toggleGeminiMenu() {
+    const menu = document.getElementById("gemini-menu");
+    const fabMenu = document.getElementById("fab-menu");
+    if (fabMenu) fabMenu.classList.remove("show");
+    if (menu) menu.classList.toggle("show");
+    this.audio.playUi("pop");
+  }
+
+  toggleFabMenu() {
+    const menu = document.getElementById("fab-menu");
+    const geminiMenu = document.getElementById("gemini-menu");
+    const btn = document.getElementById("fab-main-btn");
+    if (geminiMenu) geminiMenu.classList.remove("show");
+    if (menu) {
+      menu.classList.toggle("show");
+      if (btn) btn.classList.toggle("active", menu.classList.contains("show"));
+    }
+    this.audio.playUi("pop");
+  }
 }
 
 const dashboard = Dashboard.getInstance();
@@ -1887,6 +1913,11 @@ async function loadCumulative(type) {
     `${WORKER_BASE}/api/summary?type=${type}&year=${year}&month=${month}&lang=${dashboard.state.lang}`,
   );
   const json = await res.json();
+  if (!res.ok) {
+    document.getElementById("loader").style.display = "none";
+    addToast("info", json.error || t("noDataForPeriod"));
+    return;
+  }
   dashboard.state.store = json;
   dashboard.render();
   dashboard.setView("table");
