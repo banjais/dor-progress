@@ -54,8 +54,10 @@ export interface ProjectReport {
 }
 
 export interface Env {
-  TRANSLATION_KV: KVNamespace;
-  REPORTS_KV: KVNamespace;
+  TRANSLATION_KV?: KVNamespace;
+  REPORTS_KV?: KVNamespace;
+  STAGING_TRANSLATION_KV?: KVNamespace;
+  STAGING_REPORTS_KV?: KVNamespace;
   PUBLISHED_SHEET_ID: string;
   UPSTASH_REDIS_REST_URL: string;
   UPSTASH_REDIS_REST_TOKEN: string;

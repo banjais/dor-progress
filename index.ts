@@ -19,9 +19,15 @@ import { runProjectSummary, runTranslation } from "./ai-service.js";
 import aiPromptsData from "./ai-prompts.json" with { type: "json" };
 import dictionaryData from "./translations.json" with { type: "json" };
 
-/** Snapshot System Constants (Moved up to prevent hoisting errors) */
-const SNAPSHOT_RETENTION_COUNT = 30;
-const SNAPSHOT_LIST_KEY = "snapshot:list";
+// Helper to get the correct translation KV namespace (handles both production and staging)
+function getTranslationKV(env: Env) {
+  return (env as any).STAGING_TRANSLATION_KV || env.TRANSLATION_KV;
+}
+
+// Helper to get the correct reports KV namespace (handles both production and staging)
+function getReportsKV(env: Env) {
+  return (env as any).STAGING_REPORTS_KV || env.REPORTS_KV;
+}
 
 /** 
  * Derive TranslationKey from the 'ne' keys in the JSON.
@@ -82,16 +88,17 @@ const JWKS_CACHE_TTL = 3600_000; // 1 hour
  * Check if circuit breaker is open (Gemini repeatedly failing)
  */
 async function isCircuitBreakerOpen(env: Env): Promise<boolean> {
-  const open = await env.TRANSLATION_KV.get(CIRCUIT_BREAKER_KEY);
+  const translationKV = getTranslationKV(env);
+  const open = await translationKV.get(CIRCUIT_BREAKER_KEY);
   if (open === "true") {
-    const failCountStr = await env.TRANSLATION_KV.get(FAIL_COUNT_KEY);
+    const failCountStr = await translationKV.get(FAIL_COUNT_KEY);
     const failCount = failCountStr ? parseInt(failCountStr, 10) : 0;
     if (failCount >= FAIL_THRESHOLD) {
       return true; // Still open
     }
     // Reset if below threshold (e.g., after cooldown)
-    await env.TRANSLATION_KV.delete(CIRCUIT_BREAKER_KEY);
-    await env.TRANSLATION_KV.delete(FAIL_COUNT_KEY);
+    await translationKV.delete(CIRCUIT_BREAKER_KEY);
+    await translationKV.delete(FAIL_COUNT_KEY);
   }
   return false;
 }
@@ -105,7 +112,7 @@ async function verifyAdminSecret(request: Request, env: Env): Promise<boolean> {
 
   const now = Date.now();
   if (!cachedAdminSecret || (now - lastSecretFetch > SECRET_CACHE_TTL)) {
-    cachedAdminSecret = await env.TRANSLATION_KV.get("config:admin_secret");
+    cachedAdminSecret = await getTranslationKV(env).get("config:admin_secret");
     lastSecretFetch = now;
   }
 
@@ -117,14 +124,14 @@ async function verifyAdminSecret(request: Request, env: Env): Promise<boolean> {
  * Record a Gemini failure and potentially trip circuit breaker
  */
 async function recordGeminiFailure(env: Env): Promise<void> {
-  const currentStr = (await env.TRANSLATION_KV.get(FAIL_COUNT_KEY)) || "0";
+  const currentStr = (await getTranslationKV(env).get(FAIL_COUNT_KEY)) || "0";
   const current = parseInt(currentStr, 10);
   const next = current + 1;
-  await env.TRANSLATION_KV.put(FAIL_COUNT_KEY, next.toString(), {
+  await getTranslationKV(env).put(FAIL_COUNT_KEY, next.toString(), {
     expirationTtl: COOL_OFF_SECONDS,
   });
   if (next >= FAIL_THRESHOLD) {
-    await env.TRANSLATION_KV.put(CIRCUIT_BREAKER_KEY, "true", {
+    await getTranslationKV(env).put(CIRCUIT_BREAKER_KEY, "true", {
       expirationTtl: COOL_OFF_SECONDS,
     });
   }
@@ -142,13 +149,13 @@ async function recordAppCheckFailure(
   const bannedIpKey = BANNED_IP_KEY_PREFIX + ip;
 
   // Increment failure count
-  const currentCountStr = await env.TRANSLATION_KV.get(failCountKey);
+  const currentCountStr = await getTranslationKV(env).get(failCountKey);
   let currentCount = currentCountStr ? parseInt(currentCountStr, 10) : 0;
   currentCount++;
 
   // Store updated count with a short expiration (e.g., 10 minutes)
-  ctx.waitUntil(
-    env.TRANSLATION_KV.put(failCountKey, currentCount.toString(), {
+    ctx.waitUntil(
+      getTranslationKV(env).put(failCountKey, currentCount.toString(), {
       expirationTtl: COOL_OFF_SECONDS,
     }),
   );
@@ -156,7 +163,7 @@ async function recordAppCheckFailure(
   // If threshold reached, ban the IP
   if (currentCount >= APP_CHECK_FAIL_THRESHOLD) {
     ctx.waitUntil(
-      env.TRANSLATION_KV.put(bannedIpKey, "true", {
+      getTranslationKV(env).put(bannedIpKey, "true", {
         expirationTtl: BAN_DURATION_SECONDS,
       }),
     );
@@ -170,7 +177,7 @@ async function recordAppCheckFailure(
  * Checks if an IP is currently banned.
  */
 async function isIpBanned(ip: string, env: Env): Promise<boolean> {
-  return (await env.TRANSLATION_KV.get(BANNED_IP_KEY_PREFIX + ip)) === "true";
+  return (await getTranslationKV(env).get(BANNED_IP_KEY_PREFIX + ip)) === "true";
 }
 
 /**
@@ -294,7 +301,7 @@ export async function translateWithGemini(
 
   // 2. Cache lookup
   const cacheKey = makeCacheKey(text, targetLang);
-  const cached = await env.TRANSLATION_KV.get(cacheKey);
+  const cached = await getTranslationKV(env).get(cacheKey);
   if (cached) {
     return { translated: cached, source: "cache" };
   }
@@ -305,7 +312,7 @@ export async function translateWithGemini(
     const dict = DICTIONARY[targetLang];
     const exact = dict[text as TranslationKey];
     if (exact) {
-      await env.TRANSLATION_KV.put(cacheKey, exact, {
+      await getTranslationKV(env).put(cacheKey, exact, {
         expirationTtl: 86400 * 30,
       }); // 30d
       return { translated: exact, source: "dictionary" };
@@ -315,7 +322,7 @@ export async function translateWithGemini(
     if (words.length <= 5) {
       for (const [phrase, translation] of Object.entries(dict)) {
         if (text.toLowerCase() === phrase.toLowerCase()) {
-          await env.TRANSLATION_KV.put(cacheKey, translation, {
+          await getTranslationKV(env).put(cacheKey, translation, {
             expirationTtl: 86400 * 30,
           });
           return { translated: translation, source: "dictionary" };
@@ -343,7 +350,7 @@ export async function translateWithGemini(
     });
 
     // Cache successful translation for 7 days
-    await env.TRANSLATION_KV.put(cacheKey, translated, {
+    await getTranslationKV(env).put(cacheKey, translated, {
       expirationTtl: 86400 * 7,
     });
 
@@ -409,7 +416,7 @@ export default {
     // console.log(`[dor-progress] path="${url.pathname}" normalized="${normalizedPath}"`);
 
     const isKillSwitchActive =
-      (await env.TRANSLATION_KV.get("system:global_kill_switch")) === "true";
+      (await getTranslationKV(env).get("system:global_kill_switch")) === "true";
     if (isKillSwitchActive && !normalizedPath.startsWith("/api/admin/")) {
       return new Response(
         JSON.stringify({
@@ -495,7 +502,7 @@ export default {
         // 2. Live Infrastructure Connectivity Health Checks
         const health: Record<string, string> = { status: "OPERATIONAL" };
         try {
-          await env.TRANSLATION_KV.put(
+          await getTranslationKV(env).put(
             "system:health_ping",
             Date.now().toString(),
             { expirationTtl: 60 },
@@ -569,7 +576,7 @@ export default {
 
         // Option A: Purge the entire translations.json manifest
         if (body.type === "manifest") {
-          await env.TRANSLATION_KV.delete("translations");
+          await getTranslationKV(env).delete("translations");
           return new Response(JSON.stringify({ success: true, message: "Translations manifest purged." }), {
             headers: { ...securityHeaders, "Content-Type": "application/json" },
           });
@@ -578,7 +585,7 @@ export default {
         // Option B: Purge a specific translation entry (requires original text and lang)
         if (body.text && body.targetLang) {
           const key = makeCacheKey(body.text, body.targetLang);
-          await env.TRANSLATION_KV.delete(key);
+          await getTranslationKV(env).delete(key);
           return new Response(JSON.stringify({ success: true, purgedKey: key }), {
             headers: { ...securityHeaders, "Content-Type": "application/json" },
           });
@@ -615,7 +622,7 @@ export default {
     // API: Serve translations.json
     if (normalizedPath === "/api/translations") {
       // Try KV first (cached)
-      const cached = await env.TRANSLATION_KV.get("translations", {
+      const cached = await getTranslationKV(env).get("translations", {
         type: "json",
       });
       if (cached) {
@@ -633,7 +640,7 @@ export default {
           const translations = await res.json();
           // Cache in KV for future requests
           ctx.waitUntil(
-            env.TRANSLATION_KV.put(
+            getTranslationKV(env).put(
               "translations",
               JSON.stringify(translations),
               {
@@ -762,7 +769,7 @@ export default {
       // GET /api/snapshots - list all snapshots
       if (request.method === "GET" && normalizedPath === "/api/snapshots") {
         const list =
-          (await env.TRANSLATION_KV.get<SnapshotMetadata[]>(
+          (await getTranslationKV(env).get<SnapshotMetadata[]>(
             SNAPSHOT_LIST_KEY,
             "json",
           )) || [];
@@ -786,7 +793,7 @@ export default {
             },
           );
         }
-        const { value: pdf, metadata } = await env.TRANSLATION_KV.getWithMetadata<SnapshotMetadata>(
+        const { value: pdf, metadata } = await getTranslationKV(env).getWithMetadata<SnapshotMetadata>(
           `snapshot:pdf:${date}`,
           "arrayBuffer",
         );
@@ -843,15 +850,15 @@ export default {
             },
           );
         }
-        await env.TRANSLATION_KV.delete(`snapshot:pdf:${date}`);
-        await env.TRANSLATION_KV.delete(`snapshot:meta:${date}`);
+        await getTranslationKV(env).delete(`snapshot:pdf:${date}`);
+        await getTranslationKV(env).delete(`snapshot:meta:${date}`);
         const list =
-          (await env.TRANSLATION_KV.get<SnapshotMetadata[]>(
+          (await getTranslationKV(env).get<SnapshotMetadata[]>(
             SNAPSHOT_LIST_KEY,
             "json",
           )) || [];
         const updated = list.filter((s) => s.date !== date);
-        await env.TRANSLATION_KV.put(
+        await getTranslationKV(env).put(
           SNAPSHOT_LIST_KEY,
           JSON.stringify(updated),
         );
@@ -879,7 +886,7 @@ export default {
     ctx.waitUntil((async () => {
       const response = await fetch("https://firebaseappcheck.googleapis.com/v1/jwks");
       const jwks = await response.json();
-      await env.TRANSLATION_KV.put("system:firebase_jwks", JSON.stringify(jwks), {
+      await getTranslationKV(env).put("system:firebase_jwks", JSON.stringify(jwks), {
         expirationTtl: 86400,
         metadata: { created: Date.now() },
       });
@@ -953,7 +960,7 @@ async function verifyAppCheckToken(
     let kvMetadata: { created: number } | null = null;
     if (!cachedJwks || (now_ms - lastJwksFetch > JWKS_CACHE_TTL)) {
       const { value: kvJwks, metadata } =
-        await env.TRANSLATION_KV.getWithMetadata<Jwks, { created: number }>(
+        await getTranslationKV(env).getWithMetadata<Jwks, { created: number }>(
           jwksKey,
           "json",
         );
@@ -975,8 +982,8 @@ async function verifyAppCheckToken(
         "https://firebaseappcheck.googleapis.com/v1/jwks",
       );
       jwks = await res.json();
-      ctx.waitUntil(
-        env.TRANSLATION_KV.put(jwksKey, JSON.stringify(jwks), {
+       ctx.waitUntil(
+         getTranslationKV(env).put(jwksKey, JSON.stringify(jwks), {
           expirationTtl: 86400,
           metadata: { created: Date.now() },
         }),
@@ -992,7 +999,7 @@ async function verifyAppCheckToken(
             "https://firebaseappcheck.googleapis.com/v1/jwks",
           );
           const newJwks = await res.json();
-          await env.TRANSLATION_KV.put(jwksKey, JSON.stringify(newJwks), {
+           await getTranslationKV(env).put(jwksKey, JSON.stringify(newJwks), {
             expirationTtl: 86400,
             metadata: { created: Date.now() },
           });
@@ -1190,14 +1197,14 @@ async function generateSnapshotPdf(
 
   // Fetch and embed Noto Sans Devanagari to support Nepali characters
   const fontKey = "system:font:noto_sans_devanagari";
-  let fontBytes = await env.TRANSLATION_KV.get(fontKey, "arrayBuffer");
+   let fontBytes = await getTranslationKV(env).get(fontKey, "arrayBuffer");
 
   if (!fontBytes) {
     const fontUrl = "https://fonts.gstatic.com/s/notosansdevanagari/v28/wf5m9WB_V9fNqbfVp-9ueS5mF-X_S-zY.ttf";
     const res = await fetch(fontUrl);
     if (!res.ok) throw new Error("Failed to fetch Noto Sans font from CDN");
     fontBytes = await res.arrayBuffer();
-    ctx.waitUntil(env.TRANSLATION_KV.put(fontKey, fontBytes));
+     ctx.waitUntil(getTranslationKV(env).put(fontKey, fontBytes));
   }
 
   if (!fontBytes || fontBytes.byteLength === 0) {
@@ -1291,7 +1298,7 @@ async function enforceRetentionPolicy(
   ctx: ExecutionContext,
 ): Promise<void> {
   const list =
-    (await env.TRANSLATION_KV.get<SnapshotMetadata[]>(
+    (await getTranslationKV(env).get<SnapshotMetadata[]>(
       SNAPSHOT_LIST_KEY,
       "json",
     )) || [];
@@ -1299,8 +1306,8 @@ async function enforceRetentionPolicy(
 
   const toDelete = list.slice(SNAPSHOT_RETENTION_COUNT);
   for (const snap of toDelete) {
-    ctx.waitUntil(env.TRANSLATION_KV.delete(`snapshot:pdf:${snap.date}`));
-    ctx.waitUntil(env.TRANSLATION_KV.delete(`snapshot:meta:${snap.date}`));
+    ctx.waitUntil(getTranslationKV(env).delete(`snapshot:pdf:${snap.date}`));
+    ctx.waitUntil(getTranslationKV(env).delete(`snapshot:meta:${snap.date}`));
   }
 }
 
@@ -1312,13 +1319,13 @@ async function createSnapshot(
   const { pdfBytes, metadata } = await generateSnapshotPdf(data, env, ctx);
 
   ctx.waitUntil(
-    env.TRANSLATION_KV.put(`snapshot:pdf:${metadata.date}`, pdfBytes, {
+    getTranslationKV(env).put(`snapshot:pdf:${metadata.date}`, pdfBytes, {
       expirationTtl: 86400 * 60,
     }),
   );
 
   ctx.waitUntil(
-    env.TRANSLATION_KV.put(
+    getTranslationKV(env).put(
       `snapshot:meta:${metadata.date}`,
       JSON.stringify(metadata),
       {
@@ -1328,7 +1335,7 @@ async function createSnapshot(
   );
 
   const list =
-    (await env.TRANSLATION_KV.get<SnapshotMetadata[]>(
+    (await getTranslationKV(env).get<SnapshotMetadata[]>(
       SNAPSHOT_LIST_KEY,
       "json",
     )) || [];
@@ -1339,7 +1346,7 @@ async function createSnapshot(
     list.unshift(metadata);
   }
   ctx.waitUntil(
-    env.TRANSLATION_KV.put(SNAPSHOT_LIST_KEY, JSON.stringify(list)),
+    getTranslationKV(env).put(SNAPSHOT_LIST_KEY, JSON.stringify(list)),
   );
   ctx.waitUntil(enforceRetentionPolicy(env, ctx));
 

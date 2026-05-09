@@ -5,24 +5,23 @@ compatibility_date = "2026-04-23"
 compatibility_flags = [ "nodejs_compat" ]
 minify = true
 
+[env.production]
 [[kv_namespaces]]
 binding = "TRANSLATION_KV"
-id = "d032e134adec47ab85ea1b5a8c18caab" # Production Translation KV
+id = "d032e134adec47ab85ea1b5a8c18caab"
 
 [[kv_namespaces]]
 binding = "REPORTS_KV"
-# In a CI/CD pipeline, you can override this ID using the 
-# CLOUDFLARE_REPORTS_KV_ID environment variable or via environments below.
-id = "d227b9c9f28d44e7887e4153a79d396a" 
+id = "d227b9c9f28d44e7887e4153a79d396a"
 
 [env.staging]
 [[kv_namespaces]]
-binding = "TRANSLATION_KV"
-id = "STAGING_TRANSLATION_KV_ID" # TODO: Replace with actual Staging KV ID
+binding = "STAGING_TRANSLATION_KV"
+id = "${STAGING_TRANSLATION_KV_ID}"
 
 [[kv_namespaces]]
-binding = "REPORTS_KV"
-id = "STAGING_KV_ID_HERE"
+binding = "STAGING_REPORTS_KV"
+id = "${STAGING_REPORTS_KV_ID}"
 
 # Durable Objects removed – not available in current Cloudflare plan
 # [[durable_objects.bindings]]
