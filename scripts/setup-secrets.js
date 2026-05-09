@@ -86,7 +86,8 @@ console.log("\n2️⃣  Cloudflare Worker Secrets\n");
 console.log("   These are set via: wrangler secret put <NAME>");
 console.log("   Status in current environment:\n");
 try {
-  const output = execSync("wrangler secret list --format json 2>/dev/null", {
+  const nullRedirect = process.platform === 'win32' ? '2>nul' : '2>/dev/null';
+  const output = execSync(`wrangler secret list --format json ${nullRedirect}`, {
     encoding: "utf8",
   });
   const secrets = JSON.parse(output);
@@ -217,7 +218,7 @@ console.log("   # Set Cloudflare secret");
 console.log("   wrangler secret put CLOUDFLARE_API_TOKEN\n");
 console.log("   # Set GitHub secret (using GitHub CLI)");
 console.log("   gh secret set <NAME>\n");
-console.log("=" .repeat(60));
+console.log("=".repeat(60));
 console.log("   🌐 UI Translations: pnpm exec vitest run scripts/translations.test.ts");
 console.log("   📝 Update from Sheets: pnpm exec tsx scripts/sync-sheets.js");
 console.log("\n" + "═".repeat(60));

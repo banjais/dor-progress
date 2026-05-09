@@ -1,65 +1,118 @@
 import js from "@eslint/js";
+import tseslint from "typescript-eslint";
 import globals from "globals";
-import tsParser from "@typescript-eslint/parser";
-import tsPlugin from "@typescript-eslint/eslint-plugin";
+import reactPlugin from "eslint-plugin-react";
+import reactHooksPlugin from "eslint-plugin-react-hooks";
+import nPlugin from "eslint-plugin-n";
+import prettierConfig from "eslint-config-prettier";
+import { fixupPluginRules } from "@eslint/compat";
 
-export default [
+export default tseslint.config(
+  // 1. Global ignores (Replaces .eslintignore)
+  {
+    ignores: [
+      "dist/",
+      ".build/",
+      "node_modules/",
+      "public/",
+      ".wrangler/",
+      ".firebase/",
+      ".agents/",
+      ".kilo/",
+      ".qwen/",
+      "VERSION",
+      "src/**/*.js",
+    ],
+  },
+
+  // 2. JS Recommended for all JS/TS files
   js.configs.recommended,
+
+  // 3. Source Folder Configuration (Browser/Frontend)
   {
-    ignores: ["node_modules/", "dist/", ".build/", "public/", "VERSION"],
-  },
-  {
-    files: ["**/*.{ts}"],
-    languageOptions: {
-      parser: tsParser,
-      globals: {
-        ...globals.worker,
-        ...globals.es2021,
-      },
-    },
+    files: ["src/**/*.ts", "src/**/*.tsx", "index.ts", "ai-service.ts"],
+    extends: [
+      ...tseslint.configs.recommendedTypeChecked,
+      ...tseslint.configs.stylisticTypeChecked,
+    ],
     plugins: {
-      "@typescript-eslint": tsPlugin,
+      react: fixupPluginRules(reactPlugin),
+      "react-hooks": fixupPluginRules(reactHooksPlugin),
     },
-    rules: {
-      "no-console": "off",
-      "@typescript-eslint/no-explicit-any": "off",
-      "no-undef": "off",
-      "no-unused-vars": "off",
-      "@typescript-eslint/no-unused-vars": [
-        "warn",
-        { argsIgnorePattern: "^_" },
-      ],
-    },
-  },
-  {
-    files: ["**/*.{js,mjs,cjs}"],
     languageOptions: {
       globals: {
-        ...globals.node,
+        ...globals.browser,
+        ...globals.serviceworker,
         ...globals.es2021,
-      },
-    },
-    rules: {
-      "no-console": "off",
-    },
-  },
-  {
-    files: ["src/main.js"],
-    languageOptions: {
-      globals: {
         PDFLib: "readonly",
         appCheck: "writable",
         FIREBASE_APPCHECK_DEBUG_TOKEN: "writable",
         dashboard: "readonly",
       },
-    },
-  },
-  {
-    files: ["src/worker.js", "src/ai-service.ts", "src/ai-service.js"],
-    languageOptions: {
-      globals: {
-        ...globals.worker,
+      parserOptions: {
+        project: ["./tsconfig.json", "./src/tsconfig.json"],
+        tsconfigRootDir: import.meta.dirname,
       },
     },
+    settings: {
+      react: {
+        version: "18.3",
+      },
+    },
+    rules: {
+      ...reactPlugin.configs.recommended.rules,
+      ...reactHooksPlugin.configs.recommended.rules,
+      "react/react-in-jsx-scope": "off",
+      "@typescript-eslint/no-unused-vars": "off",
+      "@typescript-eslint/no-explicit-any": "off",
+      "no-console": "off",
+      "@typescript-eslint/no-misused-promises": [
+        "error",
+        {
+          checksVoidReturn: false,
+        },
+      ],
+      // Disable noisy type-checked rules that depend on strictNullChecks
+      "@typescript-eslint/no-unnecessary-condition": "off",
+      "@typescript-eslint/no-unnecessary-boolean-literal-compare": "off",
+      "@typescript-eslint/prefer-nullish-coalescing": "off",
+      "@typescript-eslint/no-unsafe-assignment": "off",
+      "@typescript-eslint/no-unsafe-member-access": "off",
+      "@typescript-eslint/no-unsafe-call": "off",
+      "@typescript-eslint/no-unsafe-argument": "off",
+      "@typescript-eslint/no-unsafe-return": "off",
+      "@typescript-eslint/no-inferrable-types": "off",
+      "@typescript-eslint/no-empty-object-type": "off",
+      "@typescript-eslint/ban-ts-comment": "off",
+      "@typescript-eslint/no-unnecessary-type-assertion": "off",
+      "@typescript-eslint/restrict-template-expressions": "off",
+    },
   },
-];
+
+  // 4. Scripts Folder Configuration (Node.js/Utilities)
+  {
+    files: ["scripts/**/*.{js,mjs,ts}"],
+    extends: [
+      ...tseslint.configs.recommended, // Don't use type-checked rules for scripts to avoid noise
+    ],
+    plugins: {
+      n: nPlugin,
+    },
+    languageOptions: {
+      globals: {
+        ...globals.node,
+      },
+    },
+    rules: {
+      ...nPlugin.configs.recommended.rules,
+      "no-console": "off",
+      "@typescript-eslint/no-unused-vars": "off",
+    },
+  },
+
+  // 5. Prettier (Must be last)
+  prettierConfig,
+);
+
+
+

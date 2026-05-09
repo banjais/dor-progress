@@ -20,7 +20,7 @@ const version = pkg.version;
 console.log(`📦 Version: ${version}`);
 
 try {
-  execSync("git add package.json pnpm-lock.yaml", { stdio: "inherit" });
+  execSync("git add -A", { stdio: "inherit" });
   execSync(`git commit -m "chore: bump version to ${version}"`, {
     stdio: "inherit",
   });

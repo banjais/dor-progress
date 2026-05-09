@@ -21,8 +21,8 @@ declare global {
     // Specific overrides for global scope if necessary, otherwise inherits SharedEnv
     VITE_API_BASE_URL?: string;
   }
-  interface ProjectRow extends SharedProjectRow {}
-  interface AiSummary extends SharedAiSummary {}
+  type ProjectRow = SharedProjectRow;
+  type AiSummary = SharedAiSummary;
   interface ProjectReport extends SharedProjectReport {
     created?: string;
   }

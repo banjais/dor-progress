@@ -269,7 +269,7 @@ async function fetchProjectPdf(env: Env): Promise<ArrayBuffer> {
   let response = await cache.match(publishedUrl);
   if (!response) {
     response = await fetch(publishedUrl);
-    if (response && response.ok) {
+    if (response?.ok) {
       const cachedResponse = new Response(response.clone().body, {
         status: response.status,
         statusText: response.statusText,
@@ -280,7 +280,7 @@ async function fetchProjectPdf(env: Env): Promise<ArrayBuffer> {
     }
   }
 
-  if (!response || !response.ok)
+  if (!response?.ok)
     throw new ServiceError(
       `Failed to fetch PDF report: ${response?.statusText || "Unknown Error"}`,
       {

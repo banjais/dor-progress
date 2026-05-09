@@ -870,11 +870,11 @@ export default {
    * Cron Trigger: Proactively refreshes JWKS cache to handle rotation
    * without impacting user request latency.
    */
-  async scheduled(
+  scheduled(
     _event: ScheduledEvent,
     env: Env,
     ctx: ExecutionContext,
-  ): Promise<void> {
+  ): void {
     // 1. Refresh JWKS Cache (Existing logic)
     ctx.waitUntil((async () => {
       const response = await fetch("https://firebaseappcheck.googleapis.com/v1/jwks");
@@ -967,7 +967,7 @@ async function verifyAppCheckToken(
 
     let jwks = cachedJwks;
     const isStale = !lastJwksFetch || now_ms - lastJwksFetch > 3600000; // Soft expire after 1 hour
-    const kidMissing = !jwks || !jwks.keys.some((k: Jwk) => k.kid === kid);
+    const kidMissing = !jwks?.keys.some((k: Jwk) => k.kid === kid);
 
     // If KID is missing (rotation detected) or cache is empty, fetch blockingly
     if (kidMissing) {
@@ -1131,7 +1131,7 @@ async function fetchProjectData(env: Env): Promise<{ headers: string[]; rows: Pr
     const row: Record<string, any> = {};
 
     headers.forEach((header: string, i: number) => {
-      let rawValue = values[i] || "";
+      const rawValue = values[i] || "";
       const cleanValue = rawValue.replace(/,/g, "");
       if (!isNaN(Number(cleanValue)) && cleanValue.trim() !== "") {
         row[header] = Number(cleanValue);

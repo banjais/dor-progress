@@ -8,6 +8,7 @@ import fs from "fs";
 import path from "path";
 import crypto from "crypto";
 import { execSync } from "child_process";
+import { env } from "process";
 
 // 💡 Configured via environment variable for security and flexibility
 const isDryRun = process.argv.includes("--dry-run");
@@ -132,38 +133,36 @@ async function syncTranslations() {
     const nestedKeys = [];
 
     rows.slice(1).forEach((row) => {
-      if (row && row.length >= 3) {
-        // Clean quotes and trim whitespace
-        const key = row[0]?.replace(/^"|"$/g, "").trim();
-        const enVal = row[1]?.replace(/^"|"$/g, "").trim();
-        const neVal = row[2]?.replace(/^"|"$/g, "").trim();
+      if (!row || row.length === 0) return;
 
-        if (key) {
-          // Validation: Flat structure only (no dots allowed in keys)
-          // This keeps the i18n implementation simple and predictable
-          if (key.includes(".")) {
-            nestedKeys.push(key);
-          }
+      const key = row[0]?.replace(/^"|"$/g, "").trim();
+      if (key) {
+        const enVal = (row[1] || "").replace(/^"|"$/g, "").trim();
+        const neVal = (row[2] || "").replace(/^"|"$/g, "").trim();
 
-          if (key in newContent.en) {
-            duplicates.push(key);
-          }
-
-          // Flag keys that haven't changed from the local baseline values
-          if (
-            baseline &&
-            baseline.en?.[key] === enVal &&
-            baseline.ne?.[key] === neVal
-          ) {
-            unchanged.push(key);
-          }
-
-          if (!enVal || !neVal) {
-            missing.push({ key, en: !enVal, ne: !neVal });
-          }
-          newContent.en[key] = enVal;
-          newContent.ne[key] = neVal;
+        // Validation: Flat structure only (no dots allowed in keys)
+        if (key.includes(".")) {
+          nestedKeys.push(key);
         }
+
+        if (key in newContent.en) {
+          duplicates.push(key);
+        }
+
+        // Flag keys that haven't changed from the local baseline values
+        if (
+          baseline &&
+          baseline.en?.[key] === enVal &&
+          baseline.ne?.[key] === neVal
+        ) {
+          unchanged.push(key);
+        }
+
+        if (!enVal || !neVal) {
+          missing.push({ key, en: !enVal, ne: !neVal });
+        }
+        newContent.en[key] = enVal;
+        newContent.ne[key] = neVal;
       }
     });
 
@@ -199,7 +198,14 @@ async function syncTranslations() {
     }
 
     // Fail fast in CI if translations are corrupted
-    if (hasErrors) process.exit(1);
+    if (hasErrors) {
+      // Don't kill the process during npm install/prepare unless in strict CI
+      if (env.NODE_ENV === 'development' || !env.GITHUB_ACTIONS) {
+        console.warn("⚠️  Sync completed with validation errors. Fix the Sheet before deploying.");
+      } else {
+        process.exit(1);
+      }
+    }
 
     const sortedEn = sortObject(newContent.en);
     const sortedNe = sortObject(newContent.ne);
@@ -261,16 +267,16 @@ async function syncTranslations() {
       `✅ Successfully synced ${Object.keys(finalOutput.en).length} keys.`,
     );
   } catch (error) {
-    console.error("❌ Error syncing translations:", error.message);
-    // In CI, don't fail the build if translations can't sync - use existing files
-    // Check if we're in CI environment
-    if (process.env.GITHUB_ACTIONS) {
-      console.warn(
-        "⚠️ CI mode: Using existing translations to continue build.",
-      );
-      process.exit(0); // Exit successfully to not break CI
+    const isLifecycle = env.NODE_ENV === 'development' || !env.GITHUB_ACTIONS;
+
+    if (isLifecycle) {
+      console.warn(`⚠️  Translation sync skipped or failed: ${error.message}`);
+      console.warn("   This is normal during first-time setup. Dependencies will still be installed.");
+      process.exit(0);
+    } else {
+      console.error("❌ Error syncing translations:", error.message);
+      process.exit(1);
     }
-    process.exit(1);
   }
 }
 

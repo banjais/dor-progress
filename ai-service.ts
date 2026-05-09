@@ -65,7 +65,7 @@ async function generateWithFallback(
         safetySettings: STRICT_SAFETY_SETTINGS.safetySettings
       });
       const result = await model.generateContent(options.prompt);
-      const response = await result.response;
+      const response = result.response;
       const text = response.text();
       if (!text) throw new Error("Empty response from model");
 

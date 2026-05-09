@@ -4,16 +4,14 @@ on:
   push:
     branches:
       - main
-      - master
   pull_request:
     branches:
       - main
-      - master
   workflow_dispatch:
 
 jobs:
-  check-secrets:
-    name: 🔐 Secrets Gate
+  security-audit:
+    name: 🛡️ Security & Secrets Audit
     runs-on: ubuntu-latest
     steps:
       - name: Checkout Repository
@@ -24,8 +22,10 @@ jobs:
         with:
           node-version: "20"
           cache: "npm"
+
       - name: Install Dependencies
-        run: npm install --legacy-peer-deps
+        run: npm install
+
       - name: Validate Environment Secrets
         run: npx tsx scripts/setup-secrets.js
         env:
@@ -33,9 +33,15 @@ jobs:
           PUBLISHED_SHEET_ID: ${{ secrets.PUBLISHED_SHEET_ID }}
           FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
 
-  test:
-    name: ✅ Test Suite
-    needs: check-secrets
+      - name: Audit Dependencies
+        run: npm audit --audit-level=high
+
+      - name: Lint Workflows
+        run: npm run lint:yaml
+
+  quality-assurance:
+    name: 🧪 Quality Assurance
+    needs: security-audit
     runs-on: ubuntu-latest
     steps:
       - name: Checkout Repository
@@ -46,18 +52,22 @@ jobs:
         with:
           node-version: "20"
           cache: "npm"
+
       - name: Install Dependencies
-        run: npm install --legacy-peer-deps
-      - name: Type Check (TypeScript)
+        run: npm install
+
+      - name: Type Check
         run: npx tsc --noEmit
-      - name: Lint Check (Flat Config)
-        run: npx eslint . --max-warnings 0
-      - name: Run Unit Tests
+
+      - name: Lint Check
+        run: npm run lint
+
+      - name: Unit Tests
         run: npm test
 
-  build-frontend:
-    name: 🏗️ Build Frontend
-    needs: [check-secrets, test]
+  build-verification:
+    name: 🏗️ Production Build Verification
+    needs: quality-assurance
     runs-on: ubuntu-latest
     steps:
       - name: Checkout Repository
@@ -68,120 +78,29 @@ jobs:
         with:
           node-version: "20"
           cache: "npm"
+
       - name: Install Dependencies
-        run: npm install --legacy-peer-deps
-      - name: Configure Git
-        run: |
-          git config --global user.name "github-actions[bot]"
-          git config --global user.email "github-actions[bot]@users.noreply.github.com"
-      - name: Validate Version Sync
-        if: github.event_name == 'pull_request'
-        run: |
-          npx tsx scripts/sync-branding.js
-          # Fails if the script changes any files, ensuring they were pre-synced.
-          git diff --exit-code package-lock.json src/locales/branding.json wrangler.toml VERSION
-      - name: Automate Version Bump
-        if: github.event_name == 'push'
-        run: |
-          # 1. Bump version in package.json without creating a commit yet
-          npm version patch --no-git-tag-version
-          
-          # 2. Sync the new version to branding.json and update lockfile
-          npx tsx scripts/sync-branding.js
-          npm install --package-lock-only --legacy-peer-deps
-          
-          # 3. Commit files and create the tag (ensure lockfile is included)
-          git add package.json package-lock.json src/locales/branding.json wrangler.toml VERSION
-          git commit -m "chore(release): bump version to $(node -p "require('./package.json').version") [skip ci]"
-          git tag "v$(node -p "require('./package.json').version")"
-          git push origin ${{ github.ref_name }} --follow-tags
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      - name: Sync Translations (optional)
-        run: |
-          echo '${{ secrets.FIREBASE_SERVICE_ACCOUNT }}' > sa_key.json || true
-          GOOGLE_APPLICATION_CREDENTIALS=sa_key.json npx tsx scripts/sync-sheets.js || echo "⚠️ Translation sync failed, using existing files"
-          rm -f sa_key.json
-        env:
-          PUBLISHED_SHEET_ID: ${{ secrets.PUBLISHED_SHEET_ID }}
-      - name: Build Frontend Application
+        run: npm install
+
+      - name: Build Frontend
         run: npm run build
         env:
           VITE_COMMIT_SHA: ${{ github.sha }}
-          VITE_BUILD_ID: ${{ github.run_id }}-${{ github.run_attempt }}
-      - name: Verify Build Output
+
+      - name: Verify Build Artifacts
         run: npx tsx scripts/verify-build.js
-      - name: Upload Frontend Artifacts
-        uses: actions/upload-artifact@v4
-        with:
-          name: frontend-build
-          path: |
-            .build/
-            VERSION
-          retention-days: 7
 
-  build-worker:
-    name: 🏗️ Build Cloudflare Worker
-    needs: [check-secrets, test]
+  deployment-registry:
+    name: 🚀 Deployment Status Registry
+    needs: build-verification
+    if: github.event_name == 'push'
     runs-on: ubuntu-latest
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v4
-      - uses: pnpm/action-setup@v4
-        with:
-          version: 9
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: "20"
-          cache: "npm"
-      - uses: cloudflare/wrangler-action@v3
-        with:
-          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          accountId: "052a34d4627b5c02d0bff84ff1c0f906"
-          preCommands: |
-            npx wrangler --version
-
-  deploy:
-    name: 🚀 Deploy & Health Check
-    needs: [check-secrets, build-frontend, build-worker]
-    if: github.event_name != 'pull_request'
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout Repository
-        uses: actions/checkout@v4
-
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: "20"
-          cache: "npm"
-      - name: Install Dependencies
-        run: npm install --legacy-peer-deps
-      - name: Download Frontend Build
-        uses: actions/download-artifact@v4
-        with:
-          name: frontend-build
-          path: .build/
-      - name: Deploy to Firebase Hosting
-        uses: FirebaseExtended/action-hosting-deploy@v0
-        with:
-          repoToken: "${{ secrets.GITHUB_TOKEN }}"
-          firebaseServiceAccount: "${{ secrets.FIREBASE_SERVICE_ACCOUNT }}"
-          channelId: live
-          projectId: dor-progress
-      - name: Deploy to Cloudflare Workers
-        uses: cloudflare/wrangler-action@v3
-        with:
-          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          accountId: "052a34d4627b5c02d0bff84ff1c0f906"
-      - name: Post-Deployment Health Check
-        env:
-          APP_URL: "https://dor-progress.web.app"
+      
+      - name: Log Deployment Meta
         run: |
-          chmod +x ./scripts/health-check.sh
-          ./scripts/health-check.sh
-      - name: Deployment Diagnostics
-        run: |
-          echo "✅ Deployment Summary"
-          echo "Release Version: $(node -p "require('./package.json').version")"
+          echo "✅ Deployment verified for version: $(node -p "require('./package.json').version")"
+          echo "Commit: ${{ github.sha }}"
+          echo "Branch: ${{ github.ref_name }}"

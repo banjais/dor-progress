@@ -19,16 +19,14 @@ APP_URL="${APP_URL:-https://dor-progress.web.app}"
 REPO_PATH=$(git remote get-url origin | sed -E 's/.*github.com[:\/](.*)(\.git)?/\1/' || echo "UNKNOWN")
 
 echo "📦 Ensuring dependencies are synced and healthy..."
-# We use --legacy-peer-deps to handle ESLint 10 vs React plugin conflicts automatically
-if ! npm install --legacy-peer-deps; then
-    echo "❌ Critical Error: Dependency installation failed."
-    exit 1
-fi
-# Ensure lockfile is perfectly in sync with package.json
-npm install --package-lock-only --legacy-peer-deps
+# Fixed via 'overrides' in package.json to support ESLint 10
+npm install
+
+# Sync lockfile to ensure CI is healthy
+npm install --package-lock-only
 
 echo "📊 Running project diagnostics..."
-npx tsx scripts/project-info.ts
+npm run info
 
 echo "🔍 Checking GitHub Workflow placement..."
 if [ ! -d ".github/workflows" ] || [ -z "$(ls -A .github/workflows/*.{yml,yaml} 2>/dev/null)" ]; then
@@ -98,10 +96,10 @@ npm run security-check > /dev/null 2>&1 || echo "⚠️  Security check complete
 echo ""
 
 echo "🔍 Running type checks..."
-npx tsc --noEmit
+npm run typecheck
 
 echo "🔍 Running ESLint compatibility check..."
-if ! npx eslint . --max-warnings 0; then
+if ! npm run lint; then
     echo "❌ Error: ESLint plugins are incompatible with the current environment."
     exit 1
 fi
