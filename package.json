@@ -1,6 +1,6 @@
 {
   "name": "dor-progress",
-  "version": "1.0.124",
+  "version": "1.0.125",
   "type": "module",
   "scripts": {
     "dev": "vite",
@@ -90,6 +90,7 @@
     "vite-plugin-checker": "^0.13.0",
     "vite-tsconfig-paths": "^6.1.1",
     "vitest": "^3.0.5",
+    "wrangler": "^4.90.0",
     "yaml-lint": "^1.7.0"
   }
 }
