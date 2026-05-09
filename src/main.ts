@@ -1510,10 +1510,10 @@ const t = (key, count) => {
 
     // Optimized lookup for plural/standard keys
     const lookup = [
-      dynamicCache[pKey],
+      dashboard.dynamicCache[pKey],
       translationsData?.[currentLang]?.[pKey],
       I18N[currentLang]?.[pKey],
-      dynamicCache[key],
+      dashboard.dynamicCache[key],
       translationsData?.[currentLang]?.[key],
       I18N[currentLang]?.[key],
     ];
@@ -1526,7 +1526,7 @@ const t = (key, count) => {
   }
 
   let text =
-    dynamicCache[finalKey] ||
+    dashboard.dynamicCache[finalKey] ||
     translationsData?.[currentLang]?.[finalKey] ||
     I18N[currentLang]?.[finalKey] ||
     null;
@@ -1566,11 +1566,11 @@ async function processTranslationQueue() {
     if (res.ok) {
       const data = await res.json();
       data.results.forEach((item) => {
-        dynamicCache[item.original] = item.translated;
+        dashboard.dynamicCache[item.original] = item.translated;
       });
       localStorage.setItem(
         "dynamicTranslations",
-        JSON.stringify(this.dynamicCache),
+        JSON.stringify(dashboard.dynamicCache),
       );
 
       // Re-trigger render and UI updates with new translations

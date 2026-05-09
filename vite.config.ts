@@ -64,5 +64,9 @@ rollupOptions: {
     "import.meta.env.VITE_COMMIT_SHA": JSON.stringify(
       process.env.COMMIT_SHA || process.env.GITHUB_SHA || "production",
     ),
+    "import.meta.env.VITE_APP_ENV": JSON.stringify(process.env.VITE_APP_ENV || "production"),
+    WORKER_BASE: JSON.stringify(process.env.API_BASE_URL || "https://dor-progress.banjays.workers.dev"),
+    APP_ENV: JSON.stringify(process.env.VITE_APP_ENV || "production"),
+    APP_VERSION: JSON.stringify("1.0.131"),
   },
 });
