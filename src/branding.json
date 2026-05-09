@@ -1,6 +1,19 @@
 {
-  "version": "1.0.70",
-  "title": "DOR Progress Dashboard",
+  "version": "1.0.108",
+  "app": {
+    "title": "DoR Progress Dashboard",
+    "subtitle": "Department of Roads Progress Monitoring",
+    "government": "Government of Nepal",
+    "ministry": "Ministry of Physical Infrastructure and Transport",
+    "department": "Department of Roads",
+    "location": "Chakupat, Lalitpur",
+    "reportTitle": "DoR Progress Report (Weekly)"
+  },
+  "colors": {
+    "primary": "#8D1B1B",
+    "secondary": "#003893",
+    "accent": "#FFD700"
+  },
   "lastUpdate": {
     "label": "Last Update Date",
     "value": "2026-05-07"

@@ -49,6 +49,42 @@ if (fs.existsSync(swPath)) {
   fs.writeFileSync(swPath, sw);
   console.log("✅ Service Worker environment variables injected");
   console.log(`   Build ID: ${buildId}, Commit: ${commitSha}, Version: ${versionIdentifier}`);
+
+  // --- Start of Inlining Logic for Embedded Single-File Support ---
+  const indexHtmlPath = path.join(buildDir, "index.html");
+  if (fs.existsSync(indexHtmlPath)) {
+    let html = fs.readFileSync(indexHtmlPath, "utf8");
+
+    // 1. Inline CSS
+    const cssRegex = /<link rel="stylesheet" [^>]*href="\/assets\/([^"]+\.css)"[^>]*>/g;
+    html = html.replace(cssRegex, (match, fileName) => {
+      const cssPath = path.join(buildDir, "assets", fileName);
+      if (fs.existsSync(cssPath)) {
+        const cssContent = fs.readFileSync(cssPath, "utf8");
+        return `<style>\n${cssContent}\n</style>`;
+      }
+      return match;
+    });
+
+    // 2. Inline JS (Module)
+    // Note: This inlines the main entry script. For a truly single-file app, 
+    // all chunks would need to be merged, but since we use a simple dashboard, 
+    // this covers the primary case.
+    const jsRegex = /<script [^>]*src="\/assets\/([^"]+\.js)"[^>]*><\/script>/g;
+    html = html.replace(jsRegex, (match, fileName) => {
+      const jsPath = path.join(buildDir, "assets", fileName);
+      if (fs.existsSync(jsPath)) {
+        const jsContent = fs.readFileSync(jsPath, "utf8");
+        // We use a non-module script tag if we want maximum compatibility, 
+        // but since we rely on ES modules, we keep it as a module or strip the type.
+        return `<script type="module">\n${jsContent}\n</script>`;
+      }
+      return match;
+    });
+
+    fs.writeFileSync(indexHtmlPath, html);
+    console.log("🚀 index.html transformed into embedded single-file version");
+  }
 } else {
   console.warn("⚠️ sw.v2.js not found in .build");
 }

@@ -370,6 +370,105 @@
       </div>
     </div>
 
+    <!-- Merged Offline UI -->
+    <div
+      id="offline-overlay"
+      style="
+        display: none;
+        position: fixed;
+        inset: 0;
+        z-index: 100001;
+        background: var(--bg);
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        text-align: center;
+        padding: 20px;
+      "
+    >
+      <div
+        style="
+          background: var(--surface);
+          padding: 40px 30px;
+          border-radius: 24px;
+          box-shadow: 0 10px 40px rgba(0, 0, 0, 0.1);
+          max-width: 400px;
+          width: 100%;
+          border: 1px solid var(--border);
+        "
+      >
+        <div
+          style="
+            background: var(--primary);
+            height: 4px;
+            width: 100%;
+            position: absolute;
+            top: 0;
+            left: 0;
+            border-radius: 24px 24px 0 0;
+          "
+        ></div>
+        <img
+          src="/logo.png"
+          alt="Logo"
+          style="width: 60px; height: auto; margin-bottom: 20px"
+        />
+        <div
+          style="
+            display: inline-block;
+            background: #fff5f5;
+            color: var(--primary);
+            padding: 6px 16px;
+            border-radius: 20px;
+            font-size: 0.75rem;
+            font-weight: 800;
+            margin-bottom: 15px;
+            border: 1px solid rgba(141, 27, 27, 0.1);
+          "
+        >
+          OFFLINE / अफलाइन
+        </div>
+        <h2 id="offline-title" style="margin: 0 0 10px; color: var(--primary)">
+          No Internet Connection
+        </h2>
+        <p
+          id="offline-msg"
+          style="
+            font-size: 0.9rem;
+            color: var(--text-light);
+            line-height: 1.6;
+            margin-bottom: 25px;
+          "
+        >
+          You are currently offline. Please check your network connection and
+          try again.
+        </p>
+        <button
+          onclick="window.location.reload()"
+          style="
+            background: var(--primary);
+            color: white;
+            border: none;
+            padding: 14px 30px;
+            border-radius: 12px;
+            font-weight: 800;
+            cursor: pointer;
+            width: 100%;
+          "
+        >
+          RETRY / पुनः प्रयास गर्नुहोस्
+        </button>
+      </div>
+      <script>
+        if (navigator.language.startsWith("ne")) {
+          document.getElementById("offline-title").innerText =
+            "इन्टरनेट जडान छैन";
+          document.getElementById("offline-msg").innerText =
+            "तपाईं अहिले अफलाइन हुनुहुन्छ। कृपया आफ्नो नेटवर्क जडान जाँच गर्नुहोस् र पुन: प्रयास गर्नुहोस्।";
+        }
+      </script>
+    </div>
+
     <header>
       <div class="header-top">
         <div class="header-logo-group">
@@ -1097,7 +1196,7 @@
       <div id="view-charts"></div>
     </main>
 
-    <script type="module" src="/src/main.js"></script>
+    <script type="module" src="/src/main.ts"></script>
   </body>
 </html>
 ]]>

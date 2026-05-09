@@ -25,7 +25,7 @@ jobs:
           node-version: "20"
           cache: "npm"
       - name: Install Dependencies
-        run: npm ci
+        run: npm install --legacy-peer-deps
       - name: Validate Environment Secrets
         run: npx tsx scripts/setup-secrets.js
         env:
@@ -47,11 +47,11 @@ jobs:
           node-version: "20"
           cache: "npm"
       - name: Install Dependencies
-        run: npm ci
+        run: npm install --legacy-peer-deps
       - name: Type Check (TypeScript)
         run: npx tsc --noEmit
-      - name: Lint Check (ESLint 10 Compatibility)
-        run: npx eslint src/**/*.{js,ts} --max-warnings 0
+      - name: Lint Check (Flat Config)
+        run: npx eslint . --max-warnings 0
       - name: Run Unit Tests
         run: npm test
 
@@ -69,7 +69,7 @@ jobs:
           node-version: "20"
           cache: "npm"
       - name: Install Dependencies
-        run: npm ci
+        run: npm install --legacy-peer-deps
       - name: Configure Git
         run: |
           git config --global user.name "github-actions[bot]"
@@ -88,7 +88,7 @@ jobs:
           
           # 2. Sync the new version to branding.json and update lockfile
           npx tsx scripts/sync-branding.js
-          npm install --package-lock-only
+          npm install --package-lock-only --legacy-peer-deps
           
           # 3. Commit files and create the tag (ensure lockfile is included)
           git add package.json package-lock.json src/locales/branding.json wrangler.toml VERSION
@@ -157,7 +157,7 @@ jobs:
           node-version: "20"
           cache: "npm"
       - name: Install Dependencies
-        run: npm ci
+        run: npm install --legacy-peer-deps
       - name: Download Frontend Build
         uses: actions/download-artifact@v4
         with:
@@ -185,4 +185,3 @@ jobs:
         run: |
           echo "✅ Deployment Summary"
           echo "Release Version: $(node -p "require('./package.json').version")"
-          npm run info || true

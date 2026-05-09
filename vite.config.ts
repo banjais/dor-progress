@@ -23,7 +23,7 @@ rollupOptions: {
       name: "branding-injection",
       transformIndexHtml(html) {
         const branding = JSON.parse(
-          fs.readFileSync("./config/branding.json", "utf-8"),
+          fs.readFileSync("./src/branding.json", "utf-8"),
         );
         return html
           .replace(

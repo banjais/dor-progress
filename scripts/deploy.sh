@@ -18,17 +18,36 @@ PROJECT_ID="${FIREBASE_PROJECT:-dor-progress}"
 APP_URL="${APP_URL:-https://dor-progress.web.app}"
 REPO_PATH=$(git remote get-url origin | sed -E 's/.*github.com[:\/](.*)(\.git)?/\1/' || echo "UNKNOWN")
 
-if [ ! -d "node_modules" ]; then
-    echo "📦 node_modules not found. Installing dependencies..."
-    # Attempt standard install, fallback to legacy-peer-deps if ERESOLVE occurs
-    if ! npm install; then
-        echo "⚠️  Standard install failed. Retrying with --legacy-peer-deps..."
-        npm install --legacy-peer-deps
-    fi
+echo "📦 Ensuring dependencies are synced and healthy..."
+# We use --legacy-peer-deps to handle ESLint 10 vs React plugin conflicts automatically
+if ! npm install --legacy-peer-deps; then
+    echo "❌ Critical Error: Dependency installation failed."
+    exit 1
 fi
+# Ensure lockfile is perfectly in sync with package.json
+npm install --package-lock-only --legacy-peer-deps
 
 echo "📊 Running project diagnostics..."
 npx tsx scripts/project-info.ts
+
+echo "🔍 Checking GitHub Workflow placement..."
+if [ ! -d ".github/workflows" ] || [ -z "$(ls -A .github/workflows/*.{yml,yaml} 2>/dev/null)" ]; then
+    echo "⚠️  Warning: No GitHub Workflows found in .github/workflows/. CI/CD will not trigger."
+else
+    echo "   ✅ Workflows detected in correct directory."
+fi
+
+echo "🔍 Linting GitHub Workflows..."
+if ! npm run lint:yaml; then
+    echo "❌ Error: YAML syntax errors found in .github/workflows/"
+    exit 1
+fi
+
+# Check for misplacement in public directory
+if [ -d "public" ] && [ -n "$(find public -name "*.yml" -o -name "*.yaml" 2>/dev/null)" ]; then
+    echo "❌ Error: .yml files found in 'public/'. Move these to .github/workflows/."
+    exit 1
+fi
 
 # 1. Branch Safety Check
 CURRENT_BRANCH=$(git rev-parse --abbrev-ref HEAD 2>/dev/null || echo "UNKNOWN")
@@ -82,7 +101,7 @@ echo "🔍 Running type checks..."
 npx tsc --noEmit
 
 echo "🔍 Running ESLint compatibility check..."
-if ! npx eslint src/**/*.{js,ts} --max-warnings 0; then
+if ! npx eslint . --max-warnings 0; then
     echo "❌ Error: ESLint plugins are incompatible with the current environment."
     exit 1
 fi
@@ -97,6 +116,9 @@ npm test
 echo "🏗️  Starting Fresh Build..."
 npm run build
 
+echo "🛡️  Verifying build integrity..."
+npm run verify-build
+
 echo "🧹 Pruning non-asset files from public..."
 npx tsx scripts/prune-public.ts
 
@@ -109,7 +131,12 @@ MSG="${2:-Manual deployment update}"
 if [ "$DRY_RUN_FLAG" == "--dry-run" ]; then
     echo "⏭️  Dry run: Skipping Git push and version tagging."
 else
-    git add . && git commit -m "$MSG" && git push origin "$CURRENT_BRANCH"
+    # Add [skip ci] to the message if running in GitHub Actions to prevent loops
+    COMMIT_MSG="$MSG"
+    if [ -n "$GITHUB_ACTIONS" ]; then
+        COMMIT_MSG="$MSG [skip ci]"
+    fi
+    git add . && git commit -m "$COMMIT_MSG" && git push origin "$CURRENT_BRANCH"
     echo "🤖 GitHub Auto Deploy & Cloudflare Auto Deploy will now trigger based on this push."
 fi
 

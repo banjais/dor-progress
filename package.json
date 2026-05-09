@@ -8,12 +8,14 @@
     "dev:all": "concurrently \"npm run dev\" \"npm run dev:worker\"",
     "build": "vite build",
     "postbuild": "node scripts/finalize-build.js",
-    "deploy": "npm run clean && npm run build && npm run deploy:worker && npm run deploy:hosting && git add . && git commit -m 'Deploy' && git push",
+    "deploy": "npm run clean && npm run build && npm run deploy:worker && npm run deploy:hosting",
+    "verify-build": "tsx scripts/verify-build.ts",
     "deploy:worker": "wrangler deploy",
     "deploy:hosting": "firebase deploy --only hosting --public .build",
     "clean": "node scripts/clean.js",
+    "lint:yaml": "yaml-lint .github/workflows/*.yml",
     "lint": "tsc --noEmit",
-    "test": "bash -c 'if [ -f .dev.vars ]; then while IFS= read -r line || [ -n \"$line\" ]; do if [[ \"$line\" =~ ^[A-Za-z_][A-Za-z0-9_]*= ]]; then export \"$line\"; fi; done < .dev.vars; fi && vitest run'",
+    "test": "vitest run",
     "test:watch": "vitest",
     "version:patch": "npm version patch --no-git-tag-version && node scripts/commit-version.js",
     "version:minor": "npm version minor --no-git-tag-version && node scripts/commit-version.js",
@@ -31,7 +33,7 @@
       "eslint --fix",
       "prettier --write"
     ],
-    "*.{css,html,json}": [
+    "*.{css,html,json,yml,yaml}": [
       "prettier --write"
     ]
   },
@@ -50,7 +52,7 @@
     "concurrently": "^9.0.0",
     "dotenv": "^17.4.2",
     "esbuild": "^0.28.0",
-    "eslint": "9.39.4",
+    "eslint": "^10.3.0",
     "eslint-config-prettier": "^10.1.8",
     "eslint-plugin-n": "^17.24.0",
     "eslint-plugin-react": "^7.37.5",
@@ -64,9 +66,11 @@
     "sharp": "^0.34.5",
     "tsx": "^4.21.0",
     "typescript": "^6.0.3",
+    "typescript-eslint": "^8.59.2",
     "vite": "^7.3.2",
     "vite-plugin-checker": "^0.13.0",
     "vite-tsconfig-paths": "^6.1.1",
-    "vitest": "^3.0.5"
+    "vitest": "^3.0.5",
+    "yaml-lint": "^1.7.0"
   }
 }

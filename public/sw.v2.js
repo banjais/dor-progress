@@ -59,7 +59,7 @@ const CHANGELOG = {
 
 const STATIC_CACHE_NAME = "dor-static-v2";
 const DATA_CACHE_NAME = "dor-data-v2";
-const OFFLINE_URL = "/offline.html";
+const OFFLINE_URL = "/";
 const API_PREFIX = "/api";
 // eslint-disable-next-line no-unused-vars
 const BUILD_ID = "__BUILD_ID__";
@@ -71,12 +71,9 @@ const MAX_DATA_ITEMS = 50; // Limit cached API responses
 let syncFailures = 0;
 
 const ASSETS_TO_CACHE = [
-  "/",
-  "/index.html",
   "/logo.png",
-  "/ambient-focus.mp3", // New track
-  "/ambient-calm.mp3", // New track
-  // Add more ambient tracks here
+  "/ambient-focus.mp3",
+  "/ambient-calm.mp3",
   "/translations.json",
   "/manifest.json",
   OFFLINE_URL,
@@ -88,8 +85,6 @@ const ASSETS_TO_CACHE = [
  */
 function validateConfig() {
   const criticalAssets = [
-    "/",
-    "/index.html",
     "/logo.png",
     "/manifest.json",
     OFFLINE_URL,
