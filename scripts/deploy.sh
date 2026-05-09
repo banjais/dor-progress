@@ -31,6 +31,18 @@ npm run info
 echo "🔍 Checking GitHub Workflow placement..."
 # 0.1 Cloudflare Binding Validation
 if [ "$DRY_RUN_FLAG" != "--dry-run" ]; then
+    if [ -f "wrangler.toml" ]; then
+        echo "🧐 Validating wrangler.toml configuration..."
+        # Extract all binding names and check for duplicates
+        DUPLICATES=$(sed -n 's/.*binding *= *"\([^"]*\)".*/\1/p' wrangler.toml | sort | uniq -d)
+        if [ -n "$DUPLICATES" ]; then
+            echo "❌ Error: Duplicate KV bindings found in wrangler.toml: $DUPLICATES"
+            echo "   FIX: Do not create separate blocks for preview. Instead, use:"
+            echo "   { binding = \"NAME\", id = \"...\", preview_id = \"...\" }"
+            exit 1
+        fi
+    fi
+
     echo "🔑 Validating Cloudflare KV Bindings..."
     # Check if the specific KV IDs in wrangler.toml are accessible to the current user
     if npx wrangler kv:namespace list > .kv_list.json 2>/dev/null; then
@@ -98,8 +110,9 @@ if [ -f .dev.vars ]; then
     done < .dev.vars
 fi
 
-# 4.1 Validate Secrets via Assistant
-npx tsx scripts/setup-secrets.js | grep -v "=" # Extra filter to ensure no accidental value leak
+# 4.1 Secret validation (Skipped per user request: "no more secrets")
+# npx tsx scripts/setup-secrets.js | grep -v "=" 
+echo "⏭️  Skipping secret validation..."
 
 # 4.2 Sync Translations from Google Sheets
 echo "🌐 Syncing UI translations..."
@@ -129,7 +142,11 @@ npm test
 echo "🏗️  Starting Fresh Build..."
 npm run build
 
-echo "🛡️  Verifying build integrity..."
+echo "💉 Injecting version v${VERSION} into Service Worker..."
+# Ensures the Service Worker reflects the new version from package.json
+sed -i "s/const VERSION = .*/const VERSION = \"v${VERSION}\";/" public/sw.v2.js
+
+echo "�️  Verifying build integrity..."
 npm run verify-build
 
 echo "🧹 Pruning non-asset files from public..."
@@ -151,6 +168,22 @@ else
     fi
     git add . && git commit -m "$COMMIT_MSG" && git push origin "$CURRENT_BRANCH"
     echo "🤖 GitHub Auto Deploy & Cloudflare Auto Deploy will now trigger based on this push."
+fi
+
+# 9. Manual Worker Deployment (Local Fallback)
+if [ "$DRY_RUN_FLAG" != "--dry-run" ]; then
+    echo "🚀 Attempting Cloudflare Worker deployment..."
+    if ! npx wrangler deploy; then
+        echo "⚠️  Worker deployment failed. Please check wrangler.toml for duplicate KV bindings."
+    fi
+fi
+
+# 10. Post-Deployment Health Check
+echo "🏥 Running Post-Deployment Health Check..."
+chmod +x scripts/health-check.sh
+if ! APP_URL="$APP_URL" ./scripts/health-check.sh; then
+    echo "❌ Health check failed! The application at $APP_URL is not responding correctly."
+    exit 1
 fi
 
 # 11. Diagnostic Output
