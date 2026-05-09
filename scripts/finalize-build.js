@@ -84,6 +84,36 @@ if (fs.existsSync(swPath)) {
 
     fs.writeFileSync(indexHtmlPath, html);
     console.log("🚀 index.html transformed into embedded single-file version");
+
+    // 3. Inline Images (PNG/SVG) for true portability
+    html = fs.readFileSync(indexHtmlPath, "utf8");
+    const imgRegex = /src="\/([^"]+\.(png|svg|ico))"/g;
+    const linkRegex = /href="\/([^"]+\.(png|svg|ico|json))"/g; // Also try to catch manifest/icons
+
+    const inlineFile = (match, fileName) => {
+      // Check both public and build directories
+      const possiblePaths = [
+        path.join(process.cwd(), "public", fileName),
+        path.join(buildDir, fileName),
+      ];
+      
+      for (const filePath of possiblePaths) {
+        if (fs.existsSync(filePath)) {
+          const ext = path.extname(fileName).slice(1);
+          const mimeType = ext === "svg" ? "image/svg+xml" : `image/${ext}`;
+          const base64 = fs.readFileSync(filePath, "base64");
+          console.log(`   📦 Inlined image: ${fileName}`);
+          return match.startsWith('src=') ? `src="data:${mimeType};base64,${base64}"` : `href="data:${mimeType};base64,${base64}"`;
+        }
+      }
+      return match;
+    };
+
+    html = html.replace(imgRegex, inlineFile);
+    html = html.replace(linkRegex, inlineFile);
+
+    fs.writeFileSync(indexHtmlPath, html);
+    console.log("💎 Final index.html is now 100% portable (Images Inlined)");
   }
 } else {
   console.warn("⚠️ sw.v2.js not found in .build");

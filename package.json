@@ -1,6 +1,6 @@
 {
   "name": "dor-progress",
-  "version": "1.0.117",
+  "version": "1.0.118",
   "type": "module",
   "scripts": {
     "dev": "vite",
@@ -18,9 +18,9 @@
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "test:watch": "vitest",
-    "version:patch": "npm version patch --no-git-tag-version && node scripts/commit-version.js",
-    "version:minor": "npm version minor --no-git-tag-version && node scripts/commit-version.js",
-    "version:major": "npm version major --no-git-tag-version && node scripts/commit-version.js",
+    "version:patch": "npm version patch --no-git-tag-version && node scripts/sync-branding.js && node scripts/commit-version.js",
+    "version:minor": "npm version minor --no-git-tag-version && node scripts/sync-branding.js && node scripts/commit-version.js",
+    "version:major": "npm version major --no-git-tag-version && node scripts/sync-branding.js && node scripts/commit-version.js",
     "info": "tsx scripts/project-info.ts",
     "logs": "wrangler tail --format pretty",
     "prepare": "husky"
@@ -50,7 +50,9 @@
     "@typescript-eslint/utils": {
       "eslint": "$eslint"
     },
-    "@tootallnate/once": "3.0.1"
+    "@tootallnate/once": "3.0.1",
+    "uuid": "^14.0.0",
+    "glob": "^13.0.6"
   },
   "dependencies": {
     "js-tiktoken": "^1.0.17",
