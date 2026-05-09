@@ -1267,6 +1267,7 @@ class Dashboard {
     // Core Engines - Initialize first so other systems can use them
     this.audio = new AudioEngine();
     this.speech = new SpeechEngine(this.audio);
+    this.header = new Header(this);
     this.audio.init();
 
     // Application State
@@ -1411,6 +1412,9 @@ class Dashboard {
           this.addToast("info", t("forceThrottled"));
 
         this.state.store = json;
+        if (json.lastUpdate) {
+          this.header.checkUpdates(json.lastUpdate);
+        }
         this.render();
         const offlineOverlay = document.getElementById("offline-overlay");
         if (offlineOverlay) offlineOverlay.style.display = "none";
@@ -2149,6 +2153,37 @@ function renderMiniChart(percent, showTrend = false) {
     </div>`;
 }
 
+window.renderSparkline = renderSparkline;
+function renderSparkline(annPerc, totPerc) {
+  const color =
+    annPerc >= 80
+      ? "var(--good)"
+      : annPerc >= 40
+        ? "var(--stable)"
+        : "var(--critical)";
+  // Simple 2-point trend path
+  const p1 = 40 - annPerc * 0.4;
+  const p2 = 40 - totPerc * 0.4;
+
+  return `
+    <div class="sparkline-container" style="width:100%; height:40px; background:rgba(0,0,0,0.02); border-radius:8px; padding:4px; margin:10px 0;">
+      <svg width="100%" height="100%" viewBox="0 0 100 40" preserveAspectRatio="none">
+        <defs>
+          <linearGradient id="sparkGradient" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stop-color="${color}" stop-opacity="0.2" />
+            <stop offset="100%" stop-color="${color}" stop-opacity="0" />
+          </linearGradient>
+        </defs>
+        <path d="M0,40 L0,${p1} L50,${p1} L100,${p2} L100,40 Z" fill="url(#sparkGradient)" />
+        <polyline points="0,${p1} 50,${p1} 100,${p2}" fill="none" stroke="${color}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
+        <circle cx="0" cy="${p1}" r="3" fill="${color}" />
+        <circle cx="50" cy="${p1}" r="2" fill="${color}" opacity="0.5" />
+        <circle cx="100" cy="${p2}" r="3" fill="${color}" />
+      </svg>
+    </div>
+  `;
+}
+
 window.showModal = showModal;
 function showModal(indicatorName) {
   const r = dashboard.state.store.rows.find(
@@ -2157,6 +2192,16 @@ function showModal(indicatorName) {
   if (!r) return;
   const headers = dashboard.state.store.headers;
   const progress = getProgress(r, headers);
+  const totTargetKey = headers.find(
+    (h) => h.includes("Total Target") || h.includes("कुल लक्ष्य"),
+  );
+  const totProgKey = headers.find(
+    (h) => h.includes("Total Progress") || h.includes("कुल प्रगति"),
+  );
+  const totT = parseFloat(String(r[totTargetKey] || "0").replace(/,/g, ""));
+  const totP = parseFloat(String(r[totProgKey] || "0").replace(/,/g, ""));
+  const totPerc = totT > 0 ? Math.round((totP / totT) * 100) : 0;
+
   const dispProg =
     dashboard.state.lang === "ne" ? toNepaliNumerals(progress) : progress;
 
@@ -2173,7 +2218,9 @@ function showModal(indicatorName) {
         <span style="font-size:0.6rem;background:var(--bg);padding:4px 10px;border-radius:6px;font-weight:bold;color:var(--primary)">${dispProg}% DONE</span>
       </div>
       <div style="margin-top:20px; text-align:center">
-        <div style="height:8px; background:var(--bg); border-radius:10px; overflow:hidden; border:1px solid var(--border)">
+        <div style="font-size:0.65rem; color:var(--text-light); text-transform:uppercase; margin-bottom:10px; font-weight:800;">Detailed Trend Analysis</div>
+        ${renderSparkline(progress, totPerc)} <!-- Reusing sparkline logic for larger view -->
+        <div style="height:8px; background:var(--bg); border-radius:10px; overflow:hidden; border:1px solid var(--border); margin-top:10px;">
           <div style="width:${progress}%; height:100%; background:var(--primary); transition:width 1s"></div>
         </div>
       </div>
@@ -3809,12 +3856,9 @@ function render(json) {
                 </div>
                 <div style="margin-bottom:15px">
                    <div style="display:flex;justify-content:space-between;font-size:0.6rem;font-weight:800;margin-bottom:4px;color:var(--text-light)">
-                     <span>TOTAL PROJECT PROGRESS</span>
-                     <span>${dispTot}%</span>
+                     <span>PROJECT TREND / प्रगति ग्राफ</span>
                    </div>
-                   <div style="height:6px;background:var(--bg);border-radius:3px;overflow:hidden">
-                     <div style="width:${totPerc}%;height:100%;background:var(--good)"></div>
-                   </div>
+                   ${renderSparkline(annPerc, totPerc)}
                 </div>
                 <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">${details}</div>
                 <p style="font-size:0.8rem;color:var(--primary);margin-top:12px;border-top:1px solid var(--border);padding-top:8px;font-style:italic">${r._insight || ""}</p>
