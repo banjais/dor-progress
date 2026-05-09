@@ -68,5 +68,7 @@ rollupOptions: {
     WORKER_BASE: JSON.stringify(process.env.API_BASE_URL || "https://dor-progress.banjays.workers.dev"),
     APP_ENV: JSON.stringify(process.env.VITE_APP_ENV || "production"),
     APP_VERSION: JSON.stringify("1.0.131"),
+    BUILD_ID: JSON.stringify(new Date().toISOString()),
+    COMMIT_SHA: JSON.stringify(process.env.COMMIT_SHA || process.env.GITHUB_SHA || "production"),
   },
 });

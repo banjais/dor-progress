@@ -12,6 +12,8 @@ syncStyle.textContent = `
 `;
 document.head.appendChild(syncStyle);
 
+import translationsData from "./locales/translations.json" with { type: "json" };
+
 import { AudioEngine } from "./components/AudioEngine";
 import { BrandingEngine } from "./components/BrandingEngine";
 import { SpeechEngine } from "./components/SpeechEngine";
@@ -179,7 +181,7 @@ async function setupSecurity() {
     // Initialize
     dashboard.setLang(dashboard.state.lang);
     dashboard.setView("cards");
-    dashboard.handleVerification();
+    handleVerification();
 
     updateLaunchProgress(80, "Fetching Project Data...");
     await dashboard.loadData();
@@ -2040,7 +2042,6 @@ async function loadSnapshot(date) {
   addToast("info", `Viewing data from ${date}`);
 }
 
-window.handleVerification = handleVerification;
 async function handleVerification() {
   const params = new URLSearchParams(window.location.search);
   const type = params.get("type");
@@ -2049,6 +2050,7 @@ async function handleVerification() {
   if (!type || !period) return;
 
   dashboard.setView("verify");
+  document.getElementById("loader").style.display = "flex";
   document.getElementById("loader").style.display = "flex";
   const verifyTitle = document.getElementById("verify-title");
   if (verifyTitle)
@@ -2080,6 +2082,8 @@ async function handleVerification() {
   if (document.getElementById("loader"))
     document.getElementById("loader").style.display = "none";
 }
+
+window.handleVerification = handleVerification;
 
 window.checkDeepLink = checkDeepLink;
 function checkDeepLink() {
