@@ -178,7 +178,7 @@ async function setupSecurity() {
 
     // Initialize
     dashboard.setLang(dashboard.state.lang);
-    dashboard.setView("table");
+    dashboard.setView("cards");
     dashboard.handleVerification();
 
     updateLaunchProgress(80, "Fetching Project Data...");
@@ -1275,7 +1275,7 @@ class Dashboard {
       lang:
         localStorage.getItem("pref-lang") ||
         (navigator.language.startsWith("en") ? "en" : "ne"),
-      view: "table",
+      view: "cards",
       search: "",
       sort: { key: null, dir: 1 },
       store: null,
@@ -1353,9 +1353,12 @@ class Dashboard {
 
   setView(v) {
     this.state.view = v;
-    document
-      .querySelectorAll("#view-toggle .toggle-btn")
-      .forEach((b) => b.classList.toggle("active", b.id === "btn-" + v));
+    // Update active state for FAB items
+    ["table", "cards", "charts"].forEach((mode) => {
+      const btn = document.getElementById("btn-" + mode);
+      if (btn) btn.classList.toggle("active", v === mode);
+    });
+
     const tables = document.getElementById("view-table");
     const cards = document.getElementById("view-cards");
     const charts = document.getElementById("view-charts");
@@ -3835,8 +3838,9 @@ function render(json) {
         if (r[h])
           details += `<div style="font-size:0.75rem;margin-bottom:4px"><span style="color:var(--text-light)">${h}:</span> <span style="font-weight:600">${dashboard.state.lang === "ne" ? toNepaliNumerals(r[h]) : r[h]}</span></div>`; // Use textContent for safety
       });
+      const delay = (rows.indexOf(r) % 12) * 0.05;
       cards += `
-            <div class="data-card" data-indicator="${name}" onclick="showModal('${name.replace(/'/g, "\\'")}', this, true)">
+            <div class="data-card" style="animation-delay: ${delay}s" data-indicator="${name}" onclick="showModal('${name.replace(/'/g, "\\'")}', this, true)">
               <div style="padding:1rem;background:rgba(0,0,0,0.02);display:flex;justify-content:space-between;align-items:center">
                 <div style="display:flex; align-items:center">${renderMiniChart(annPerc)}<b>${t(name)}</b></div>
                 <div style="display:flex; align-items:center; gap:6px">

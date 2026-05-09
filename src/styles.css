@@ -879,7 +879,44 @@ tr {
 }
 
 .data-card {
+  background: var(--surface);
+  border-radius: 16px;
+  border: 1px solid var(--border);
+  box-shadow: 0 4px 6px rgba(0, 0, 0, 0.02);
   cursor: pointer;
+  overflow: hidden;
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  animation: card-in 0.4s ease-out backwards;
+}
+
+.data-card:hover {
+  transform: translateY(-5px) scale(1.02);
+  box-shadow: 0 12px 24px rgba(0, 0, 0, 0.1);
+  border-color: var(--primary);
+  background: var(--hover);
+}
+
+@keyframes card-in {
+  from {
+    opacity: 0;
+    transform: translateY(20px) scale(0.95);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+/* Sibling Focus Effect */
+#view-cards:hover .data-card {
+  opacity: 0.7;
+  filter: grayscale(0.2) blur(0.5px);
+}
+
+#view-cards .data-card:hover {
+  opacity: 1;
+  filter: grayscale(0) blur(0);
+  z-index: 10;
 }
 
 #loader {
