@@ -120,7 +120,7 @@ npx tsx scripts/sync-sheets.js $DRY_RUN_FLAG
 
 # 5. Validation Gates
 echo "🔒 Running security checks..."
-npm run security-check > /dev/null 2>&1 || echo "⚠️  Security check completed with warnings"
+npm run security-check || echo "⚠️  Security check completed with warnings"
 echo ""
 
 echo "🔍 Running type checks..."
