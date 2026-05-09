@@ -70,6 +70,10 @@ const RATE_LIMIT_MAP = new Map<string, { count: number; reset: number }>();
 const RATE_LIMIT_MAX_REQUESTS = 60; // Max requests per window
 const RATE_LIMIT_WINDOW_MS = 60000; // 1 minute window
 
+// Snapshot Constants
+const SNAPSHOT_LIST_KEY = "snapshots:list";
+const SNAPSHOT_RETENTION_COUNT = 10;
+
 /**
  * In-memory cache for the admin secret to avoid redundant KV calls.
  */
@@ -769,7 +773,7 @@ export default {
       // GET /api/snapshots - list all snapshots
       if (request.method === "GET" && normalizedPath === "/api/snapshots") {
         const list =
-          (await getTranslationKV(env).get<SnapshotMetadata[]>(
+          (await getTranslationKV(env).get(
             SNAPSHOT_LIST_KEY,
             "json",
           )) || [];
@@ -793,7 +797,7 @@ export default {
             },
           );
         }
-        const { value: pdf, metadata } = await getTranslationKV(env).getWithMetadata<SnapshotMetadata>(
+        const { value: pdf, metadata } = await getTranslationKV(env).getWithMetadata(
           `snapshot:pdf:${date}`,
           "arrayBuffer",
         );
@@ -853,7 +857,7 @@ export default {
         await getTranslationKV(env).delete(`snapshot:pdf:${date}`);
         await getTranslationKV(env).delete(`snapshot:meta:${date}`);
         const list =
-          (await getTranslationKV(env).get<SnapshotMetadata[]>(
+          (await getTranslationKV(env).get(
             SNAPSHOT_LIST_KEY,
             "json",
           )) || [];
@@ -960,14 +964,14 @@ async function verifyAppCheckToken(
     let kvMetadata: { created: number } | null = null;
     if (!cachedJwks || (now_ms - lastJwksFetch > JWKS_CACHE_TTL)) {
       const { value: kvJwks, metadata } =
-        await getTranslationKV(env).getWithMetadata<Jwks, { created: number }>(
+        await getTranslationKV(env).getWithMetadata(
           jwksKey,
           "json",
         );
 
       kvMetadata = metadata;
       if (kvJwks) {
-        cachedJwks = kvJwks;
+        cachedJwks = kvJwks as Jwks;
         lastJwksFetch = kvMetadata?.created || now_ms;
       }
     }
@@ -1298,7 +1302,7 @@ async function enforceRetentionPolicy(
   ctx: ExecutionContext,
 ): Promise<void> {
   const list =
-    (await getTranslationKV(env).get<SnapshotMetadata[]>(
+    (await getTranslationKV(env).get(
       SNAPSHOT_LIST_KEY,
       "json",
     )) || [];
@@ -1335,7 +1339,7 @@ async function createSnapshot(
   );
 
   const list =
-    (await getTranslationKV(env).get<SnapshotMetadata[]>(
+    (await getTranslationKV(env).get(
       SNAPSHOT_LIST_KEY,
       "json",
     )) || [];
