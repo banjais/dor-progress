@@ -147,8 +147,13 @@ echo "🏗️  Starting Fresh Build..."
 npm run build
 
 echo "💉 Injecting version v${VERSION} into Service Worker..."
-# Ensures the Service Worker reflects the new version from package.json
-sed -i "s/const VERSION = .*/const VERSION = \"v${VERSION}\";/" public/sw.v2.js
+if [ -f "public/sw.v2.js" ]; then
+    # Ensures the Service Worker reflects the new version from package.json
+    sed -i "s/const VERSION = .*/const VERSION = \"v${VERSION}\";/" public/sw.v2.js
+    echo "   ✅ Version v${VERSION} injected."
+else
+    echo "   ⚠️  Warning: public/sw.v2.js not found. Skipping version injection."
+fi
 
 echo "�️  Verifying build integrity..."
 npm run verify-build

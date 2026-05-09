@@ -17,8 +17,17 @@ echo "--------------------------------------------------------"
 STATUS_CODE=$(curl -s -L -o /dev/null -w "%{http_code}" "$TARGET_URL")
 
 if [ "$STATUS_CODE" -eq 200 ]; then
-  echo "✅ Health check successful! (HTTP 200)"
-  exit 0
+  echo "✅ Primary URL is reachable."
+  
+  # Verify Service Worker availability
+  SW_CODE=$(curl -s -L -o /dev/null -w "%{http_code}" "$TARGET_URL/sw.v2.js")
+  if [ "$SW_CODE" -eq 200 ]; then
+    echo "✅ Service Worker (sw.v2.js) is active."
+    exit 0
+  else
+    echo "⚠️  Primary URL OK, but Service Worker returned $SW_CODE"
+    exit 1
+  fi
 else
   echo "❌ Health check failed with status: $STATUS_CODE"
   exit 1

@@ -3883,9 +3883,13 @@ const PWA_INSTALL_QUALIFICATION_DELAY_MS = 30000;
 // PWA Install Logic for Android/Chrome
 let canShowInstall = false;
 window.addEventListener("beforeinstallprompt", (e) => {
+  // Prevent the mini-infobar from appearing on mobile
   e.preventDefault();
+  // Stash the event so it can be triggered later.
   deferredPrompt = e;
-  // Button visibility is now handled by the engagement timer logic
+
+  // Optional: Log that the PWA is eligible for installation
+  console.log("💎 PWA Install candidate detected");
 });
 
 // Handle successful installation
@@ -3941,8 +3945,22 @@ setTimeout(() => {
 // PWA Install Logic for Android/Chrome
 document.getElementById("install-btn").addEventListener("click", async () => {
   if (deferredPrompt) {
+    // Show the install prompt
     deferredPrompt.prompt();
+
+    // Wait for the user to respond to the prompt
+    const { outcome } = await deferredPrompt.userChoice;
+    console.log(`User response to the install prompt: ${outcome}`);
+
+    if (outcome === "accepted") {
+      addToast("success", I18N[dashboard.state.lang].installSuccess);
+    }
+
+    // We've used the prompt, and can't use it again, so clear it
     deferredPrompt = null;
+
+    // Hide the install button regardless of the outcome
+    document.getElementById("install-btn").style.display = "none";
   } else if (isIos()) {
     showIosInstallInstructions();
   }
