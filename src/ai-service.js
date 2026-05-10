@@ -1,8 +1,4 @@
-// If Genkit continues to crash your Worker due to iconv-lite:
-// Switch to the direct @google/generative-ai SDK which is Worker-compatible.
-import { genkit } from "genkit";
-import { googleAI } from "@genkit-ai/googleai";
-import { z } from "zod";
+import { GoogleGenerativeAI } from "@google/generative-ai";
 
 /**
  * @typedef {Record<string, string | number>} ProjectRow
@@ -20,43 +16,54 @@ import { z } from "zod";
  * @property {ProjectRow[]} extractedData.rows
  */
 
-const AiSummarySchema = z.object({
-  brief: z.string().describe("A concise executive briefing under 100 words."),
-  overallHealth: z.enum(["good", "moderate", "critical"]).optional(),
-  criticalProjects: z.array(z.string()).optional(),
-  exceedingProjects: z.array(z.string()).optional(),
-  discrepancies: z
-    .array(
-      z.object({
-        text: z.string(),
-        severity: z.enum(["low", "medium", "high"]),
-      }),
-    )
-    .optional(),
-  extractedData: z
-    .object({
-      headers: z.array(z.string()),
-      rows: z.array(z.record(z.union([z.string(), z.number()]))),
-    })
-    .optional(),
-});
-
 /**
- * Helper to initialize Genkit with a specific API Key.
- * In Genkit v1, it's best to define the instance once.
+ * Structured Output Schema for Gemini
  */
-/** @type {import('genkit').Genkit | null} */
+const AiSummarySchema = {
+  type: "object",
+  properties: {
+    brief: {
+      type: "string",
+      description: "A concise executive briefing under 100 words.",
+    },
+    overallHealth: {
+      type: "string",
+      enum: ["good", "moderate", "critical"],
+    },
+    criticalProjects: { type: "array", items: { type: "string" } },
+    exceedingProjects: { type: "array", items: { type: "string" } },
+    discrepancies: {
+      type: "array",
+      items: {
+        type: "object",
+        properties: {
+          text: { type: "string" },
+          severity: { type: "string", enum: ["low", "medium", "high"] },
+        },
+        required: ["text", "severity"],
+      },
+    },
+    extractedData: {
+      type: "object",
+      properties: {
+        headers: { type: "array", items: { type: "string" } },
+        rows: {
+          type: "array",
+          items: { type: "object", additionalProperties: { type: "string" } },
+        },
+      },
+      required: ["headers", "rows"],
+    },
+  },
+  required: ["brief"],
+};
+
+/** @type {GoogleGenerativeAI | null} */
 let aiInstance = null;
 
-/**
- * @param {string} apiKey
- * @returns {import('genkit').Genkit | null}
- */
 export function getAi(apiKey) {
   if (!aiInstance && apiKey) {
-    aiInstance = genkit({
-      plugins: [googleAI({ apiKey })],
-    });
+    aiInstance = new GoogleGenerativeAI(apiKey);
   }
   return aiInstance;
 }
@@ -70,55 +77,58 @@ export function getAi(apiKey) {
  */
 export async function runProjectSummary(apiKey, input) {
   const ai = getAi(apiKey);
-  if (!ai) throw new Error("Genkit not initialized. API Key required.");
+  if (!ai) throw new Error("AI SDK not initialized. API Key required.");
 
-  // Use the pre-defined flow
-  return await generateProjectSummary(ai, input);
+  const model = ai.getGenerativeModel({
+    model: "gemini-1.5-flash",
+    generationConfig: {
+      responseMimeType: "application/json",
+      responseSchema: AiSummarySchema,
+    },
+  });
+
+  return await generateProjectSummary(model, input);
 }
 
 /**
  * Flow logic defined as a helper to avoid re-registration.
  *
- * @param {import('genkit').Genkit} ai
+ * @param {any} model
  * @param {{pdfBase64: string, lang: 'en' | 'ne', mainSheet?: Record<string, any>}} input
  * @returns {Promise<AiSummary>}
  */
-async function generateProjectSummary(ai, input, maxRetries = 2) {
+async function generateProjectSummary(model, input, maxRetries = 2) {
   let lastError = null;
 
   for (let attempt = 0; attempt <= maxRetries; attempt++) {
     try {
-      const response = await ai.generate({
-        model: googleAI.model("gemini-1.5-flash"),
-        output: { schema: AiSummarySchema },
-        prompt: [
-          {
-            text: `
-            You are a world-class senior infrastructure analyst for the Department of Roads (DoR), Nepal.
-            
-            Analyze the attached PDF project progress report.
-            Global Context: ${input.mainSheet ? JSON.stringify(input.mainSheet) : "Standard MIS context."}
+      const prompt = `
+        You are a world-class senior infrastructure analyst for the Department of Roads (DoR), Nepal.
+        Analyze the attached PDF project progress report.
+        Global Context: ${input.mainSheet ? JSON.stringify(input.mainSheet) : "Standard MIS context."}
 
-            Your task:
-            1. Generate a concise "Executive Briefing" in ${input.lang === "ne" ? "Nepali" : "English"}.
-            2. Identify overall health (good, moderate, or critical).
-            3. Extract the full project progress table found in the document. 
-               - "headers" should be a clean list of column names.
-               - "rows" should be an array of objects mapping header names to values.
-            4. Identify key projects that are falling behind or exceeding targets.
-            5. Identify data discrepancies.
-            6. Keep the briefing under 100 words.
-          `,
-          },
-          {
-            media: {
-              url: `data:application/pdf;base64,${input.pdfBase64}`,
-            },
-          },
-        ],
-      });
+        Your task:
+        1. Generate a concise "Executive Briefing" in ${input.lang === "ne" ? "Nepali" : "English"}.
+        2. Identify overall health (good, moderate, or critical).
+        3. Extract the full project progress table found in the document. 
+        4. Identify key projects that are falling behind or exceeding targets.
+        5. Identify data discrepancies.
+        6. Keep the briefing under 100 words.
+      `;
 
-      if (response.finishReason === "blocked") {
+      const result = await model.generateContent([
+        prompt,
+        {
+          inlineData: {
+            mimeType: "application/pdf",
+            data: input.pdfBase64,
+          },
+        },
+      ]);
+
+      const response = await result.response;
+
+      if (response.promptFeedback?.blockReason) {
         return {
           brief:
             "This summary was blocked by safety filters. Please ensure project data adheres to department guidelines.",
@@ -126,18 +136,13 @@ async function generateProjectSummary(ai, input, maxRetries = 2) {
         };
       }
 
-      // .output triggers the Zod validation and returns the structured data
-      if (!response.output) {
-        throw new Error("AI structured output was null or invalid.");
-      }
-      return response.output;
+      return JSON.parse(response.text());
     } catch (e) {
       lastError = e;
       const errorMessage = e instanceof Error ? e.message : String(e);
       console.warn(
-        `[Genkit Attempt ${attempt + 1}] Validation or generation failed: ${errorMessage}`,
+        `[AI Attempt ${attempt + 1}] Generation failed: ${errorMessage}`,
       );
-      // Optional: Add jittered backoff here if desired
     }
   }
 
