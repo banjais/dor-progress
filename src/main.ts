@@ -192,7 +192,11 @@ async function setupSecurity() {
     setTimeout(checkFreshInstall, 3000); // Check for backups after UI is stable
 
     // Initialize Audio Icon State
-    dashboard.audio.updateVolume(dashboard.state.uiVolume);
+    try {
+      dashboard.audio.updateVolume(dashboard.state.uiVolume);
+    } catch (e) {
+      console.warn("Audio volume UI sync deferred until user interaction.");
+    }
 
     // Version Badge Check
     const swVersion = await dashboard.getActiveSwVersion();
@@ -1270,7 +1274,6 @@ class Dashboard {
     this.audio = new AudioEngine();
     this.speech = new SpeechEngine(this.audio);
     this.header = new Header(this);
-    this.audio.init();
 
     // Application State
     this.state = {
@@ -4191,7 +4194,25 @@ function lockFrontend() {
 
 // Initialize App via Security Handshake
 setupSecurity();
-lockFrontend();
+
+/**
+ * Unlocks the AudioContext on the first user interaction.
+ * This resolves the "AudioContext not allowed to start" error and ensures
+ * audio feedback works as soon as the user starts using the dashboard.
+ */
+const unlockAudioContext = async () => {
+  if (dashboard.audio) {
+    await dashboard.audio.init().catch(() => {});
+  }
+  document.removeEventListener("click", unlockAudioContext);
+  document.removeEventListener("keydown", unlockAudioContext);
+  document.removeEventListener("touchstart", unlockAudioContext);
+};
+document.addEventListener("click", unlockAudioContext, { once: true });
+document.addEventListener("keydown", unlockAudioContext, { once: true });
+document.addEventListener("touchstart", unlockAudioContext, { once: true });
+
+// lockFrontend();
 
 // Mobile: default to card view (better for small screens)
 if (window.innerWidth < 768 && dashboard.state.view === "table") {

@@ -83,6 +83,7 @@ class AudioEngine {
     this.analyser = null;
     this.duckLevel = 0.3;
     this.bufferPool = new Map(); // Centralized cache for pre-rendered UI sounds
+    this.wasRunning = false; // Track state for smart UX feedback
 
     this.uiVolume = parseFloat(localStorage.getItem("ui-volume") || "0.5");
     this.lastVolume = this.uiVolume > 0 ? this.uiVolume : 0.5;
@@ -104,10 +105,55 @@ class AudioEngine {
 
       this.ctx = new AudioContextClass();
 
-      // Ensure context is resumed (crucial for iOS/Chrome Autoplay policies)
-      if (this.ctx.state === "suspended") {
-        await this.ctx.resume();
-      }
+      // Monitor state changes (e.g. browser suspending context when tab is backgrounded or in Low Power Mode)
+      this.ctx.onstatechange = () => {
+        const state = this.ctx.state;
+        console.log(`[Audio Engine] Context state changed: ${state}`);
+
+        // Update settings badge if modal is open
+        const badge = document.getElementById("audio-status-badge");
+        if (badge) {
+          const isRunning = state === "running";
+          badge.style.background = isRunning
+            ? "rgba(74, 222, 128, 0.1)"
+            : "rgba(239, 68, 68, 0.1)";
+          badge.style.color = isRunning ? "var(--good)" : "var(--critical)";
+          badge.innerText = isRunning
+            ? dashboard.state.lang === "en"
+              ? "ACTIVE"
+              : "सक्रिय"
+            : dashboard.state.lang === "en"
+              ? "SUSPENDED"
+              : "अवरुद्ध";
+        }
+
+        // Toggle manual resume button visibility
+        const resumeBtn = document.getElementById("audio-resume-btn");
+        if (resumeBtn) {
+          resumeBtn.style.display = state === "running" ? "none" : "flex";
+        }
+
+        if (state === "running") {
+          this.updateVolumes();
+          // UX: Notify the user only if the engine was previously stopped/interrupted
+          if (!this.wasRunning && typeof dashboard !== "undefined") {
+            dashboard.addToast(
+              "info",
+              dashboard.state.lang === "en"
+                ? "🔈 Audio Engine Active"
+                : "🔈 अडियो प्रणाली सक्रिय",
+              1500,
+            );
+            this.wasRunning = true;
+          }
+        } else {
+          this.wasRunning = false;
+        }
+      };
+
+      // Attempt to resume, but don't block initialization if it fails
+      // (which it will without a user gesture).
+      this.ctx.resume().catch(() => {});
 
       // Channels Routing
       this.uiGain = this.ctx.createGain();
@@ -120,6 +166,20 @@ class AudioEngine {
       this.analyser = this.ctx.createAnalyser();
       this.analyser.fftSize = 64;
       this.musicGain.connect(this.analyser);
+
+      // Robustness: Resume audio when the app returns from background
+      document.addEventListener("visibilitychange", () => {
+        if (
+          document.visibilityState === "visible" &&
+          this.ctx &&
+          this.ctx.state === "suspended"
+        ) {
+          console.log(
+            "[Audio Engine] App returned to foreground, resuming context...",
+          );
+          this.ctx.resume().catch(() => {});
+        }
+      });
 
       await this.preRenderAll();
       this.updateVolumes();
@@ -179,12 +239,29 @@ class AudioEngine {
   }
 
   /**
+   * Helper to ensure the AudioContext is running before playback.
+   * Modern browsers suspend contexts to save power or follow autoplay rules.
+   */
+  async _ensureRunning() {
+    if (!this.ctx || this.isBroken) return false;
+
+    // Proactive check: if suspended, attempt to wake up immediately.
+    if (this.ctx.state !== "running") {
+      await this.ctx
+        .resume()
+        .catch((err) =>
+          console.warn("[Audio Engine] Resume attempt failed:", err),
+        );
+    }
+    return this.ctx.state === "running";
+  }
+
+  /**
    * Synchronizes internal gain levels with current volume settings using a smooth transition.
    * @returns {Promise<void>}
    */
   async updateVolumes() {
     if (!this.ctx) return;
-    if (this.ctx.state === "suspended") await this.ctx.resume();
 
     this.uiGain.gain.setTargetAtTime(this.uiVolume, this.ctx.currentTime, 0.05);
     this.musicGain.gain.setTargetAtTime(
@@ -217,6 +294,8 @@ class AudioEngine {
   playMusic() {
     if (!this.musicBuffer || this.isBroken) return;
     this.stopMusic(0);
+    this._ensureRunning(); // Attempt to resume if suspended
+
     this.musicSource = this.ctx.createBufferSource();
     this.musicSource.buffer = this.musicBuffer;
     this.musicSource.loop = true;
@@ -255,6 +334,8 @@ class AudioEngine {
   async playBlob(blob) {
     await this.init();
     if (this.isBroken) return;
+    await this._ensureRunning();
+
     try {
       const arrayBuffer = await blob.arrayBuffer();
       const audioBuffer = await this.ctx.decodeAudioData(arrayBuffer);
@@ -297,7 +378,7 @@ class AudioEngine {
     if (this.isBroken || (checkMute && vol === 0)) return;
 
     try {
-      if (this.ctx.state === "suspended") await this.ctx.resume();
+      await this._ensureRunning();
 
       const pack = localStorage.getItem("sound-pack") || "modern";
       const buffer = this.bufferPool.get(`${pack}:${id}`);
@@ -935,8 +1016,23 @@ async function checkStatus() {
   }
 }
 
+/**
+ * Global utility to trigger haptic feedback respecting user settings.
+ * @param {number|number[]} pattern - Vibration pattern in milliseconds.
+ */
+function triggerHaptic(pattern) {
+  const enabled = localStorage.getItem("haptic-enabled") !== "false"; // Default to ON
+  if (enabled && "vibrate" in navigator) {
+    navigator.vibrate(pattern);
+  }
+}
+
 function addToast(type, message, duration = 4000) {
   dashboard.audio.playUi("pop");
+
+  // Haptic feedback for notifications
+  triggerHaptic(type === "error" ? [50, 30, 50] : 15);
+
   const container = document.getElementById("toast-container");
   const dismissAllBtn = document.getElementById("dismiss-all");
   if (!container || !dismissAllBtn) return;
@@ -1675,6 +1771,8 @@ const I18N = {
     packRetro: "रेट्रो",
     updateReady: "नयाँ संस्करण। अपडेट गर्ने?",
     lowDataDesc: "छिटो लोड गर्न एआई विश्लेषण असक्षम गर्नुहोस्",
+    hapticFeedback: "ह्याप्टिक प्रतिक्रिया (कम्पन)",
+    hapticFeedbackDesc: "बटन र कार्डहरू ट्याप गर्दा हल्का कम्पन",
     appVersion: "एप संस्करण",
     whatsNew: "नयाँ",
     downloading: "डाउनलोड हुँदैछ",
@@ -1824,6 +1922,8 @@ const I18N = {
     packRetro: "Retro",
     updateReady: "New version. Update?",
     lowDataDesc: "Disable AI analysis for faster loading",
+    hapticFeedback: "Haptic Feedback (Vibration)",
+    hapticFeedbackDesc: "Subtle vibration when tapping buttons and cards",
     appVersion: "App Version",
     whatsNew: "What's New",
     downloading: "Downloading",
@@ -1866,7 +1966,6 @@ class Dashboard {
     // Core Engines - Initialize first so other systems can use them
     this.audio = new AudioEngine();
     this.speech = new SpeechEngine(this.audio);
-    this.audio.init();
 
     // Application State
     this.state = {
@@ -2123,11 +2222,11 @@ async function processTranslationQueue() {
     if (res.ok) {
       const data = await res.json();
       data.results.forEach((item) => {
-        dynamicCache[item.original] = item.translated;
+        dashboard.dynamicCache[item.original] = item.translated;
       });
       localStorage.setItem(
         "dynamicTranslations",
-        JSON.stringify(this.dynamicCache),
+        JSON.stringify(dashboard.dynamicCache),
       );
 
       // Re-trigger render and UI updates with new translations
@@ -3097,6 +3196,15 @@ window.showSettings = async () => {
           </div>
           <div style="margin-top: 15px; padding: 12px; background: var(--bg); border-radius: 12px; border: 1px solid var(--border); display: flex; align-items: center; justify-content: space-between;">
             <div style="text-align: left;">
+              <div style="font-size: 0.8rem; font-weight: 800; color: var(--text);">${t("hapticFeedback")}</div>
+              <div style="font-size: 0.65rem; color: var(--text-light);">${t("hapticFeedbackDesc")}</div>
+            </div>
+            <label class="toggle-btn" style="padding: 4px; display: flex; align-items: center; gap: 8px; cursor: pointer;">
+              <input type="checkbox" id="haptic-toggle" ${localStorage.getItem("haptic-enabled") !== "false" ? "checked" : ""} onchange="toggleHaptic(this.checked)" style="width: 18px; height: 18px; cursor: pointer; accent-color: var(--primary);">
+            </label>
+          </div>
+          <div style="margin-top: 15px; padding: 12px; background: var(--bg); border-radius: 12px; border: 1px solid var(--border); display: flex; align-items: center; justify-content: space-between;">
+            <div style="text-align: left;">
               <div style="font-size: 0.8rem; font-weight: 800; color: var(--text);">${t("darkSchedule")}</div>
               <div style="font-size: 0.65rem; color: var(--text-light);">${t("darkScheduleDesc")}</div>
             </div>
@@ -3221,6 +3329,10 @@ window.showSettings = async () => {
               <input type="range" id="ui-volume-slider" min="0" max="1" step="0.1" value="${dashboard.state.uiVolume}" oninput="updateVolume(this.value)" style="flex:1; height:6px; accent-color: var(--primary); background:var(--bg); border-radius:3px; outline:none; cursor:pointer;">
               <button id="mute-toggle-btn" onclick="toggleMute()" class="icon-btn" style="width:32px; height:32px; font-size:0.8rem; flex-shrink:0;">${dashboard.state.uiVolume === 0 ? "🔇" : "🔊"}</button>
             </div>
+            <!-- Manual Resume Button for edge cases -->
+            <button id="audio-resume-btn" onclick="dashboard.audio.init()" class="toggle-btn" style="display:${dashboard.audio.ctx?.state === "running" ? "none" : "flex"}; width:100%; margin-top:10px; border:1px solid var(--critical); color:var(--critical); font-size:0.65rem; align-items:center; justify-content:center; gap:8px;">
+               🔊 ${dashboard.state.lang === "en" ? "RE-INITIALIZE AUDIO" : "अडियो पुनः सुरु गर्नुहोस्"}
+            </button>
             <!-- Mute All Toggle/Indicator that appears when at zero -->
             <div style="margin-top: 15px;">
               <label style="font-size: 0.7rem; font-weight: 800; text-transform: uppercase; color: var(--text-light); margin-bottom: 8px; display: block;">${t("soundPitch")}</label>
@@ -3743,6 +3855,12 @@ window.toggleSystemFont = (enabled) => {
   document.body.setAttribute("data-font", enabled ? "system" : "branded");
 };
 
+window.toggleHaptic = (enabled) => {
+  localStorage.setItem("haptic-enabled", enabled);
+  if (enabled) triggerHaptic(15); // Confirmation pulse
+  dashboard.audio.playUi("click");
+};
+
 window.updateFontSize = (val) => {
   document.documentElement.style.setProperty("--font-multiplier", val);
   localStorage.setItem("font-multiplier", val);
@@ -3934,9 +4052,7 @@ setTimeout(() => {
     btn.classList.add("install-ready");
 
     // Provide subtle haptic feedback for mobile users
-    if ("vibrate" in navigator) {
-      navigator.vibrate(50);
-    }
+    triggerHaptic(50);
   } else {
     // If the browser hasn't fired the event yet, hide until it does
     btn.style.display = "none";
@@ -4020,6 +4136,7 @@ async function registerPeriodicUpdate(registration) {
 // Pull to Refresh Logic for Mobile
 let touchStartY = 0;
 let touchCurrentY = 0;
+let hapticThresholdReached = false;
 let isPulling = false;
 
 window.addEventListener(
@@ -4028,6 +4145,7 @@ window.addEventListener(
     // Only start pulling if we are at the very top of the page
     if (window.scrollY <= 5) {
       touchStartY = e.touches[0].pageY;
+      hapticThresholdReached = false;
       isPulling = true;
     }
   },
@@ -4051,6 +4169,15 @@ window.addEventListener(
       // Damped movement for natural resistance
       const topOffset = Math.min(dist / 2.5, PULL_THRESHOLD) - 50;
       indicator.style.top = `${topOffset}px`;
+
+      // Haptic feedback when crossing the refresh threshold
+      if (dist > PULL_THRESHOLD && !hapticThresholdReached) {
+        triggerHaptic([10, 30, 10]); // Short double-beat to signal "Ready to Refresh"
+        hapticThresholdReached = true;
+      } else if (dist <= PULL_THRESHOLD && hapticThresholdReached) {
+        hapticThresholdReached = false;
+      }
+
       if (pullIcon) pullIcon.style.transform = `rotate(${dist * 1.5}deg)`;
     }
   },
@@ -4067,6 +4194,7 @@ window.addEventListener("touchend", () => {
     indicator.style.top = "20px";
     indicator.innerHTML =
       '<span class="spinner" style="border-top-color:var(--primary); width:20px; height:20px;"></span>';
+    triggerHaptic(40); // Initial pulse when refresh starts (more mechanical feel)
     // Mobile Force Refresh: Pulling down now handles everything including clearing Gemini cache
     dashboard.loadData(true).finally(() => {
       setTimeout(() => {
@@ -4081,6 +4209,7 @@ window.addEventListener("touchend", () => {
     indicator.style.top = "-60px";
     indicator.classList.remove("visible");
   }
+  hapticThresholdReached = false;
   isPulling = false;
 });
 
@@ -4285,7 +4414,7 @@ function render(json) {
         "beforebegin",
         '<canvas id="ai-visualizer" width="400" height="40" style="width:100%; height:40px; margin-bottom:12px; border-radius:8px; opacity:0.6"></canvas>',
       );
-      audioEngine.startVisualizer(document.getElementById("ai-visualizer"));
+      dashboard.audio.startVisualizer(document.getElementById("ai-visualizer"));
     }
     typeText(container, briefText, true); // Type out with shimmer and sound
   }
@@ -4487,6 +4616,8 @@ const initDelegation = () => {
     const target = event.target;
     const row = target.closest("tr[data-indicator-name]");
     if (row) {
+      triggerHaptic(10);
+
       const name = row.dataset.indicatorName;
       if (target.classList.contains("table-chart-btn")) {
         event.stopPropagation();
@@ -4504,6 +4635,8 @@ const initDelegation = () => {
     const target = event.target;
     const card = target.closest(".data-card");
     if (card) {
+      triggerHaptic(15);
+
       const name = card.dataset.indicator;
       if (target.classList.contains("card-chart-btn")) {
         event.stopPropagation();
@@ -4518,6 +4651,8 @@ const initDelegation = () => {
     const target = event.target;
     const chart = target.closest(".chart-card");
     if (chart) {
+      triggerHaptic(12);
+
       const name = chart.dataset.indicator;
       if (target.classList.contains("chart-card-btn")) {
         event.stopPropagation();

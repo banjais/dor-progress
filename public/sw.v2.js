@@ -1,4 +1,5 @@
 const VERSION = "__VERSION__";
+console.log(`[Service Worker] Script loaded. Version: ${VERSION}`);
 const CHANGELOG = {
   "2.4.0": [
     "Optimized Translation sync: Background Sync support and fingerprint-based revalidation",
@@ -76,6 +77,7 @@ const ASSETS_TO_CACHE = [
   "/ambient-calm.mp3",
   "/translations.json",
   "/manifest.json",
+  "/screenshots/mobile-dashboard.png",
   OFFLINE_URL,
 ];
 
@@ -147,6 +149,7 @@ async function verifyIntegrity(response) {
 }
 
 self.addEventListener("install", (event) => {
+  console.log("[Service Worker] Install event triggered.");
   if (!validateConfig()) {
     console.error(
       "[SW Install] Installation aborted due to configuration errors.",
