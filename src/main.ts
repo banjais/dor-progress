@@ -299,20 +299,21 @@ async function authenticatedFetch(path, options = {}, maxRetries = 3) {
         return response;
       }
 
-      // Don't retry on certain client errors like 404 or 400 (unless it's 403 or 429)
+      // Don't retry on certain client errors like 404 or 400 (unless it's 401, 403 or 429)
       if (
         response.status >= 400 &&
         response.status < 500 &&
+        response.status !== 401 &&
         response.status !== 403 &&
         response.status !== 429
       ) {
         throw new Error(`HTTP ${response.status}`);
       }
 
-      // Special handling for 403: Security token rejected or expired
-      if (response.status === 403) {
+      // Special handling for 401/403: Security token rejected, missing, or expired
+      if (response.status === 401 || response.status === 403) {
         console.warn(
-          `[Security] 403 Forbidden on attempt ${attempt + 1}. Refreshing App Check token...`,
+          `[Security] ${response.status} ${response.status === 401 ? "Unauthorized" : "Forbidden"} on attempt ${attempt + 1}. Refreshing App Check token...`,
         );
         // The next loop iteration will trigger getToken(..., true) because attempt > 0
       }

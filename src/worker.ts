@@ -19,6 +19,10 @@ const JWKS = createRemoteJWKSet(
 const CORS_HEADERS = {
   "Content-Type": "application/json",
   "Access-Control-Allow-Origin": "*",
+  "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
+  "Access-Control-Allow-Headers":
+    "Content-Type, X-Firebase-AppCheck, X-Low-Data, X-Admin-Secret",
+  "Access-Control-Max-Age": "86400",
 };
 
 function jsonResponse(data: any, status = 200): Response {
@@ -76,7 +80,10 @@ async function verifyAppCheck(request: Request, env: Env): Promise<void> {
       clockTolerance: "1m",
     });
   } catch (e) {
-    throw new ServiceError("Invalid App Check Token", { status: 401 });
+    throw new ServiceError("Invalid App Check Token", {
+      status: 401,
+      cause: e,
+    });
   }
 }
 
@@ -94,6 +101,11 @@ const ReportRequestSchema = z.object({
 const handler: ExportedHandler<Env> = {
   async fetch(request, env, ctx) {
     const url = new URL(request.url);
+
+    // Handle CORS preflight requests
+    if (request.method === "OPTIONS") {
+      return new Response(null, { status: 204, headers: CORS_HEADERS });
+    }
 
     if (url.pathname === "/api/ping" || url.pathname === "/api/health") {
       return jsonResponse({ status: "ok", time: Date.now() });
