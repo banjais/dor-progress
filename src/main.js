@@ -827,6 +827,15 @@ async function setupSecurity() {
     const res = await fetch(`${WORKER_BASE}/api/client-config`);
     const config = await res.json();
 
+    // Validation check for ReCaptcha sitekey to prevent initialization failure
+    if (!config || !(config.recaptchaKey || config.RECAPTCHA_SITE_KEY)) {
+      console.error(
+        "[Security] ReCaptcha Site Key is missing from the client configuration.",
+      );
+      updateLaunchProgress(0, "Security Config Error");
+      throw new Error("Missing required parameters: sitekey");
+    }
+
     updateLaunchProgress(30, "Initializing Firebase...");
     console.log("[App Check Init] Received client config:", config);
     const app = initializeApp(config.firebase);
@@ -840,7 +849,9 @@ async function setupSecurity() {
 
     updateLaunchProgress(60, "Verifying Integrity...");
     dashboard.appCheck = initializeAppCheck(app, {
-      provider: new ReCaptchaEnterpriseProvider(config.recaptchaKey),
+      provider: new ReCaptchaEnterpriseProvider(
+        config.recaptchaKey || config.RECAPTCHA_SITE_KEY,
+      ),
       isTokenAutoRefreshEnabled: true,
     });
     window.appCheck = dashboard.appCheck;
@@ -849,7 +860,7 @@ async function setupSecurity() {
     // Initialize
     dashboard.setLang(dashboard.state.lang);
     dashboard.setView("table");
-    dashboard.handleVerification();
+    await handleVerification();
 
     updateLaunchProgress(80, "Fetching Project Data...");
     await dashboard.loadData();
@@ -863,7 +874,7 @@ async function setupSecurity() {
     dashboard.audio.updateVolume(dashboard.state.uiVolume);
 
     // Version Badge Check
-    const swVersion = await dashboard.getActiveSwVersion();
+    const swVersion = await getActiveSwVersion();
     const lastSeen = localStorage.getItem("app-version-seen");
     if (lastSeen && lastSeen !== swVersion) {
       document.getElementById("settings-btn")?.classList.add("has-badge");
@@ -949,6 +960,14 @@ async function authenticatedFetch(path, options = {}, maxRetries = 3) {
         response.status !== 429
       ) {
         throw new Error(`HTTP ${response.status}`);
+      }
+
+      // Special handling for 403: Security token rejected or expired
+      if (response.status === 403) {
+        console.warn(
+          `[Security] 403 Forbidden on attempt ${attempt + 1}. Refreshing App Check token...`,
+        );
+        // The next loop iteration will trigger getToken(..., true) because attempt > 0
       }
 
       throw new Error(
@@ -2166,10 +2185,10 @@ const t = (key, count) => {
 
     // Optimized lookup for plural/standard keys
     const lookup = [
-      dynamicCache[pKey],
+      dashboard.dynamicCache[pKey],
       translationsData?.[currentLang]?.[pKey],
       I18N[currentLang]?.[pKey],
-      dynamicCache[key],
+      dashboard.dynamicCache[key],
       translationsData?.[currentLang]?.[key],
       I18N[currentLang]?.[key],
     ];
@@ -2182,7 +2201,7 @@ const t = (key, count) => {
   }
 
   let text =
-    dynamicCache[finalKey] ||
+    dashboard.dynamicCache[finalKey] ||
     translationsData?.[currentLang]?.[finalKey] ||
     I18N[currentLang]?.[finalKey] ||
     null;
