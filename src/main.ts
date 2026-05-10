@@ -19,21 +19,12 @@ import { BrandingEngine } from "./components/BrandingEngine";
 import { SpeechEngine } from "./components/SpeechEngine";
 import { Header } from "./components/Header";
 
-// Apply branding immediately
-BrandingEngine.apply();
-
 import { initializeApp } from "firebase/app";
 import {
   initializeAppCheck,
   ReCaptchaEnterpriseProvider,
   getToken,
 } from "firebase/app-check";
-
-import { AudioEngine } from "./components/AudioEngine";
-import { BrandingEngine } from "./components/BrandingEngine";
-
-// Apply branding immediately
-BrandingEngine.apply();
 
 // AudioEngine moved to components/AudioEngine.ts
 
@@ -82,6 +73,12 @@ const hideSplashScreen = () => {
      * Automatically switches theme when system settings change.
      */
 const initTheme = () => {
+  const getSystemTheme = () =>
+    window.matchMedia &&
+    window.matchMedia("(prefers-color-scheme: dark)").matches
+      ? "dark"
+      : "light";
+
   const applyTheme = (theme) => {
     const isDark = theme === "dark";
     const color = isDark ? "#0b0f1a" : "#1a5c3a";
@@ -93,19 +90,24 @@ const initTheme = () => {
 
   if (window.matchMedia) {
     const mediaQuery = window.matchMedia("(prefers-color-scheme: dark)");
-    // Listen for OS-level theme changes in real-time
     mediaQuery.addEventListener("change", (e) => {
-      // Only auto-update if the user hasn't explicitly set a preference
       if (!localStorage.getItem("theme")) {
         applyTheme(e.matches ? "dark" : "light");
       }
     });
   }
 
-  // Final sync for the meta tags based on the state established by the FOUC guard
-  applyTheme(document.body.getAttribute("data-theme") || "light");
+  // Resolve starting theme: User preference > FOUC Guard attribute > OS Setting
+  const startingTheme =
+    localStorage.getItem("theme") ||
+    document.body.getAttribute("data-theme") ||
+    getSystemTheme();
+  applyTheme(startingTheme);
 };
 initTheme();
+
+// Apply branding after theme initialization to ensure consistency with system settings
+BrandingEngine.apply();
 
 /**
  * Automatically detects if the browser's 'Data Saver' mode is enabled.
@@ -4073,7 +4075,7 @@ window.generateClientPDF = async () => {
     const helveticaBold = await pdfDoc.embedFont(StandardFonts.HelveticaBold);
 
     // 2. Embed Logo
-    const logoUrl = `${window.location.origin}/logo.png`;
+    const logoUrl = `${window.location.origin}/icons/logo.png`;
     const logoBytes = await fetch(logoUrl).then((res) =>
       res.ok ? res.arrayBuffer() : null,
     );

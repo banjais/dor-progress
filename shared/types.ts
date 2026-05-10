@@ -78,4 +78,10 @@ export interface Env {
   BUILD_ID?: string;
   COMMIT_SHA?: string;
   DEPLOY_TIMESTAMP?: string;
+  // Missing Notification Secrets
+  SMTP_SERVER?: string;
+  SMTP_USERNAME?: string;
+  SMTP_PASSWORD?: string;
+  SLACK_WEBHOOK_URL?: string;
+  ALERT_RECIPIENT_EMAIL?: string;
 }

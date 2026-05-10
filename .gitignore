@@ -49,3 +49,4 @@ firebase-service-account.json
 # Temporary/Noise files
 temp_check/
 list/
+.qwen/

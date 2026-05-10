@@ -14,6 +14,7 @@ const FORBIDDEN_EXTENSIONS = [
   ".ts",
   ".dev.vars",
   ".map",
+  ".qwen",
 ];
 const FORBIDDEN_FILES = [
   "action.yml",
@@ -21,6 +22,7 @@ const FORBIDDEN_FILES = [
   "firebase.json",
   "package.json",
   "package-lock.json",
+  "sw.v2.js",
 ];
 
 function prune(dir: string) {

@@ -1,6 +1,6 @@
 {
   "name": "dor-progress",
-  "version": "1.0.142",
+  "version": "1.0.144",
   "type": "module",
   "scripts": {
     "dev": "vite",
@@ -8,7 +8,7 @@
     "dev:all": "concurrently \"npm run dev\" \"npm run dev:worker\"",
     "build": "vite build",
     "postbuild": "node scripts/finalize-build.js",
-    "deploy": "npm run clean && npm run version:patch && npm run build && npm run deploy:worker && npm run deploy:hosting && git push && git push --tags",
+    "deploy": "npm run git:sync && npm run clean && npm run version:patch && npm run build && npm run deploy:worker && npm run deploy:hosting && git push && git push --tags",
     "verify-build": "tsx scripts/verify-build.ts",
     "deploy:worker": "wrangler deploy",
     "deploy:hosting": "firebase deploy --only hosting --public .build",
@@ -22,21 +22,16 @@
     "version:minor": "npm version minor --no-git-tag-version && node scripts/sync-branding.js && node scripts/commit-version.js",
     "version:major": "npm version major --no-git-tag-version && node scripts/sync-branding.js && node scripts/commit-version.js",
     "info": "tsx scripts/project-info.ts",
+    "git:sync": "git add -A && (git rm -r --cached .qwen --ignore-unmatch > /dev/null 2>&1 || true)",
     "logs": "wrangler tail --format pretty",
     "prepare": "husky"
   },
   "lint-staged": {
-    "*.ts": [
-      "eslint --fix",
-      "prettier --write",
-      "bash -c 'npx tsc --build'"
-    ],
-    "*.js": [
-      "eslint --fix",
+    "*.{ts,js,json}": [
       "prettier --write"
     ],
-    "*.{css,html,json,yml,yaml}": [
-      "prettier --write"
+    "src/**/*.{ts,js}": [
+      "eslint --fix"
     ]
   },
   "overrides": {

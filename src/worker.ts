@@ -102,12 +102,20 @@ const handler: ExportedHandler<Env> = {
     if (url.pathname === "/api/client-config") {
       return jsonResponse({
         firebase: {
-          apiKey: env.GOOGLE_GENAI_API_KEY,
-          authDomain: `${env.FIREBASE_PROJECT_ID}.firebaseapp.com`,
+          apiKey: env.FIREBASE_API_KEY || env.GOOGLE_GENAI_API_KEY,
+          authDomain:
+            env.FIREBASE_AUTH_DOMAIN ||
+            `${env.FIREBASE_PROJECT_ID}.firebaseapp.com`,
           projectId: env.FIREBASE_PROJECT_ID,
-          storageBucket: `${env.FIREBASE_PROJECT_ID}.appspot.com`,
-          messagingSenderId: env.FIREBASE_PROJECT_NUMBER,
-          appId: `1:${env.FIREBASE_PROJECT_NUMBER}:web:dynamic`,
+          storageBucket:
+            env.FIREBASE_STORAGE_BUCKET ||
+            `${env.FIREBASE_PROJECT_ID}.appspot.com`,
+          messagingSenderId:
+            env.FIREBASE_MESSAGING_SENDER_ID || env.FIREBASE_PROJECT_NUMBER,
+          appId:
+            env.FIREBASE_APP_ID ||
+            `1:${env.FIREBASE_PROJECT_NUMBER}:web:dynamic`,
+          measurementId: env.FIREBASE_MEASUREMENT_ID,
         },
         recaptchaKey: env.RECAPTCHA_SITE_KEY,
       });

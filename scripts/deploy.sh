@@ -5,16 +5,10 @@ set -e # Exit immediately if a command exits with a non-zero status
 trap 'echo "❌ Deployment failed at line $LINENO. Check the output above for errors."' ERR
 
 # 0. Pre-flight Check: Ensure dependencies exist
-# Detect --dry-run flag anywhere in arguments
-DRY_RUN_FLAG=""
-for arg in "$@"; do
-    if [ "$arg" == "--dry-run" ]; then
-        DRY_RUN_FLAG="--dry-run"
-        echo "🧪 DRY RUN MODE ENABLED: No files will be written or pushed."
-    fi
-done
+[[ " $@ " =~ " --dry-run " ]] && DRY_RUN_FLAG="--dry-run" || DRY_RUN_FLAG=""
+if [ -n "$DRY_RUN_FLAG" ]; then echo "🧪 DRY RUN MODE ENABLED"; fi
 
-PROJECT_ID="${FIREBASE_PROJECT:-dor-progress}"
+PROJECT_ID=$(node -p "require('./package.json').name" 2>/dev/null || echo "dor-progress")
 APP_URL="${APP_URL:-https://dor-progress.web.app}"
 REPO_PATH=$(git remote get-url origin | sed -E 's/.*github.com[:\/](.*)(\.git)?/\1/' || echo "UNKNOWN")
 
@@ -73,6 +67,13 @@ if [ -d "public" ] && [ -n "$(find public -name "*.yml" -o -name "*.yaml" 2>/dev
     echo "❌ Error: .yml files found in 'public/'. Move these to .github/workflows/."
     exit 1
 fi
+
+# 1.1 Robustness: Clear phantom Git index entries (common on Windows with AI tools)
+echo "🧹 Syncing Git index to prevent Windows path resolution errors..."
+git add -A
+# Specifically remove .qwen directory from index if it exists, as it causes path pollution
+git rm -r --cached .qwen --ignore-unmatch > /dev/null 2>&1 || true
+git add .
 
 # 1. Branch Safety Check
 CURRENT_BRANCH=$(git rev-parse --abbrev-ref HEAD 2>/dev/null || echo "UNKNOWN")
@@ -144,16 +145,14 @@ VERSION=$(node -p "require('./package.json').version")
 
 # 7. Full Build (compile + copy + inject + verify)
 echo "🏗️  Starting Fresh Build..."
-npm run build
 
-echo "💉 Injecting version v${VERSION} into Service Worker..."
-if [ -f "public/sw.v2.js" ]; then
-    # Ensures the Service Worker reflects the new version from package.json
-    sed -i "s/const VERSION = .*/const VERSION = \"v${VERSION}\";/" public/sw.v2.js
-    echo "   ✅ Version v${VERSION} injected."
-else
-    echo "   ⚠️  Warning: public/sw.v2.js not found. Skipping version injection."
+if [ -f "d:/LNB/dor-progress/src/sw.v2.js" ]; then
+    echo "💉 Injecting version v${VERSION} into src/sw.v2.js..."
+    sed -i "s/const VERSION = .*/const VERSION = \"v${VERSION}\";/" d:/LNB/dor-progress/src/sw.v2.js
+    echo "   ✅ Version updated."
 fi
+
+npm run build
 
 echo "�️  Verifying build integrity..."
 npm run verify-build

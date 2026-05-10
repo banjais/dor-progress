@@ -87,11 +87,17 @@ console.log("\n2️⃣  Cloudflare Worker Secrets\n");
 console.log("   These are set via: wrangler secret put <NAME>");
 console.log("   Status in current environment:\n");
 try {
-  const nullRedirect = process.platform === 'win32' ? '2>nul' : '2>/dev/null';
-  const output = execSync(`wrangler secret list --format json ${nullRedirect}`, {
-    encoding: "utf8",
-  });
-  const secrets = JSON.parse(output);
+  const nullRedirect = process.platform === "win32" ? "2>nul" : "2>/dev/null";
+  const output = execSync(
+    `wrangler secret list --format json ${nullRedirect}`,
+    {
+      encoding: "utf8",
+    },
+  );
+  // Filter out any entries that are clearly values rather than secret names (e.g., the private key itself)
+  const secrets = JSON.parse(output).filter(
+    (s) => !s.name.includes("BEGIN PRIVATE KEY"),
+  );
   console.log(
     `   ✅ Connected to Cloudflare (${Array.isArray(secrets) ? secrets.length : 0} secrets)`,
   );
@@ -212,18 +218,20 @@ for (const key of firebaseKeys) {
 
 // 5️⃣ Live Worker Runtime Verification
 console.log("\n5️⃣  Live Worker Runtime Verification\n");
-const WORKER_URL = "https://dor-progress.banjays.workers.dev/api/client-config";
+const APP_URL = process.env.APP_URL || `https://${PROJECT_ID}.web.app`;
+const LIVE_CHECK_URL = `${APP_URL}/api/client-config`;
 
 try {
-  console.log(`   Pinging: ${WORKER_URL}...`);
-  const response = await fetch(WORKER_URL);
+  console.log(`   Pinging: ${LIVE_CHECK_URL}...`);
+  const response = await fetch(LIVE_CHECK_URL);
   if (response.ok) {
     const liveConfig = await response.json();
     console.log("   ✅ Live Worker responded. Checking keys:");
 
     const expectedLiveKeys = ["RECAPTCHA_SITE_KEY", "firebase"];
-    expectedLiveKeys.forEach(key => {
-      const exists = key === "firebase" ? !!liveConfig.firebase : !!liveConfig[key];
+    expectedLiveKeys.forEach((key) => {
+      const exists =
+        key === "firebase" ? !!liveConfig.firebase : !!liveConfig[key];
       if (exists) {
         console.log(`     ✅ ${key} is active in production`);
       } else {
@@ -232,7 +240,9 @@ try {
       }
     });
   } else {
-    console.log(`   ⚠️  Live check failed (HTTP ${response.status}). Worker might be down or unauthorized.`);
+    console.log(
+      `   ⚠️  Live check failed (HTTP ${response.status}). Worker might be down or unauthorized.`,
+    );
   }
 } catch (err) {
   console.log("   ⚠️  Live check skipped: Could not reach Worker.");
@@ -248,10 +258,12 @@ console.log("   wrangler secret put CLOUDFLARE_API_TOKEN\n");
 console.log("   # Set GitHub secret (using GitHub CLI)");
 console.log("   gh secret set <NAME>\n");
 console.log("=".repeat(60));
-console.log("   🌐 UI Translations: pnpm exec vitest run scripts/translations.test.ts");
+console.log("   🌐 Translations: pnpm exec tsx scripts/sync-sheets.js");
 console.log("   📝 Update from Sheets: pnpm exec tsx scripts/sync-sheets.js");
 console.log("\n" + "═".repeat(60));
-console.log("   🎯 Dashboard: https://dor-progress.web.app");
-console.log("   🔧 Worker: https://dor-progress.banjays.workers.dev");
-console.log("   📊 Project: https://console.firebase.google.com/project/dor-progress/overview");
+console.log(`   🎯 Dashboard: ${APP_URL}`);
+console.log(`   🔧 API Base:  ${APP_URL}/api`);
+console.log(
+  `   📊 Console:   https://console.firebase.google.com/project/${PROJECT_ID}/overview`,
+);
 console.log("═".repeat(60));

@@ -14,6 +14,13 @@ if (fs.existsSync(swPath)) {
 
   const apiBase = process.env.API_BASE_URL || "";
 
+  if (apiBase.includes("workers.dev")) {
+    console.warn(
+      "⚠️  WARNING: Injecting a raw Cloudflare Worker URL into the Service Worker.",
+    );
+    console.warn("   Target: " + apiBase);
+  }
+
   // Generate a deterministic hash based on the file content itself
   const contentHash = crypto
     .createHash("md5")
@@ -28,13 +35,18 @@ if (fs.existsSync(swPath)) {
     : pkg.version;
 
   // Get the actual Git commit SHA - prefer CI environment variables over git command
-  const envSha = process.env.GITHUB_SHA || process.env.CI_COMMIT_SHA || process.env.COMMIT_SHA;
+  const envSha =
+    process.env.GITHUB_SHA ||
+    process.env.CI_COMMIT_SHA ||
+    process.env.COMMIT_SHA;
   let commitSha = "unknown";
   if (envSha) {
     commitSha = envSha.substring(0, 7); // Use short SHA
   } else {
     try {
-      commitSha = execSync("git rev-parse --short HEAD", { encoding: "utf8" }).trim();
+      commitSha = execSync("git rev-parse --short HEAD", {
+        encoding: "utf8",
+      }).trim();
     } catch (e) {
       console.warn("⚠️  Could not determine Git commit SHA, using fallback");
     }
@@ -48,7 +60,9 @@ if (fs.existsSync(swPath)) {
 
   fs.writeFileSync(swPath, sw);
   console.log("✅ Service Worker environment variables injected");
-  console.log(`   Build ID: ${buildId}, Commit: ${commitSha}, Version: ${versionIdentifier}`);
+  console.log(
+    `   Build ID: ${buildId}, Commit: ${commitSha}, Version: ${versionIdentifier}`,
+  );
 
   // --- Start of Inlining Logic for Embedded Single-File Support ---
   const indexHtmlPath = path.join(buildDir, "index.html");
@@ -56,7 +70,8 @@ if (fs.existsSync(swPath)) {
     let html = fs.readFileSync(indexHtmlPath, "utf8");
 
     // 1. Inline CSS
-    const cssRegex = /<link rel="stylesheet" [^>]*href="\/assets\/([^"]+\.css)"[^>]*>/g;
+    const cssRegex =
+      /<link rel="stylesheet" [^>]*href="\/assets\/([^"]+\.css)"[^>]*>/g;
     html = html.replace(cssRegex, (match, fileName) => {
       const cssPath = path.join(buildDir, "assets", fileName);
       if (fs.existsSync(cssPath)) {
@@ -67,15 +82,15 @@ if (fs.existsSync(swPath)) {
     });
 
     // 2. Inline JS (Module)
-    // Note: This inlines the main entry script. For a truly single-file app, 
-    // all chunks would need to be merged, but since we use a simple dashboard, 
+    // Note: This inlines the main entry script. For a truly single-file app,
+    // all chunks would need to be merged, but since we use a simple dashboard,
     // this covers the primary case.
     const jsRegex = /<script [^>]*src="\/assets\/([^"]+\.js)"[^>]*><\/script>/g;
     html = html.replace(jsRegex, (match, fileName) => {
       const jsPath = path.join(buildDir, "assets", fileName);
       if (fs.existsSync(jsPath)) {
         const jsContent = fs.readFileSync(jsPath, "utf8");
-        // We use a non-module script tag if we want maximum compatibility, 
+        // We use a non-module script tag if we want maximum compatibility,
         // but since we rely on ES modules, we keep it as a module or strip the type.
         return `<script type="module">\n${jsContent}\n</script>`;
       }
@@ -96,14 +111,16 @@ if (fs.existsSync(swPath)) {
         path.join(process.cwd(), "public", fileName),
         path.join(buildDir, fileName),
       ];
-      
+
       for (const filePath of possiblePaths) {
         if (fs.existsSync(filePath)) {
           const ext = path.extname(fileName).slice(1);
           const mimeType = ext === "svg" ? "image/svg+xml" : `image/${ext}`;
           const base64 = fs.readFileSync(filePath, "base64");
           console.log(`   📦 Inlined image: ${fileName}`);
-          return match.startsWith('src=') ? `src="data:${mimeType};base64,${base64}"` : `href="data:${mimeType};base64,${base64}"`;
+          return match.startsWith("src=")
+            ? `src="data:${mimeType};base64,${base64}"`
+            : `href="data:${mimeType};base64,${base64}"`;
         }
       }
       return match;

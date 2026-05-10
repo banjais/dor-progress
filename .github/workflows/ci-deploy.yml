@@ -32,6 +32,8 @@ jobs:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           PUBLISHED_SHEET_ID: ${{ secrets.PUBLISHED_SHEET_ID }}
           FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+          RECAPTCHA_SITE_KEY: ${{ secrets.RECAPTCHA_SITE_KEY }}
+          APP_URL: https://dor-progress.web.app
 
       - name: Audit Dependencies
         run: npm audit --audit-level=high
@@ -86,6 +88,8 @@ jobs:
         run: npm run build
         env:
           VITE_COMMIT_SHA: ${{ github.sha }}
+          API_BASE_URL: https://dor-progress.web.app
+          VITE_API_BASE_URL: https://dor-progress.web.app
 
       - name: Verify Build Artifacts
         run: npx tsx scripts/verify-build.js
