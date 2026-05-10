@@ -248,15 +248,23 @@ async function authenticatedFetch(path, options = {}, maxRetries = 3) {
   for (let attempt = 0; attempt < effectiveRetries; attempt++) {
     try {
       if (dashboard.appCheck) {
-        const tokenResult = await getToken(dashboard.appCheck, attempt > 0); // Force refresh on retries
-        if (tokenResult && tokenResult.token) {
-          headers["X-Firebase-AppCheck"] = tokenResult.token;
-          console.log(
-            "[Security] App Check token attached to request:",
-            tokenResult.token.substring(0, 10) + "...",
-          ); // Log partial token for privacy
-        } else {
-          console.warn("[Security] getToken returned no token.");
+        try {
+          const tokenResult = await getToken(dashboard.appCheck, attempt > 0); // Force refresh on retries
+          if (tokenResult && tokenResult.token) {
+            headers["X-Firebase-AppCheck"] = tokenResult.token;
+            console.log(
+              "[Security] App Check token attached to request:",
+              tokenResult.token.substring(0, 10) + "...",
+            ); // Log partial token for privacy
+          } else {
+            console.warn("[Security] getToken returned no token.");
+          }
+        } catch (tokenError) {
+          console.warn(
+            "[Security] AppCheck token fetch failed, proceeding without token:",
+            tokenError,
+          );
+          // Continue without AppCheck token (development fallback)
         }
       }
 
