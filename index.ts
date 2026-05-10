@@ -602,26 +602,26 @@ export default {
       }
     }
 
-    // Public API: Client Config (Firebase/Recaptcha keys)
-    if (normalizedPath === "/api/client-config") {
-      return new Response(
-        JSON.stringify({
-          firebase: {
-            apiKey: env.FIREBASE_API_KEY,
-            authDomain: env.FIREBASE_AUTH_DOMAIN,
-            projectId: env.FIREBASE_PROJECT_ID,
-            storageBucket: env.FIREBASE_STORAGE_BUCKET,
-            messagingSenderId: env.FIREBASE_MESSAGING_SENDER_ID,
-            appId: env.FIREBASE_APP_ID,
-            measurementId: env.FIREBASE_MEASUREMENT_ID,
-          },
-          recaptchaSiteKey: env.RECAPTCHA_SITE_KEY,
-        }),
-        {
-          headers: { ...securityHeaders, "Content-Type": "application/json" },
-        },
-      );
-    }
+     // Public API: Client Config (Firebase/Recaptcha keys)
+     if (normalizedPath === "/api/client-config") {
+       return new Response(
+         JSON.stringify({
+           firebase: {
+             apiKey: env.FIREBASE_API_KEY,
+             authDomain: env.FIREBASE_AUTH_DOMAIN,
+             projectId: env.FIREBASE_PROJECT_ID,
+             storageBucket: env.FIREBASE_STORAGE_BUCKET,
+             messagingSenderId: env.FIREBASE_MESSAGING_SENDER_ID,
+             appId: env.FIREBASE_APP_ID,
+             measurementId: env.FIREBASE_MEASUREMENT_ID,
+           },
+           RECAPTCHA_SITE_KEY: env.RECAPTCHA_SITE_KEY,
+         }),
+         {
+           headers: { ...securityHeaders, "Content-Type": "application/json" },
+         },
+       );
+     }
 
     // API: Serve translations.json
     if (normalizedPath === "/api/translations") {
