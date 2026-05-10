@@ -761,6 +761,197 @@ export default {
       });
     }
 
+    // Public report and summary endpoints (require AppCheck, no admin auth)
+    if (normalizedPath === "/api/report") {
+      try {
+        // --- Validate query parameters (manual, no zod) ---
+        const rawLang = url.searchParams.get("lang");
+        const lang = rawLang === "ne" ? "ne" : "en";
+        const rawDate = url.searchParams.get("date");
+        let date: string | undefined = undefined;
+        if (rawDate) {
+          if (!/^\d{4}-\d{2}-\d{2}$/.test(rawDate)) {
+            return new Response(JSON.stringify({ error: "Invalid date format, expected YYYY-MM-DD" }), {
+              status: 400,
+              headers: { ...securityHeaders, "Content-Type": "application/json" },
+            });
+          }
+          date = rawDate;
+        }
+        const forceRefresh = url.searchParams.get("force") === "true";
+        const isLowData = request.headers.get("X-Low-Data") === "true";
+
+        // --- Verify Firebase App Check token ---
+        const appCheckToken = request.headers.get("X-Firebase-AppCheck");
+        const verification = await verifyAppCheckToken(appCheckToken, env, ctx);
+        if (!verification.valid) {
+          ctx.waitUntil(recordAppCheckFailure(clientIp, env, ctx));
+          return new Response(JSON.stringify({ error: "Unauthorized: App Check verification failed." }), {
+            status: 401,
+            headers: { ...securityHeaders, "Content-Type": "application/json" },
+          });
+        }
+
+        // --- Helper: generate SHA-256 fingerprint from an ArrayBuffer ---
+        const generateBufferFingerprint = async (buffer: ArrayBuffer): Promise<string> => {
+          const hashBuffer = await crypto.subtle.digest("SHA-256", buffer);
+          const hashArray = Array.from(new Uint8Array(hashBuffer));
+          return hashArray.map((b) => b.toString(16).padStart(2, "0")).join("");
+        };
+
+        // --- Helper: fetch project PDF from Google Sheets (with caching) ---
+        const fetchProjectPdf = async (env: Env): Promise<ArrayBuffer> => {
+          const sheetId = env.PUBLISHED_SHEET_ID;
+          if (!sheetId) {
+            throw new Error("Google Sheet ID is not configured.");
+          }
+          const publishedUrl = `https://docs.google.com/spreadsheets/d/e/${sheetId}/pub?output=pdf`;
+          const cache = await caches.open("google-sheet-cache");
+          let response = await cache.match(publishedUrl);
+          if (!response) {
+            response = await fetch(publishedUrl);
+            if (response?.ok) {
+              const cachedResponse = new Response(response.clone().body, {
+                status: response.status,
+                statusText: response.statusText,
+                headers: { ...Object.fromEntries(response.headers as any) },
+              });
+              cachedResponse.headers.set("Cache-Control", "public, max-age=300");
+              await cache.put(publishedUrl, cachedResponse);
+            }
+          }
+          if (!response?.ok) {
+            throw new Error(
+              `Failed to fetch PDF report: ${response?.statusText || "Unknown Error"}`,
+            );
+          }
+          return await response.arrayBuffer();
+        };
+
+        // --- Build report ---
+        let report: ProjectReport = {
+          headers: [],
+          rows: [],
+          lastUpdate: new Date().toISOString().split("T")[0],
+          aiSummary: null,
+        };
+        let pdfBuffer: ArrayBuffer | undefined = undefined;
+
+        if (date) {
+          // Archived report: fetch from KV
+          const archived = (await getReportsKV(env).get(`report:${date}`, { type: "json" })) as ProjectReport | null;
+          if (!archived) {
+            return new Response(JSON.stringify({ error: `Archived report for ${date} not found.` }), {
+              status: 404,
+              headers: { ...securityHeaders, "Content-Type": "application/json" },
+            });
+          }
+          return new Response(JSON.stringify(archived), {
+            status: 200,
+            headers: { ...securityHeaders, "Content-Type": "application/json" },
+          });
+        } else {
+          // Live report: fetch PDF, generate fingerprint, and extract AI summary if needed
+          pdfBuffer = await fetchProjectPdf(env);
+          const fingerprint = await generateBufferFingerprint(pdfBuffer);
+
+          if (!isLowData) {
+            const cacheKey = `ai_summary_${lang}_${fingerprint}`;
+            let aiResult: AiSummary | null = forceRefresh
+              ? null
+              : ((await getReportsKV(env).get(cacheKey, { type: "json" })) as AiSummary | null);
+
+            if (!aiResult && pdfBuffer) {
+              // Convert ArrayBuffer to base64
+              let binary = "";
+              const bytes = new Uint8Array(pdfBuffer);
+              for (let i = 0; i < bytes.byteLength; i++) {
+                binary += String.fromCharCode(bytes[i]);
+              }
+              const pdfBase64 = btoa(binary);
+
+              // Retry once after failure
+              for (let i = 0; i < 2; i++) {
+                try {
+                  const apiKey = env.GOOGLE_GENAI_API_KEY || env.GEMINI_API_KEY;
+                  if (!apiKey) throw new Error("AI API Key not configured");
+
+                  aiResult = await runProjectSummary(apiKey, {
+                    pdfBase64,
+                    lang,
+                  });
+                  if (aiResult?.brief) {
+                    ctx.waitUntil(
+                      getReportsKV(env).put(cacheKey, JSON.stringify(aiResult), {
+                        expirationTtl: 604800, // 7 days
+                      }),
+                    );
+                  }
+                  break;
+                } catch (aiError) {
+                  if (i === 1) throw aiError;
+                  await new Promise((r) => setTimeout(r, 2000));
+                }
+              }
+            }
+            report.aiSummary = aiResult;
+            if (aiResult?.extractedData) {
+              report.headers = aiResult.extractedData.headers;
+              report.rows = aiResult.extractedData.rows;
+            }
+          }
+        }
+
+        return new Response(JSON.stringify(report), {
+          status: 200,
+          headers: { ...securityHeaders, "Content-Type": "application/json" },
+        });
+      } catch (err: any) {
+        console.error("Report [/api/report] error:", err);
+        return new Response(JSON.stringify({ error: err.message || "Internal Server Error" }), {
+          status: err.status || 500,
+          headers: { ...securityHeaders, "Content-Type": "application/json" },
+        });
+      }
+    }
+
+    if (normalizedPath === "/api/summary") {
+      try {
+        const year = url.searchParams.get("year");
+        const month = url.searchParams.get("month");
+        if (!year || !month) {
+          throw new Error("Year and month are required");
+        }
+
+        const prefix = `report:${year}-${month}`;
+        const list = await getReportsKV(env).list({ prefix, limit: 10 });
+
+        if (list.keys.length === 0) {
+          return new Response(JSON.stringify({ error: `No snapshots found for ${year}-${month}.` }), {
+            status: 404,
+            headers: { ...securityHeaders, "Content-Type": "application/json" },
+          });
+        }
+
+        // Sort descending to get the latest
+        list.keys.sort((a, b) => b.name.localeCompare(a.name));
+        const latestKey = list.keys[0].name;
+        const report = (await getReportsKV(env).get(latestKey, { type: "json" })) as ProjectReport | null;
+        if (!report) throw new Error("Latest report not found in KV");
+
+        return new Response(JSON.stringify(report), {
+          status: 200,
+          headers: { ...securityHeaders, "Content-Type": "application/json" },
+        });
+      } catch (err: any) {
+        console.error("Summary [/api/summary] error:", err);
+        return new Response(JSON.stringify({ error: err.message }), {
+          status: err.status || 500,
+          headers: { ...securityHeaders, "Content-Type": "application/json" },
+        });
+      }
+    }
+
     // Snapshot API routes (require admin auth)
     if (normalizedPath.startsWith("/api/snapshot")) {
       if (!(await verifyAdminSecret(request, env))) {
