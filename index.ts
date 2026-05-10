@@ -15,7 +15,8 @@ import {
   Jwks,
   Jwk,
 } from "./shared/types.js";
-import { runProjectSummary, runTranslation } from "./ai-service.js";
+import { runTranslation } from "./ai-service.js";
+import { runProjectSummary as summarizePdf } from "./src/ai-service.js";
 import aiPromptsData from "./ai-prompts.json" with { type: "json" };
 import dictionaryData from "./translations.json" with { type: "json" };
 
@@ -876,10 +877,10 @@ export default {
                   const apiKey = env.GOOGLE_GENAI_API_KEY || env.GEMINI_API_KEY;
                   if (!apiKey) throw new Error("AI API Key not configured");
 
-                  aiResult = await runProjectSummary(apiKey, {
-                    pdfBase64,
-                    lang,
-                  });
+              aiResult = await summarizePdf(apiKey, {
+                pdfBase64,
+                lang,
+              });
                   if (aiResult?.brief) {
                     ctx.waitUntil(
                       getReportsKV(env).put(cacheKey, JSON.stringify(aiResult), {

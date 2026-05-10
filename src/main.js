@@ -153,7 +153,6 @@ class AudioEngine {
 
       // Attempt to resume, but don't block initialization if it fails
       // (which it will without a user gesture).
-      this.ctx.resume().catch(() => {});
 
       // Channels Routing
       this.uiGain = this.ctx.createGain();
@@ -838,17 +837,24 @@ async function setupSecurity() {
     const config = await res.json();
 
     // Validation check for Firebase and ReCaptcha sitekey
-    if (
-      !config ||
-      !config.firebase ||
-      !(config.recaptchaKey || config.RECAPTCHA_SITE_KEY)
-    ) {
+    const siteKey = config?.recaptchaKey || config?.RECAPTCHA_SITE_KEY;
+    if (!config || !config.firebase || !siteKey) {
       console.error(
-        "[Security] Critical configuration missing (Firebase or ReCaptcha Key).",
+        "[Security] ReCaptcha Site Key is missing from the client configuration.",
         config,
       );
-      updateLaunchProgress(0, "Security Config Error");
-      throw new Error("Missing required parameters: sitekey");
+      dashboard.addToast(
+        "error",
+        "Security config missing. Running in limited mode.",
+      );
+    } else {
+      updateLaunchProgress(60, "Verifying Integrity...");
+      dashboard.appCheck = initializeAppCheck(app, {
+        provider: new ReCaptchaEnterpriseProvider(siteKey),
+        isTokenAutoRefreshEnabled: true,
+      });
+      window.appCheck = dashboard.appCheck;
+      console.log("[App Check Init] App Check initialized successfully.");
     }
 
     updateLaunchProgress(30, "Initializing Firebase...");
@@ -861,16 +867,6 @@ async function setupSecurity() {
     ) {
       self.FIREBASE_APPCHECK_DEBUG_TOKEN = true;
     }
-
-    updateLaunchProgress(60, "Verifying Integrity...");
-    dashboard.appCheck = initializeAppCheck(app, {
-      provider: new ReCaptchaEnterpriseProvider(
-        config.recaptchaKey || config.RECAPTCHA_SITE_KEY,
-      ),
-      isTokenAutoRefreshEnabled: true,
-    });
-    window.appCheck = dashboard.appCheck;
-    console.log("[App Check Init] App Check initialized successfully.");
 
     // Initialize
     dashboard.setLang(dashboard.state.lang);
@@ -956,8 +952,12 @@ async function authenticatedFetch(path, options = {}, maxRetries = 3) {
 
         if (isStale) {
           dashboard.addToast("info", t("dataSyncing"), 2000);
-          if (this.syncToast) this.syncToast.click();
-          this.syncToast = this.addToast("info", t("dataSyncing"), -1);
+          if (dashboard.syncToast) dashboard.syncToast.click();
+          dashboard.syncToast = dashboard.addToast(
+            "info",
+            t("dataSyncing"),
+            -1,
+          );
         } else if (isFromCache) {
           const ageStr = cacheTime
             ? getRelativeTimeString(parseInt(cacheTime))
@@ -2022,6 +2022,7 @@ class Dashboard {
     this.dynamicCache = JSON.parse(
       localStorage.getItem("dynamicTranslations") || "{}",
     );
+    this.searchTimeout = null;
     this.lastSnapshotUpdate = null;
     this.syncToast = null;
     this.addToast = addToast;
@@ -2786,8 +2787,8 @@ function handleSearch(term) {
   if (dashboard.state.search === val) return;
 
   // Debounce logic to prevent lag during typing
-  if (this.searchTimeout) clearTimeout(this.searchTimeout);
-  this.searchTimeout = setTimeout(() => {
+  if (dashboard.searchTimeout) clearTimeout(dashboard.searchTimeout);
+  dashboard.searchTimeout = setTimeout(() => {
     dashboard.state.search = val;
 
     if (clearBtn)
