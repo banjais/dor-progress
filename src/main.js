@@ -808,8 +808,9 @@ async function checkFreshInstall() {
         );
 
         if (confirmRestore) {
-          await triggerDatabaseRestore();
-          await dashboard.triggerDatabaseRestore();
+          await window.triggerDatabaseRestore();
+          if (dashboard.triggerDatabaseRestore)
+            await dashboard.triggerDatabaseRestore();
         }
       }
     }
@@ -823,14 +824,28 @@ async function checkFreshInstall() {
 async function setupSecurity() {
   try {
     updateLaunchProgress(10, "Connecting to Worker...");
-    // Fetch config injected by Cloudflare Secrets via the Worker
-    const res = await fetch(`${WORKER_BASE}/api/client-config`);
+
+    // Fetch config with a timeout to prevent hanging the splash screen
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 5000);
+
+    const res = await fetch(`${WORKER_BASE}/api/client-config`, {
+      signal: controller.signal,
+    });
+    clearTimeout(timeoutId);
+
+    if (!res.ok) throw new Error(`Config fetch failed: ${res.status}`);
     const config = await res.json();
 
-    // Validation check for ReCaptcha sitekey to prevent initialization failure
-    if (!config || !(config.recaptchaKey || config.RECAPTCHA_SITE_KEY)) {
+    // Validation check for Firebase and ReCaptcha sitekey
+    if (
+      !config ||
+      !config.firebase ||
+      !(config.recaptchaKey || config.RECAPTCHA_SITE_KEY)
+    ) {
       console.error(
-        "[Security] ReCaptcha Site Key is missing from the client configuration.",
+        "[Security] Critical configuration missing (Firebase or ReCaptcha Key).",
+        config,
       );
       updateLaunchProgress(0, "Security Config Error");
       throw new Error("Missing required parameters: sitekey");
@@ -888,6 +903,7 @@ async function setupSecurity() {
     // Ensure loader is removed so user can at least see the UI/Offline state
     const loader = document.getElementById("loader");
     if (loader) loader.style.display = "none";
+    hideSplashScreen();
   }
 }
 
@@ -2009,6 +2025,12 @@ class Dashboard {
     this.lastSnapshotUpdate = null;
     this.syncToast = null;
     this.addToast = addToast;
+
+    // Map global functions to class instance to resolve "is not a function" errors
+    this.render = (data) => render(data || this.state.store);
+    this.handleSearch = handleSearch;
+    this.typeText = typeText;
+    this.triggerDatabaseRestore = () => window.triggerDatabaseRestore();
 
     this.initTimer();
     // Store the newly created instance

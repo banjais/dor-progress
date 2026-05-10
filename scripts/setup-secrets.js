@@ -20,6 +20,7 @@ const REQUIRED_SECRETS = [
   "CLOUDFLARE_API_TOKEN",
   "PUBLISHED_SHEET_ID",
   "FIREBASE_SERVICE_ACCOUNT",
+  "RECAPTCHA_SITE_KEY",
 ];
 
 // Purpose map for "Why" explanation
@@ -137,7 +138,7 @@ for (const secret of activeSecretNames) {
   let statusIcon = isSet ? "✅" : "❌";
   let validationError = "";
 
-  // Special validation for Service Account JSON structure
+  // Verification: Ensures the environment variable is a valid JSON and contains key fields
   if (isSet && secret === "FIREBASE_SERVICE_ACCOUNT") {
     try {
       const parsed = JSON.parse(value);
@@ -207,6 +208,34 @@ const firebaseKeys = [
 ];
 for (const key of firebaseKeys) {
   console.log(`     • ${key}`);
+}
+
+// 5️⃣ Live Worker Runtime Verification
+console.log("\n5️⃣  Live Worker Runtime Verification\n");
+const WORKER_URL = "https://dor-progress.banjays.workers.dev/api/client-config";
+
+try {
+  console.log(`   Pinging: ${WORKER_URL}...`);
+  const response = await fetch(WORKER_URL);
+  if (response.ok) {
+    const liveConfig = await response.json();
+    console.log("   ✅ Live Worker responded. Checking keys:");
+
+    const expectedLiveKeys = ["RECAPTCHA_SITE_KEY", "firebase"];
+    expectedLiveKeys.forEach(key => {
+      const exists = key === "firebase" ? !!liveConfig.firebase : !!liveConfig[key];
+      if (exists) {
+        console.log(`     ✅ ${key} is active in production`);
+      } else {
+        console.log(`     ❌ ${key} IS MISSING from production response`);
+        missingCount++;
+      }
+    });
+  } else {
+    console.log(`   ⚠️  Live check failed (HTTP ${response.status}). Worker might be down or unauthorized.`);
+  }
+} catch (err) {
+  console.log("   ⚠️  Live check skipped: Could not reach Worker.");
 }
 
 // Summary
