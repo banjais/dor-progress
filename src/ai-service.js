@@ -1,6 +1,7 @@
 // If Genkit continues to crash your Worker due to iconv-lite:
 // Switch to the direct @google/generative-ai SDK which is Worker-compatible.
-import { GoogleGenerativeAI } from "@google/generative-ai";
+import { genkit } from "genkit";
+import { googleAI } from "@genkit-ai/googleai";
 import { z } from "zod";
 
 /**

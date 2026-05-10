@@ -15,6 +15,7 @@ document.head.appendChild(syncStyle);
 import translationsData from "./locales/translations.json" with { type: "json" };
 
 import { AudioEngine } from "./components/AudioEngine";
+import { runProjectSummary } from "./ai-service.js";
 import { BrandingEngine } from "./components/BrandingEngine";
 import { SpeechEngine } from "./components/SpeechEngine";
 import { Header } from "./components/Header";
