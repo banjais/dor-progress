@@ -21,18 +21,16 @@ const REQUIRED_SECRETS = [
   "PUBLISHED_SHEET_ID",
   "FIREBASE_SERVICE_ACCOUNT",
   "RECAPTCHA_SITE_KEY",
-  "MONITORING_SECRET", // Add this line
-  "APP_CHECK_DEBUG_TOKEN",
 ];
 
 // Purpose map for "Why" explanation
 const SECRET_PURPOSES = {
   CLOUDFLARE_API_TOKEN: "Deployment of Cloudflare Workers and API management.",
-  FIREBASE_TOKEN: `Legacy authentication for ${PROJECT_ID}. (Service Account preferred).`,
-  FIREBASE_SERVICE_ACCOUNT: `Service Account JSON for ${PROJECT_ID} (Hosting & Firestore Rules).`,
+  FIREBASE_SERVICE_ACCOUNT: `Service Account JSON for ${PROJECT_ID} (Hosting, Firestore & Auth).`,
   PUBLISHED_SHEET_ID:
     "Accessing Google Sheets for UI translation synchronization.",
-  API_BASE_URL: "Connecting the Frontend to the correct Backend environment.",
+  RECAPTCHA_SITE_KEY:
+    "Client-side key for Firebase App Check (ReCaptcha Enterprise).",
 };
 
 let activeSecretNames = [...REQUIRED_SECRETS];
@@ -105,7 +103,6 @@ try {
   );
   // Exclude deployment-only tokens from worker runtime check
   const runtimeExclusions = [
-    "FIREBASE_TOKEN",
     "FIREBASE_SERVICE_ACCOUNT",
     "CLOUDFLARE_API_TOKEN",
   ];
@@ -114,14 +111,6 @@ try {
   const runtimeChecklist = activeSecretNames.filter(
     (k) => !runtimeExclusions.includes(k),
   );
-
-  // Add a special check: If neither Firebase credential exists, add one to the checklist for visibility
-  const hasFirebaseCred = activeSecretNames.some((k) =>
-    ["FIREBASE_TOKEN", "FIREBASE_SERVICE_ACCOUNT"].includes(k),
-  );
-  if (!hasFirebaseCred) {
-    console.log("     ❌ MISSING: FIREBASE_SERVICE_ACCOUNT or FIREBASE_TOKEN");
-  }
 
   for (const s of runtimeChecklist) {
     const found = secrets.find((ss) => ss.name === s);
@@ -163,22 +152,6 @@ for (const secret of activeSecretNames) {
     }
   }
 
-  // Alternative logic: Only one Firebase credential (Token or Service Account) is required
-  if (
-    !isSet &&
-    !validationError &&
-    (secret === "FIREBASE_TOKEN" || secret === "FIREBASE_SERVICE_ACCOUNT")
-  ) {
-    const alt =
-      secret === "FIREBASE_TOKEN"
-        ? "FIREBASE_SERVICE_ACCOUNT"
-        : "FIREBASE_TOKEN";
-    if (process.env[alt]) {
-      isSet = true;
-      statusIcon = "💡"; // Mark as satisfied by alternative
-    }
-  }
-
   if (!isSet) missingCount++;
   summaryResults.push({ name: secret, passed: isSet, icon: statusIcon });
   console.log(`     ${statusIcon} ${secret}${validationError}`);
@@ -213,7 +186,6 @@ const firebaseKeys = [
   "FIREBASE_APP_ID",
   "FIREBASE_MEASUREMENT_ID",
   "RECAPTCHA_SITE_KEY",
-  "MONITORING_SECRET", // Add this for live config check
 ];
 for (const key of firebaseKeys) {
   console.log(`     • ${key}`);

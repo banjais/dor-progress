@@ -21,7 +21,7 @@ const CORS_HEADERS = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
   "Access-Control-Allow-Headers":
-    "Content-Type, X-Firebase-AppCheck, X-Low-Data, X-Admin-Secret",
+    "Content-Type, X-Firebase-AppCheck, X-Low-Data, X-Snapshot-Key",
   "Access-Control-Max-Age": "86400",
 };
 
@@ -321,8 +321,10 @@ const handler: ExportedHandler<Env> = {
 
     if (url.pathname === "/api/snapshot") {
       try {
-        const adminSecret = request.headers.get("X-Admin-Secret");
-        if (!adminSecret || adminSecret !== env.ADMIN_SECRET) {
+        const snapshotKey = request.headers.get("X-Snapshot-Key");
+        const isDev = env.APP_ENV === "development" || env.APP_ENV === "test";
+
+        if (!isDev && (!snapshotKey || snapshotKey !== env.SNAPSHOT_KEY)) {
           return jsonResponse({ error: "Unauthorized" }, 401);
         }
 

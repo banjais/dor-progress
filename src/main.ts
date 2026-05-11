@@ -1,6 +1,30 @@
-// @ts-nocheck
-/* eslint-disable */
+/**
+ * Global type declarations for environment variables injected during build.
+ */
+declare const WORKER_BASE: string;
+declare const APP_ENV: "development" | "production" | "test";
+declare const APP_VERSION: string;
+declare const APP_CHECK_DEBUG_TOKEN: string | boolean | undefined;
+declare const PDFLib: any;
 
+/**
+ * Interfaces for Project Data and State
+ */
+interface ProjectRow {
+  _status: "good" | "critical" | "stable";
+  _insight?: string;
+  [key: string]: any;
+}
+
+interface ProjectReport {
+  headers: string[];
+  rows: ProjectRow[];
+  lastUpdate: string;
+  aiSummary?: { brief: string } | null;
+  adminMessage?: string;
+}
+
+import * as Utils from "./utils";
 const syncStyle = document.createElement("style");
 syncStyle.textContent = `
   @keyframes toast-progress-loop {
@@ -12,10 +36,14 @@ syncStyle.textContent = `
 `;
 document.head.appendChild(syncStyle);
 
-import translationsData from "./locales/translations.json" with { type: "json" };
+import translationsDataRaw from "./locales/translations.json" with { type: "json" };
+// Cast import to expected structure
+const translationsData = translationsDataRaw as Record<
+  string,
+  Record<string, string>
+>;
 
 import { AudioEngine } from "./components/AudioEngine";
-import { runProjectSummary } from "./ai-service.js";
 import { BrandingEngine } from "./components/BrandingEngine";
 import { SpeechEngine } from "./components/SpeechEngine";
 import { Header } from "./components/Header";
@@ -28,217 +56,475 @@ import {
 } from "firebase/app-check";
 
 // AudioEngine moved to components/AudioEngine.ts
-
-// SpeechEngine moved to components/SpeechEngine.ts
-
-const toggleLang = () => dashboard.toggleLang();
-const toggleGeminiMenu = () => dashboard.toggleGeminiMenu();
-const toggleFabMenu = () => dashboard.toggleFabMenu();
-
-// Close on outside click
-document.addEventListener("click", (e) => {
-  const fabBtn = document.getElementById("fab-main-btn");
-  const fabMenu = document.getElementById("fab-menu");
-  const geminiBtn = document.getElementById("gemini-main-btn");
-  const geminiMenu = document.getElementById("gemini-menu");
-
-  if (fabMenu && !fabMenu.contains(e.target) && e.target !== fabBtn) {
-    fabMenu.classList.remove("show");
-    fabBtn.classList.remove("active");
-  }
-  if (geminiMenu && !geminiMenu.contains(e.target) && e.target !== geminiBtn) {
-    geminiMenu.classList.remove("show");
-  }
-});
-
-const updateLaunchProgress = (percent, status) => {
-  const fill = document.getElementById("loader-bar-fill");
-  const text = document.getElementById("loader-percentage");
-  const statusText = document.querySelector(".loader-status");
-  if (fill) fill.style.width = `${percent}%`;
-  if (text) text.innerText = `${percent}%`;
-  if (statusText && status) statusText.innerText = status;
-};
-
-const hideSplashScreen = () => {
-  const splash = document.getElementById("splash-screen");
-  if (splash) {
-    splash.style.opacity = "0";
-    setTimeout(() => (splash.style.display = "none"), 800);
-  }
-};
-
-/**
-     * Theme Lifecycle Management
-
-     * Automatically switches theme when system settings change.
-     */
-const initTheme = () => {
-  const getSystemTheme = () =>
-    window.matchMedia &&
-    window.matchMedia("(prefers-color-scheme: dark)").matches
-      ? "dark"
-      : "light";
-
-  const applyTheme = (theme) => {
-    const isDark = theme === "dark";
-    const color = isDark ? "#0b0f1a" : "#1a5c3a";
-    document.body.setAttribute("data-theme", theme);
-    document.querySelectorAll('meta[name="theme-color"]').forEach((meta) => {
-      meta.setAttribute("content", color);
-    });
+class Dashboard {
+  static _instance: Dashboard | null = null;
+  audio: AudioEngine;
+  speech: SpeechEngine;
+  header: Header;
+  state: {
+    lang: string;
+    view: string;
+    search: string;
+    sort: { key: string | null; dir: number };
+    store: ProjectReport | null;
+    riskLevel: number;
+    uiVolume: number;
+    diffMode: boolean;
+    compareReport: ProjectReport | null;
   };
+  refreshCounter: number = 60;
+  lastFetchTime: number | null = null;
+  syncToast: HTMLDivElement = document.createElement("div");
+  appCheck?: any;
+  latencyHistory: { value: number }[] = [];
+  intentTimer: number | null = null;
+  dynamicCache: Record<string, string> = {};
+  searchTimeout?: number;
 
-  if (window.matchMedia) {
-    const mediaQuery = window.matchMedia("(prefers-color-scheme: dark)");
-    mediaQuery.addEventListener("change", (e) => {
-      if (!localStorage.getItem("theme")) {
-        applyTheme(e.matches ? "dark" : "light");
+  // SpeechEngine moved to components/SpeechEngine.ts
+  constructor() {
+    if (Dashboard._instance) return Dashboard._instance;
+    this.audio = new AudioEngine();
+    this.speech = new SpeechEngine(this.audio);
+    this.header = new Header(this);
+    this.state = {
+      lang:
+        localStorage.getItem("pref-lang") ||
+        (navigator.language.startsWith("en") ? "en" : "ne"),
+      view: "cards",
+      search: "",
+      sort: { key: null, dir: 1 },
+      store: null,
+      riskLevel: 0,
+      uiVolume: parseFloat(localStorage.getItem("ui-volume") || "0.5"),
+      diffMode: false,
+      compareReport: null,
+    };
+    this.dynamicCache = JSON.parse(
+      localStorage.getItem("dynamicTranslations") || "{}",
+    );
+    this.initTimer();
+    this.init();
+    Dashboard._instance = this;
+  }
+
+  static getInstance(): Dashboard {
+    return Dashboard._instance || new Dashboard();
+  }
+
+  private attachGlobalEvents() {
+    document.addEventListener("click", (e) => {
+      const fabBtn = document.getElementById("fab-main-btn");
+      const fabMenu = document.getElementById("fab-menu");
+      const geminiBtn = document.getElementById("gemini-main-btn");
+      const geminiMenu = document.getElementById("gemini-menu");
+
+      if (
+        fabMenu &&
+        !fabMenu.contains(e.target as Node) &&
+        e.target !== fabBtn
+      ) {
+        fabMenu.classList.remove("show");
+        if (fabBtn) fabBtn.classList.remove("active");
+      }
+      if (
+        geminiMenu &&
+        !geminiMenu.contains(e.target as Node) &&
+        e.target !== geminiBtn
+      ) {
+        geminiMenu.classList.remove("show");
       }
     });
   }
 
-  // Resolve starting theme: User preference > FOUC Guard attribute > OS Setting
-  const startingTheme =
-    localStorage.getItem("theme") ||
-    document.body.getAttribute("data-theme") ||
-    getSystemTheme();
-  applyTheme(startingTheme);
-};
-initTheme();
+  private initTimer() {
+    setInterval(() => {
+      this.refreshCounter--;
+      if (this.refreshCounter <= 0) {
+        this.refreshCounter = 60;
+        void this.loadData();
+      }
+      const timerEl = document.getElementById("refresh-timer");
+      if (timerEl) {
+        timerEl.innerText = `(${this.t("refreshing")} ${this.refreshCounter}${this.t("sec")})`;
+      }
+    }, 1000);
+  }
 
-// Apply branding after theme initialization to ensure consistency with system settings
-BrandingEngine.apply();
+  private init() {
+    this.initTheme();
+    this.initLowData();
+    void this.setupSecurity();
+    this.attachGlobalEvents();
+    BrandingEngine.apply();
+  }
 
-/**
- * Automatically detects if the browser's 'Data Saver' mode is enabled.
- * Only sets the preference if the user hasn't explicitly set one before.
- */
-const initLowData = () => {
-  if (localStorage.getItem("low-data") === null) {
-    // The Network Information API provides the saveData property
-    if (navigator.connection && navigator.connection.saveData) {
-      localStorage.setItem("low-data", "true");
+  private initTheme() {
+    const applyTheme = (theme: string) => {
+      document.body.setAttribute("data-theme", theme);
+      const color = theme === "dark" ? "#0b0f1a" : "#1a5c3a";
+      document
+        .querySelectorAll('meta[name="theme-color"]')
+        .forEach((meta) => ((meta as HTMLMetaElement).content = color));
+    };
+    const startingTheme =
+      localStorage.getItem("theme") ||
+      (window.matchMedia("(prefers-color-scheme: dark)").matches
+        ? "dark"
+        : "light");
+    applyTheme(startingTheme);
+  }
+
+  private initLowData() {
+    if (localStorage.getItem("low-data") === null) {
+      if ((navigator as any).connection?.saveData)
+        localStorage.setItem("low-data", "true");
     }
   }
-};
-initLowData();
 
-/**
- * Detects a fresh install and offers to restore from Cloud Backup.
- */
-async function checkFreshInstall() {
-  if (localStorage.getItem("app-initialized")) return;
+  private updateLaunchProgress(percent: number, status: string) {
+    const fill = document.getElementById("loader-bar-fill") as HTMLDivElement;
+    const statusText = document.querySelector(".loader-status") as HTMLElement;
+    if (fill) fill.style.width = `${percent}%`;
+    if (statusText) statusText.innerText = status;
+  }
 
-  // Check if any backups exist in the cloud
-  try {
-    const res = await fetch(`${WORKER_BASE}/api/admin/list-backups`);
-    if (res.ok) {
-      const backups = await res.json();
-      if (backups.length > 0) {
-        const confirmRestore = confirm(
-          dashboard.state.lang === "en"
-            ? "Fresh Install Detected. Would you like to restore your settings and analytics from a Cloud Backup?"
-            : "नयाँ इन्स्टल फेला पर्यो। के तपाईं क्लाउड ब्याकअपबाट आफ्ना सेटिङहरू र तथ्याङ्कहरू रिस्टोर गर्न चाहनुहुन्छ?",
-        );
+  private hideSplashScreen() {
+    const splash = document.getElementById("splash-screen");
+    if (splash) {
+      splash.style.opacity = "0";
+      setTimeout(() => (splash.style.display = "none"), 800);
+    }
+  }
 
-        if (confirmRestore) {
-          await triggerDatabaseRestore();
-          await dashboard.triggerDatabaseRestore();
+  private async checkFreshInstall() {
+    if (localStorage.getItem("app-initialized")) return;
+    try {
+      const res = await fetch(`${WORKER_BASE}/api/admin/list-backups`);
+      if (res.ok) {
+        const backups = (await res.json()) as any[];
+        if (backups.length > 0) {
+          const confirmRestore = confirm(
+            this.state.lang === "en"
+              ? "Restore from Cloud Backup?"
+              : "रिस्टोर गर्नुहुन्छ?",
+          );
+          if (confirmRestore) {
+            void this.triggerDatabaseRestore();
+          }
         }
       }
-    }
-  } catch (e) {
-    console.log("Auto-restore check skipped (likely first run/unauthorized).");
-  } finally {
-    localStorage.setItem("app-initialized", "true");
-  }
-}
-
-async function setupSecurity() {
-  try {
-    updateLaunchProgress(10, "Connecting to Worker...");
-    // Fetch config injected by Cloudflare Secrets via the Worker
-    const res = await fetch(`${WORKER_BASE}/api/client-config`);
-    const config = await res.json();
-
-    // Validation check for ReCaptcha sitekey to prevent initialization failure
-    if (!config || !(config.recaptchaKey || config.RECAPTCHA_SITE_KEY)) {
-      console.error(
-        "[Security] ReCaptcha Site Key is missing from the client configuration.",
-      );
-      updateLaunchProgress(0, "Security Config Error");
-      throw new Error("Missing required parameters: sitekey");
-    }
-
-    updateLaunchProgress(30, "Initializing Firebase...");
-    console.log("[App Check Init] Received client config:", config);
-    const app = initializeApp(config.firebase);
-
-    if (
-      location.hostname === "localhost" ||
-      location.hostname === "127.0.0.1" ||
-      (typeof APP_ENV !== "undefined" && APP_ENV === "test")
-    ) {
-      // Use static debug token if available (CI), fallback to dynamic true (local)
-      self.FIREBASE_APPCHECK_DEBUG_TOKEN =
-        (typeof APP_CHECK_DEBUG_TOKEN !== "undefined" &&
-          APP_CHECK_DEBUG_TOKEN) ||
-        true;
-    }
-
-    updateLaunchProgress(60, "Verifying Integrity...");
-    dashboard.appCheck = initializeAppCheck(app, {
-      provider: new ReCaptchaEnterpriseProvider(
-        config.recaptchaKey || config.RECAPTCHA_SITE_KEY,
-      ),
-      isTokenAutoRefreshEnabled: true,
-    });
-    window.appCheck = dashboard.appCheck;
-    console.log("[App Check Init] App Check initialized successfully.");
-
-    // Initialize
-    dashboard.setLang(dashboard.state.lang);
-    dashboard.setView("cards");
-    handleVerification();
-
-    updateLaunchProgress(80, "Fetching Project Data...");
-    await dashboard.loadData();
-    updateLaunchProgress(100, "Dashboard Ready");
-    setTimeout(hideSplashScreen, 500);
-
-    setTimeout(checkDeepLink, 1500);
-    setTimeout(checkFreshInstall, 3000); // Check for backups after UI is stable
-
-    // Initialize Audio Icon State
-    try {
-      dashboard.audio.updateVolume(dashboard.state.uiVolume);
     } catch (e) {
-      console.warn("Audio volume UI sync deferred until user interaction.");
+      console.log("Auto-restore check skipped.");
+    } finally {
+      localStorage.setItem("app-initialized", "true");
+    }
+  }
+
+  private async setupSecurity() {
+    try {
+      this.updateLaunchProgress(10, "Connecting to Worker...");
+      // Fetch config injected by Cloudflare Secrets via the Worker
+      const res = await fetch(`${WORKER_BASE}/api/client-config`);
+      const config = await res.json();
+
+      // Validation check for ReCaptcha sitekey to prevent initialization failure
+      if (!config || !(config.recaptchaKey || config.RECAPTCHA_SITE_KEY)) {
+        console.error(
+          "[Security] ReCaptcha Site Key is missing from the client configuration.",
+        );
+        this.updateLaunchProgress(0, "Security Config Error");
+        throw new Error("Missing required parameters: sitekey");
+      }
+
+      this.updateLaunchProgress(30, "Initializing Firebase...");
+      console.log("[App Check Init] Received client config:", config);
+      const app = initializeApp(config.firebase);
+
+      if (
+        location.hostname === "localhost" ||
+        location.hostname === "127.0.0.1" ||
+        APP_ENV === "test"
+      ) {
+        // Use static debug token if available (CI), fallback to dynamic true (local)
+        (self as any).FIREBASE_APPCHECK_DEBUG_TOKEN =
+          APP_CHECK_DEBUG_TOKEN || true;
+      }
+
+      this.updateLaunchProgress(60, "Verifying Integrity...");
+      this.appCheck = initializeAppCheck(app, {
+        provider: new ReCaptchaEnterpriseProvider(
+          config.recaptchaKey || config.RECAPTCHA_SITE_KEY,
+        ),
+        isTokenAutoRefreshEnabled: true,
+      });
+      (window as any).appCheck = this.appCheck;
+      console.log("[App Check Init] App Check initialized successfully.");
+
+      this.setLang(this.state.lang);
+      this.setView("cards");
+      void handleVerification();
+
+      this.updateLaunchProgress(80, "Fetching Project Data...");
+      await this.loadData();
+      this.updateLaunchProgress(100, "Dashboard Ready");
+
+      setTimeout(() => this.hideSplashScreen(), 500);
+
+      setTimeout(() => checkDeepLink(), 1500);
+      setTimeout(() => this.checkFreshInstall(), 3000); // Check for backups after UI is stable
+
+      // Initialize Audio Icon State
+      try {
+        this.audio.updateVolume(this.state.uiVolume);
+      } catch (e) {
+        console.warn("Audio volume UI sync deferred until user interaction.");
+      }
+
+      // Version Badge Check
+      const swVersion = await getActiveSwVersion();
+      const lastSeen = localStorage.getItem("app-version-seen");
+      if (lastSeen && lastSeen !== swVersion) {
+        document.getElementById("settings-btn")?.classList.add("has-badge");
+      }
+    } catch (e) {
+      console.error("Security Bootstrap Failed", e);
+      this.addToast(
+        "error",
+        this.state.lang === "en" ? "Security init failed" : "प्रणाली असफल",
+      );
+      // Ensure loader is removed so user can at least see the UI/Offline state
+      const loader = document.getElementById("loader");
+      if (loader) loader.style.display = "none";
+    }
+  }
+
+  /**
+   * Encapsulated Translation Helper
+   */
+  t(key: string, count?: number): string {
+    const langData = translationsData[this.state.lang] || {};
+    let text = langData[key] || key;
+    if (count !== undefined) {
+      const displayCount =
+        this.state.lang === "ne" ? toNepaliNumerals(count) : count;
+      text = text.replace("{{count}}", String(displayCount));
+    }
+    return text;
+  }
+
+  addToast(
+    type: "success" | "info" | "error",
+    message: string,
+    duration = 4000,
+  ): HTMLDivElement {
+    this.audio.playUi("pop");
+    const container = document.getElementById("toast-container");
+    const dismissAllBtn = document.getElementById("dismiss-all");
+    if (!container || !dismissAllBtn) return document.createElement("div");
+
+    const toast = document.createElement("div");
+    toast.className = `toast ${type}`;
+    const isSyncing = duration === -1;
+    const isPersistent = duration === 0 || isSyncing;
+
+    const icons: Record<string, string> = {
+      success: "✅",
+      info: "ℹ️",
+      error: "❌",
+    };
+    toast.innerHTML = `
+        <span>${icons[type] || ""}</span>
+        <span>${message}</span>
+        ${
+          isSyncing
+            ? `
+          <div class="toast-progress">
+            <div class="toast-bar" style="width: 100%; animation: toast-progress-loop 2s infinite ease-in-out;"></div>
+          </div>`
+            : isPersistent
+              ? ""
+              : `
+          <div class="toast-progress">
+            <div class="toast-bar" style="animation-duration:${duration}ms"></div>
+          </div>`
+        }
+      `;
+
+    const bar = toast.querySelector(".toast-bar") as HTMLElement;
+    const dismiss = () => {
+      if (toast.dataset.dismissing) return;
+      toast.dataset.dismissing = "true";
+      toast.style.animation = "toast-in 0.3s ease-in reverse forwards";
+      setTimeout(() => {
+        toast.remove();
+        const remaining = container.querySelectorAll(".toast");
+        if (remaining.length === 0) {
+          dismissAllBtn?.style.display = "none";
+        }
+        if (toast === this.syncToast) this.syncToast = null;
+      }, 300);
+    };
+
+    let autoDismissId: number | null = isPersistent
+      ? null
+      : window.setTimeout(dismiss, duration);
+    toast.onmouseenter = () => {
+      if (autoDismissId) window.clearTimeout(autoDismissId);
+    };
+    toast.onmouseleave = () => {
+      if (toast.getAttribute("data-dismissing") || isPersistent) return;
+      if (bar) bar.style.animation = "none";
+      void toast.offsetWidth;
+      if (bar)
+        bar.style.animation = `toast-progress-shrink ${duration}ms linear forwards`;
+      autoDismissId = window.setTimeout(dismiss, duration);
+    };
+    toast.onclick = () => {
+      if (autoDismissId) window.clearTimeout(autoDismissId);
+      dismiss();
+    };
+    container.prepend(toast);
+    if (container.querySelectorAll(".toast").length > 1) {
+      dismissAllBtn.style.display = "block";
+    }
+    return toast;
+  }
+
+  async loadData(isForced = false) {
+    const fetchStart = performance.now();
+    const syncIcon = document.getElementById("data-sync-icon");
+    if (syncIcon) {
+      syncIcon.style.display = "inline-block";
+      syncIcon.classList.add("spinning");
     }
 
-    // Version Badge Check
-    const swVersion = await getActiveSwVersion();
-    const lastSeen = localStorage.getItem("app-version-seen");
-    if (lastSeen && lastSeen !== swVersion) {
-      document.getElementById("settings-btn")?.classList.add("has-badge");
+    this.state.store = null;
+    const skeleton = Array(10)
+      .fill(
+        `<tr class="skeleton-row"><td><div></div></td>${Array(5).fill("<td><div></div></td>").join("")}</tr>`,
+      )
+      .join("");
+    const tbody = document.getElementById("tbody");
+    if (tbody) tbody.innerHTML = skeleton;
+
+    try {
+      const endpoint = `/api/report?lang=${this.state.lang}${isForced ? "&force=true" : ""}`;
+      const res = await authenticatedFetch(
+        endpoint,
+        isForced ? { cache: "no-store" } : {},
+      );
+      const json = (await res.json()) as ProjectReport;
+      if (json?.headers) {
+        const fetchEnd = performance.now();
+        const duration = Math.round(fetchEnd - fetchStart);
+        this.lastFetchTime = Date.now();
+        this.latencyHistory.push({ value: duration });
+        if (this.latencyHistory.length > 5) this.latencyHistory.shift();
+        if (res.headers.get("X-Force-Throttled") === "true")
+          this.addToast("info", this.t("forceThrottled"));
+
+        this.state.store = json;
+        if (json.lastUpdate) {
+          void this.header.checkUpdates(json.lastUpdate);
+        }
+        this.render();
+        const offlineOverlay = document.getElementById("offline-overlay");
+        if (offlineOverlay) offlineOverlay.style.display = "none";
+        if (isForced) this.addToast("success", this.t("cacheCleared"));
+        updateConnStrength(duration);
+      }
+    } catch (e) {
+      console.error("Error loading data:", e);
+      this.addToast("error", this.t("offline"));
+    } finally {
+      if (syncIcon) {
+        syncIcon.classList.remove("spinning");
+        syncIcon.style.display = "none";
+      }
+      const loader = document.getElementById("loader");
+      if (loader) loader.style.display = "none";
     }
-  } catch (e) {
-    console.error("Security Bootstrap Failed", e);
-    dashboard.addToast(
-      "error",
-      dashboard.state.lang === "en" ? "Security init failed" : "प्रणाली असफल",
-    );
-    // Ensure loader is removed so user can at least see the UI/Offline state
-    const loader = document.getElementById("loader");
-    if (loader) loader.style.display = "none";
+  }
+
+  render() {
+    render(this.state.store);
+  }
+
+  setLang(l: string) {
+    const prevLang = this.state.lang;
+    this.state.lang = l;
+    localStorage.setItem("pref-lang", l);
+    applyTranslations();
+    if (prevLang !== l) {
+      void this.loadData();
+    } else if (this.state.store) {
+      this.render();
+    }
+  }
+
+  setView(v: string) {
+    this.state.view = v;
+    ["table", "cards", "charts"].forEach((mode) => {
+      const btn = document.getElementById("btn-" + mode);
+      if (btn) btn.classList.toggle("active", v === mode);
+    });
+    if (this.state.store) this.render();
+  }
+
+  toggleFabMenu() {
+    const menu = document.getElementById("fab-menu");
+    const geminiMenu = document.getElementById("gemini-menu");
+    const btn = document.getElementById("fab-main-btn");
+    if (geminiMenu) geminiMenu.classList.remove("show");
+    if (menu) {
+      menu.classList.toggle("show");
+      if (btn) btn.classList.toggle("active", menu.classList.contains("show"));
+    }
+    this.audio.playUi("pop");
+  }
+
+  toggleGeminiMenu() {
+    const menu = document.getElementById("gemini-menu");
+    const fabMenu = document.getElementById("fab-menu");
+    if (fabMenu) fabMenu.classList.remove("show");
+    if (menu) menu.classList.toggle("show");
+    this.audio.playUi("pop");
+  }
+
+  toggleLang() {
+    const next = this.state.lang === "en" ? "ne" : "en";
+    this.setLang(next);
+    this.audio.playUi("click");
+  }
+
+  handleSearch(term?: string) {
+    handleSearch(term);
+  }
+
+  typeText(element: HTMLElement, text: string, useSound = false) {
+    typeText(element, text, useSound);
+  }
+
+  triggerDatabaseRestore() {
+    return triggerDatabaseRestore();
   }
 }
+
+const dashboard = Dashboard.getInstance();
+
+// Bind global window handlers for HTML onclick attributes
+(window as any).toggleFabMenu = () => dashboard.toggleFabMenu();
+(window as any).setLang = (l: string) => dashboard.setLang(l);
 
 /**
  * Centralized fetch helper to handle base URLs and Firebase App Check tokens.
  */
-async function authenticatedFetch(path, options = {}, maxRetries = 3) {
+async function authenticatedFetch(
+  path: string,
+  options: RequestInit = {},
+  maxRetries = 3,
+): Promise<Response> {
   const url = path.startsWith("http")
     ? path
     : `${WORKER_BASE}${path.startsWith("/") ? "" : "/"}${path}`;
@@ -247,9 +533,12 @@ async function authenticatedFetch(path, options = {}, maxRetries = 3) {
   const isIdempotent = ["GET", "PUT", "DELETE", "HEAD", "OPTIONS"].includes(
     method,
   );
-  const effectiveRetries = maxRetries; // With Durable Objects, we can safely retry non-idempotent methods
+  const effectiveRetries = maxRetries;
 
-  const headers = { "Content-Type": "application/json", ...options.headers };
+  const headers: Record<string, string> = {
+    "Content-Type": "application/json",
+    ...(options.headers as Record<string, string>),
+  };
   headers["X-Low-Data"] =
     localStorage.getItem("low-data") === "true" ? "true" : "false";
 
@@ -258,7 +547,7 @@ async function authenticatedFetch(path, options = {}, maxRetries = 3) {
       if (dashboard.appCheck) {
         try {
           const tokenResult = await getToken(dashboard.appCheck, attempt > 0); // Force refresh on retries
-          if (tokenResult && tokenResult.token) {
+          if (tokenResult?.token) {
             headers["X-Firebase-AppCheck"] = tokenResult.token;
             console.log(
               "[Security] App Check token attached to request:",
@@ -280,8 +569,6 @@ async function authenticatedFetch(path, options = {}, maxRetries = 3) {
       const fetchConfig = {
         ...options,
         headers,
-        // Ensure body is correctly typed for the fetch API
-        body: options.body ? /** @type {BodyInit} */ options.body : undefined,
       };
 
       const response = await fetch(url, fetchConfig);
@@ -348,10 +635,12 @@ async function authenticatedFetch(path, options = {}, maxRetries = 3) {
   }
 }
 
-window.checkStatus = checkStatus;
+(window as any).checkStatus = checkStatus;
 async function checkStatus() {
-  const statusEl = document.getElementById("status");
-  const btn = document.getElementById("status-refresh-btn");
+  const statusEl = document.getElementById("status") as HTMLElement;
+  const btn = document.getElementById(
+    "status-refresh-btn",
+  ) as HTMLButtonElement;
   if (!statusEl || !btn) return;
 
   statusEl.innerText =
@@ -392,83 +681,7 @@ async function checkStatus() {
   }
 }
 
-function addToast(type, message, duration = 4000) {
-  dashboard.audio.playUi("pop");
-  const container = document.getElementById("toast-container");
-  const dismissAllBtn = document.getElementById("dismiss-all");
-  if (!container || !dismissAllBtn) return;
-
-  const toast = document.createElement("div");
-  toast.className = `toast ${type}`;
-  const isSyncing = duration === -1;
-  const isPersistent = duration === 0 || isSyncing;
-
-  const icons = { success: "✅", info: "ℹ️", error: "❌" };
-  toast.innerHTML = `
-        <span>${icons[type] || ""}</span>
-        <span>${message}</span>
-        ${
-          isSyncing
-            ? `
-          <div class="toast-progress">
-            <div class="toast-bar" style="width: 100%; animation: toast-progress-loop 2s infinite ease-in-out;"></div>
-          </div>`
-            : isPersistent
-              ? ""
-              : `
-          <div class="toast-progress">
-            <div class="toast-bar" style="animation-duration:${duration}ms"></div>
-          </div>`
-        }
-      `;
-
-  const bar = toast.querySelector(".toast-bar");
-
-  const dismiss = () => {
-    if (toast.dataset.dismissing) return;
-    toast.dataset.dismissing = "true";
-    toast.style.animation = "toast-in 0.3s ease-in reverse forwards";
-    setTimeout(() => {
-      toast.remove();
-      // Hide 'Dismiss All' button if no toasts are left
-      const remaining = container.querySelectorAll(".toast");
-      if (remaining.length === 0) {
-        dismissAllBtn.style.display = "none";
-      }
-      if (toast === dashboard.syncToast) dashboard.syncToast = null;
-    }, 300);
-  };
-
-  let autoDismissId = isPersistent ? null : setTimeout(dismiss, duration);
-
-  toast.onmouseenter = () => {
-    if (autoDismissId) clearTimeout(autoDismissId);
-  };
-
-  toast.onmouseleave = () => {
-    if (toast.dataset.dismissing || isPersistent) return;
-    // Reset animation and timer to sync them
-    bar.style.animation = "none";
-    void bar.offsetWidth;
-    bar.style.animation = `toast-progress-shrink ${duration}ms linear forwards`;
-    autoDismissId = setTimeout(dismiss, duration);
-  };
-
-  toast.onclick = () => {
-    if (autoDismissId) clearTimeout(autoDismissId);
-    dismiss();
-  };
-
-  container.prepend(toast);
-
-  // Show 'Dismiss All' button if there's more than one toast
-  if (container.querySelectorAll(".toast").length > 1) {
-    dismissAllBtn.style.display = "block";
-  }
-  return toast;
-}
-
-function getRelativeTimeString(timestamp) {
+function getRelativeTimeString(timestamp?: number) {
   const time = timestamp || dashboard.lastFetchTime;
   if (!time) return "";
   const diff = Math.floor((Date.now() - time) / 1000);
@@ -481,13 +694,13 @@ function getRelativeTimeString(timestamp) {
   return t("hoursAgo", hours);
 }
 
-function toNepaliNumerals(num) {
+function toNepaliNumerals(num: number | string) {
   const n = ["०", "१", "२", "३", "४", "५", "६", "७", "८", "९"];
   return String(num).replace(/[0-9]/g, (d) => n[d]);
 }
 
-function toArabicNumerals(str) {
-  const n = {
+function toArabicNumerals(str: string) {
+  const n: Record<string, string> = {
     "०": "0",
     "१": "1",
     "२": "2",
@@ -499,13 +712,14 @@ function toArabicNumerals(str) {
     "८": "8",
     "९": "9",
   };
-  return String(str || "").replace(/[०-९]/g, (d) => n[d]);
+  return String(str || "").replace(/[०-९]/g, (d) => n[d] || d);
 }
 
-window.startVoiceSearch = startVoiceSearch;
+(window as any).startVoiceSearch = startVoiceSearch;
 async function startVoiceSearch() {
   const SpeechRecognition =
-    window.SpeechRecognition || window.webkitSpeechRecognition;
+    (window as any).SpeechRecognition ||
+    (window as any).webkitSpeechRecognition;
   if (!SpeechRecognition) {
     dashboard.addToast(
       "error",
@@ -521,7 +735,7 @@ async function startVoiceSearch() {
   recognition.interimResults = false; // Only return final results
   recognition.maxAlternatives = 1;
 
-  const btn = document.getElementById("voice-search-btn");
+  const btn = document.getElementById("voice-search-btn") as HTMLButtonElement;
   const container = document.querySelector(".search-container");
 
   // Ensure the volume bar exists in the DOM
@@ -532,12 +746,12 @@ async function startVoiceSearch() {
     container.appendChild(volumeBar);
   }
 
-  let audioStream = null;
-  let localAudioCtx = null; // Use a local AudioContext for voice search
-  let animationId = null;
+  let audioStream: MediaStream = null as unknown as MediaStream;
+  let localAudioCtx: AudioContext = null as unknown as AudioContext;
+  let animationId: number = 0;
 
   const cleanup = () => {
-    if (animationId) cancelAnimationFrame(animationId);
+    if (animationId) window.cancelAnimationFrame(animationId);
     if (audioStream) audioStream.getTracks().forEach((t) => t.stop());
     if (localAudioCtx) localAudioCtx.close(); // Close local context
     if (btn) btn.classList.remove("listening");
@@ -548,7 +762,9 @@ async function startVoiceSearch() {
   };
   try {
     audioStream = await navigator.mediaDevices.getUserMedia({ audio: true });
-    localAudioCtx = new (window.AudioContext || window.webkitAudioContext)(); // Create a new AudioContext for this specific operation
+    localAudioCtx = new (
+      window.AudioContext || (window as any).webkitAudioContext
+    )();
     if (localAudioCtx.state === "suspended") await localAudioCtx.resume();
 
     const source = localAudioCtx.createMediaStreamSource(audioStream);
@@ -563,12 +779,12 @@ async function startVoiceSearch() {
     const draw = () => {
       analyser.getByteFrequencyData(dataArray);
       let sum = 0;
-      for (let i = 0; i < dataArray.length; i++) sum += dataArray[i];
+      for (const value of dataArray) sum += value;
       const average = sum / dataArray.length;
       // Map average amplitude (0-128 typically) to percentage width
       const volumePercent = Math.min(100, (average / 64) * 100);
       if (volumeBar) volumeBar.style.width = `${volumePercent}%`;
-      animationId = requestAnimationFrame(draw);
+      animationId = window.requestAnimationFrame(draw);
     };
     draw();
   } catch (err) {
@@ -578,7 +794,10 @@ async function startVoiceSearch() {
 
   recognition.onresult = (event) => {
     const transcript = event.results[0][0].transcript;
-    document.getElementById("search-input").value = transcript;
+    const searchInput = document.getElementById(
+      "search-input",
+    ) as HTMLInputElement;
+    if (searchInput) searchInput.value = transcript;
     handleSearch();
     dashboard.handleSearch();
     cleanup();
@@ -623,9 +842,9 @@ async function startVoiceSearch() {
   recognition.start();
 }
 
-window.clearSearch = clearSearch;
+(window as any).clearSearch = clearSearch;
 function clearSearch() {
-  const input = document.getElementById("search-input");
+  const input = document.getElementById("search-input") as HTMLInputElement;
   if (!input) return;
   input.value = "";
   handleSearch();
@@ -633,16 +852,17 @@ function clearSearch() {
   input.focus();
 }
 
-window.printAiBrief = printAiBrief;
+(window as any).printAiBrief = printAiBrief;
 function printAiBrief() {
   document.body.classList.add("print-memo-only");
   window.print();
   document.body.classList.remove("print-memo-only");
 }
 
-window.shareAiBrief = shareAiBrief;
+(window as any).shareAiBrief = shareAiBrief;
 async function shareAiBrief() {
-  const text = document.getElementById("ai-brief-text").innerText;
+  const text =
+    (document.getElementById("ai-brief-text") as HTMLElement)?.innerText || "";
   if (navigator.share) {
     try {
       await navigator.share({
@@ -659,20 +879,20 @@ async function shareAiBrief() {
   }
 }
 
-window.translateAiBrief = translateAiBrief;
+(window as any).translateAiBrief = translateAiBrief;
 async function translateAiBrief() {
   const targetLang = dashboard.state.lang === "en" ? "ne" : "en";
-  const btn = document.getElementById("ai-translate-btn");
-  btn.classList.add("spinning");
+  const btn = document.getElementById("ai-translate-btn") as HTMLButtonElement;
+  if (btn) btn.classList.add("spinning");
 
   try {
     const res = await authenticatedFetch(
       `/api/report?lang=${dashboard.state.lang}`,
     );
     const json = await res.json();
-    if (json.aiSummary && json.aiSummary.brief) {
+    if (json.aiSummary?.brief) {
       dashboard.typeText(
-        document.getElementById("ai-brief-text"),
+        document.getElementById("ai-brief-text") as HTMLElement,
         json.aiSummary.brief,
         true,
       );
@@ -683,7 +903,7 @@ async function translateAiBrief() {
       dashboard.state.lang === "en" ? "Failed" : "असफल",
     );
   } finally {
-    btn.classList.remove("spinning");
+    if (btn) btn.classList.remove("spinning");
   }
 }
 
@@ -691,7 +911,8 @@ async function translateAiBrief() {
  * Centralized Audio Fetcher
  */
 async function fetchAiBriefBlob() {
-  const text = document.getElementById("ai-brief-text").innerText;
+  const text =
+    (document.getElementById("ai-brief-text") as HTMLElement)?.innerText || "";
   if (!text) return null;
   const isPremium = localStorage.getItem("premium-tts") === "true";
   const res = await authenticatedFetch(
@@ -704,8 +925,11 @@ async function fetchAiBriefBlob() {
 /**
  * Downloads the AI Executive Briefing as an MP3 file.
  */
-window.downloadAiBriefAudio = async () => {
-  const btn = document.getElementById("ai-download-audio-btn");
+(window as any).downloadAiBriefAudio = async () => {
+  const btn = document.getElementById(
+    "ai-download-audio-btn",
+  ) as HTMLButtonElement;
+  if (!btn) return;
   const originalHtml = btn.innerHTML;
 
   try {
@@ -734,8 +958,11 @@ window.downloadAiBriefAudio = async () => {
 /**
  * Shares the AI Executive Briefing MP3 directly via Web Share API
  */
-window.shareAiBriefAudio = async () => {
-  const btn = document.getElementById("ai-share-audio-btn");
+(window as any).shareAiBriefAudio = async () => {
+  const btn = document.getElementById(
+    "ai-share-audio-btn",
+  ) as HTMLButtonElement;
+  if (!btn) return;
   const originalHtml = btn.innerHTML;
 
   try {
@@ -751,7 +978,7 @@ window.shareAiBriefAudio = async () => {
       { type: "audio/mpeg" },
     );
 
-    if (navigator.canShare && navigator.canShare({ files: [file] })) {
+    if (navigator.canShare?.({ files: [file] })) {
       await navigator.share({
         files: [file],
         title: "DoR Executive Briefing",
@@ -770,31 +997,304 @@ window.shareAiBriefAudio = async () => {
   }
 };
 
-window.toggleReadAloud = () => {
+(window as any).toggleReadAloud = () => {
   const container = document.getElementById("ai-brief-text");
   if (container) dashboard.speech.toggle(container);
 };
 
-function typeText(element, text, useSound = false) {
+interface TextElement extends HTMLElement {
+  _timer?: number;
+}
+
+function typeText(element: TextElement, text: string, useSound = false) {
   if (element.getAttribute("data-current") === text) return;
   element.setAttribute("data-current", text);
 
   // Clear existing element-specific timer to prevent overlapping
-  if (element._timer) clearInterval(element._timer);
+  if (element._timer) window.clearInterval(element._timer);
   element.innerText = "";
   element.classList.add("shimmer-text");
   let i = 0;
-  element._timer = setInterval(() => {
+  element._timer = window.setInterval(() => {
     if (i < text.length) {
       element.innerText += text.charAt(i);
       if (useSound) dashboard.audio.playUi("type");
       i++;
     } else {
-      clearInterval(element._timer);
+      window.clearInterval(element._timer);
       element.classList.remove("shimmer-text");
     }
   }, 40); // 40ms per character for a smooth terminal feel
 }
+
+/**
+ * Core Dashboard Manager
+ * Encapsulates application state, rendering lifecycle, and data synchronization.
+ */
+class Dashboard {
+  static _instance: Dashboard | null = null;
+
+  audio: AudioEngine;
+  speech: SpeechEngine;
+  header: Header;
+  state: {
+    lang: string;
+    view: string;
+    search: string;
+    sort: { key: string | null; dir: number };
+    store: ProjectReport | null;
+    riskLevel: number;
+    uiVolume: number;
+    diffMode: boolean;
+    compareReport: ProjectReport | null;
+  };
+  refreshCounter: number;
+  lastFetchTime: number | null;
+  latencyHistory: { value: number }[];
+  intentTimer: number | null;
+  dynamicCache: Record<string, string>;
+  lastSnapshotUpdate: string | null;
+  syncToast: HTMLDivElement;
+  addToast: typeof addToast;
+  appCheck?: any;
+  searchTimeout?: number;
+
+  constructor() {
+    if (Dashboard._instance) {
+      return Dashboard._instance;
+    }
+
+    this.audio = new AudioEngine();
+    this.speech = new SpeechEngine(this.audio);
+    this.header = new Header(this);
+
+    this.state = {
+      lang:
+        localStorage.getItem("pref-lang") ||
+        (navigator.language.startsWith("en") ? "en" : "ne"),
+      view: "cards",
+      search: "",
+      sort: { key: null, dir: 1 },
+      store: null,
+      riskLevel: 0,
+      uiVolume: parseFloat(localStorage.getItem("ui-volume") || "0.5"),
+      diffMode: false,
+      compareReport: null,
+    };
+
+    this.refreshCounter = 60;
+    this.lastFetchTime = null;
+    this.latencyHistory = [];
+    this.intentTimer = null;
+    this.dynamicCache = JSON.parse(
+      localStorage.getItem("dynamicTranslations") || "{}",
+    );
+    this.lastSnapshotUpdate = null;
+    this.syncToast = null;
+    this.addToast = addToast;
+
+    this.initTimer();
+    Dashboard._instance = this;
+  }
+
+  static getInstance(): Dashboard {
+    if (!Dashboard._instance) {
+      Dashboard._instance = new Dashboard();
+    }
+    return Dashboard._instance;
+  }
+
+  initTimer() {
+    setInterval(() => {
+      this.refreshCounter--;
+      if (this.refreshCounter <= 0) {
+        this.refreshCounter = 60;
+        void this.loadData();
+      }
+      const timerEl = document.getElementById("refresh-timer");
+      if (timerEl) {
+        timerEl.innerText = `(${t("refreshing")} ${this.refreshCounter}${t("sec")})`;
+      }
+    }, 1000);
+  }
+
+  setLang(l: string) {
+    const prevLang = this.state.lang;
+    this.state.lang = l;
+    localStorage.setItem("pref-lang", l);
+
+    const lbl = document.getElementById("lang-current-label");
+    if (lbl) lbl.innerText = l.toUpperCase();
+
+    applyTranslations();
+    this.state.sort = { key: null, dir: 1 };
+
+    const titleEl = document.getElementById("main-title");
+    if (titleEl) titleEl.innerText = t("mainTitle");
+
+    const gBadge = document.getElementById("gemini-badge");
+    if (gBadge) gBadge.innerHTML = `${t("poweredBy")} <span>Gemini</span>`;
+
+    renderDropdowns();
+
+    if (prevLang !== l) {
+      const loader = document.getElementById("loader");
+      const msg = document.getElementById("loading-msg");
+      if (loader) loader.style.display = "flex";
+      if (msg) msg.innerText = t("loading");
+      void this.loadData();
+    } else if (this.state.store) {
+      this.render();
+    }
+  }
+
+  setView(v: string) {
+    this.state.view = v;
+    ["table", "cards", "charts"].forEach((mode) => {
+      const btn = document.getElementById("btn-" + mode);
+      if (btn) btn.classList.toggle("active", v === mode);
+    });
+
+    const tables = document.getElementById("view-table");
+    const cards = document.getElementById("view-cards");
+    const charts = document.getElementById("view-charts");
+    if (tables) tables.classList.toggle("active-view", v === "table");
+    if (cards) cards.classList.toggle("active-view", v === "cards");
+    if (charts) charts.classList.toggle("active-view", v === "charts");
+
+    const verify = document.getElementById("view-verify");
+    const history = document.getElementById("view-history");
+    if (verify) verify.style.display = v === "verify" ? "block" : "none";
+    if (history) history.style.display = v === "history" ? "block" : "none";
+
+    if (this.state.store) this.render();
+  }
+
+  async loadData(isForced = false) {
+    const fetchStart = performance.now();
+    const syncIcon = document.getElementById("data-sync-icon");
+    if (syncIcon) {
+      syncIcon.style.display = "inline-block";
+      syncIcon.classList.add("spinning");
+    }
+
+    this.state.store = null;
+    const skeleton = Array(10)
+      .fill(
+        `<tr class="skeleton-row"><td><div></div></td>${Array(5).fill("<td><div></div></td>").join("")}</tr>`,
+      )
+      .join("");
+    const tbody = document.getElementById("tbody");
+    if (tbody) tbody.innerHTML = skeleton;
+
+    try {
+      const params = new URLSearchParams(window.location.search);
+      const date = params.get("date");
+      const fetchOptions: RequestInit = isForced ? { cache: "no-store" } : {};
+      const endpoint = date
+        ? `/api/report?date=${date}&lang=${this.state.lang}`
+        : `/api/report?lang=${this.state.lang}${isForced ? "&force=true" : ""}`;
+
+      const res = await authenticatedFetch(endpoint, fetchOptions);
+      const json = (await res.json()) as ProjectReport;
+      if (json?.headers) {
+        const fetchEnd = performance.now();
+        const duration = Math.round(fetchEnd - fetchStart);
+        this.lastFetchTime = Date.now();
+        this.latencyHistory.push({ value: duration });
+        if (this.latencyHistory.length > 5) this.latencyHistory.shift();
+        if (res.headers.get("X-Force-Throttled") === "true")
+          this.addToast("info", t("forceThrottled"));
+
+        this.state.store = json;
+        if (json.lastUpdate) {
+          void this.header.checkUpdates(json.lastUpdate);
+        }
+        this.render();
+        const offlineOverlay = document.getElementById("offline-overlay");
+        if (offlineOverlay) offlineOverlay.style.display = "none";
+        if (isForced) this.addToast("success", t("cacheCleared"));
+
+        const isFromCache = res.headers.get("X-From-Cache") === "true";
+        const status = document.getElementById("status");
+        if (status) {
+          if (isFromCache) {
+            status.innerText = t("cached");
+            status.style.color = "#fbbf24";
+          } else {
+            status.innerText = t("live");
+            status.style.color = "#4ade80";
+          }
+        }
+        updateConnStrength(duration);
+      }
+    } catch (e) {
+      console.error("Error loading data:", e);
+      const status = document.getElementById("status");
+      if (status) {
+        status.innerText = t("offline");
+        status.style.color = "#f87171";
+      }
+      this.addToast("error", t("offline"));
+      const offlineOverlay = document.getElementById("offline-overlay");
+      if (offlineOverlay && !this.state.store) {
+        offlineOverlay.style.display = "flex";
+      }
+    } finally {
+      if (syncIcon) {
+        syncIcon.classList.remove("spinning");
+        syncIcon.style.display = "none";
+      }
+      const loader = document.getElementById("loader");
+      if (loader) loader.style.display = "none";
+    }
+  }
+
+  render() {
+    // Implementation handled globally but can be moved here
+    render(this.state.store);
+  }
+
+  toggleLang() {
+    const next = this.state.lang === "en" ? "ne" : "en";
+    this.setLang(next);
+    this.audio.playUi("click");
+  }
+
+  toggleGeminiMenu() {
+    const menu = document.getElementById("gemini-menu");
+    const fabMenu = document.getElementById("fab-menu");
+    if (fabMenu) fabMenu.classList.remove("show");
+    if (menu) menu.classList.toggle("show");
+    this.audio.playUi("pop");
+  }
+
+  toggleFabMenu() {
+    const menu = document.getElementById("fab-menu");
+    const geminiMenu = document.getElementById("gemini-menu");
+    const btn = document.getElementById("fab-main-btn");
+    if (geminiMenu) geminiMenu.classList.remove("show");
+    if (menu) {
+      menu.classList.toggle("show");
+      if (btn) btn.classList.toggle("active", menu.classList.contains("show"));
+    }
+    this.audio.playUi("pop");
+  }
+
+  handleSearch(term?: string) {
+    handleSearch(term);
+  }
+
+  typeText(element: HTMLElement, text: string, useSound = false) {
+    typeText(element, text, useSound);
+  }
+
+  triggerDatabaseRestore() {
+    return triggerDatabaseRestore();
+  }
+}
+
+const dashboard = Dashboard.getInstance();
 
 function showDiagnostics() {
   // Lock debug access: only allow diagnostics in development mode
@@ -821,7 +1321,7 @@ function showDiagnostics() {
   now.setMonth(now.getMonth() - 1);
   const lastMonth = now.toISOString().slice(0, 7); // YYYY-MM
 
-  let html = `
+  const html = `
         <div class="modal-header"> 
           <h3 style="color:var(--critical); margin:0;">🚨 System Diagnostics</h3>
           <p style="font-size:0.8rem; opacity:0.8; margin:5px 0 0;">${dispCount} ${dashboard.state.lang === "ne" ? "सूचकहरूलाई तत्काल ध्यान दिनु आवश्यक छ।" : "indicators require immediate attention."}</p>
@@ -837,7 +1337,9 @@ function showDiagnostics() {
           </div>
       `;
   const modalBody = document.getElementById("modal-body");
-  modalBody.innerHTML = html;
+  if (modalBody) {
+    modalBody.innerHTML = html;
+  }
 
   // Populate Year and Month selectors
   const diagY = document.getElementById("diag-period-year");
@@ -1304,253 +1806,10 @@ const I18N = {
 };
 
 /**
- * Core Dashboard Manager
- * Encapsulates application state, rendering lifecycle, and data synchronization.
- */
-class Dashboard {
-  static _instance = null;
-
-  constructor() {
-    // Enforce singleton pattern: if an instance already exists, return it.
-    // This prevents multiple instances from being created even if `new Dashboard()`
-    // is called directly after the first instance.
-    if (Dashboard._instance) {
-      return Dashboard._instance;
-    }
-
-    // Core Engines
-    // Core Engines - Initialize first so other systems can use them
-    this.audio = new AudioEngine();
-    this.speech = new SpeechEngine(this.audio);
-    this.header = new Header(this);
-
-    // Application State
-    this.state = {
-      lang:
-        localStorage.getItem("pref-lang") ||
-        (navigator.language.startsWith("en") ? "en" : "ne"),
-      view: "cards",
-      search: "",
-      sort: { key: null, dir: 1 },
-      store: null,
-      riskLevel: 0,
-      uiVolume: parseFloat(localStorage.getItem("ui-volume") || "0.5"),
-    };
-    this.state.diffMode = false;
-    this.state.compareReport = null;
-
-    this.refreshCounter = 60;
-    this.lastFetchTime = null;
-    this.latencyHistory = [];
-    this.intentTimer = null;
-    this.dynamicCache = JSON.parse(
-      localStorage.getItem("dynamicTranslations") || "{}",
-    );
-    this.lastSnapshotUpdate = null;
-    this.syncToast = null;
-    this.addToast = addToast;
-
-    this.initTimer();
-    // Store the newly created instance
-    Dashboard._instance = this;
-  }
-
-  // Static method to get the single instance of the Dashboard
-  static getInstance() {
-    if (!Dashboard._instance) {
-      Dashboard._instance = new Dashboard();
-    }
-    return Dashboard._instance;
-  }
-
-  initTimer() {
-    setInterval(() => {
-      this.refreshCounter--;
-      if (this.refreshCounter <= 0) {
-        this.refreshCounter = 60;
-        this.loadData();
-      }
-      const timerEl = document.getElementById("refresh-timer");
-      if (timerEl) {
-        timerEl.innerText = `(${t("refreshing")} ${this.refreshCounter}${t("sec")})`;
-      }
-    }, 1000);
-  }
-
-  async setLang(l) {
-    const prevLang = this.state.lang;
-    this.state.lang = l;
-    localStorage.setItem("pref-lang", l);
-
-    const lbl = document.getElementById("lang-current-label");
-    if (lbl) lbl.innerText = l.toUpperCase();
-
-    applyTranslations();
-    this.state.sort = { key: null, dir: 1 };
-
-    const titleEl = document.getElementById("main-title");
-    if (titleEl) titleEl.innerText = t("mainTitle");
-
-    const gBadge = document.getElementById("gemini-badge");
-    if (gBadge) gBadge.innerHTML = `${t("poweredBy")} <span>Gemini</span>`;
-
-    renderDropdowns();
-
-    if (prevLang !== l) {
-      const loader = document.getElementById("loader");
-      const msg = document.getElementById("loading-msg");
-      if (loader) loader.style.display = "flex";
-      if (msg) msg.innerText = t("loading");
-      await this.loadData();
-    } else if (this.state.store) {
-      this.render();
-    }
-  }
-
-  setView(v) {
-    this.state.view = v;
-    // Update active state for FAB items
-    ["table", "cards", "charts"].forEach((mode) => {
-      const btn = document.getElementById("btn-" + mode);
-      if (btn) btn.classList.toggle("active", v === mode);
-    });
-
-    const tables = document.getElementById("view-table");
-    const cards = document.getElementById("view-cards");
-    const charts = document.getElementById("view-charts");
-    if (tables) tables.classList.toggle("active-view", v === "table");
-    if (cards) cards.classList.toggle("active-view", v === "cards");
-    if (charts) charts.classList.toggle("active-view", v === "charts");
-
-    const verify = document.getElementById("view-verify");
-    const history = document.getElementById("view-history");
-    if (verify) verify.style.display = v === "verify" ? "block" : "none";
-    if (history) history.style.display = v === "history" ? "block" : "none";
-
-    if (this.state.store) this.render();
-  }
-
-  dismissAllToasts() {
-    const toasts = document.querySelectorAll(".toast");
-    toasts.forEach((t) => {
-      if (t.dataset.dismissing) return;
-      t.click();
-    });
-  }
-
-  async loadData(isForced = false) {
-    const fetchStart = performance.now();
-    const syncIcon = document.getElementById("data-sync-icon");
-    if (syncIcon) {
-      syncIcon.style.display = "inline-block";
-      syncIcon.classList.add("spinning");
-    }
-
-    this.state.store = null;
-    const skeleton = Array(10)
-      .fill(
-        `<tr class="skeleton-row"><td><div></div></td>${Array(5).fill("<td><div></div></td>").join("")}</tr>`,
-      )
-      .join("");
-    document.getElementById("tbody").innerHTML = skeleton;
-
-    try {
-      const params = new URLSearchParams(window.location.search);
-      const date = params.get("date");
-      const fetchOptions = isForced ? { cache: "no-store" } : {};
-      const endpoint = date
-        ? `/api/report?date=${date}&lang=${this.state.lang}`
-        : `/api/report?lang=${this.state.lang}${isForced ? "&force=true" : ""}`;
-
-      const res = await authenticatedFetch(endpoint, fetchOptions);
-      const json = await res.json();
-      if (json && json.headers) {
-        const fetchEnd = performance.now();
-        const duration = Math.round(fetchEnd - fetchStart);
-        this.lastFetchTime = Date.now();
-        this.latencyHistory.push({ value: duration });
-        if (this.latencyHistory.length > 5) this.latencyHistory.shift();
-        if (res.headers.get("X-Force-Throttled") === "true")
-          this.addToast("info", t("forceThrottled"));
-
-        this.state.store = json;
-        if (json.lastUpdate) {
-          this.header.checkUpdates(json.lastUpdate);
-        }
-        this.render();
-        const offlineOverlay = document.getElementById("offline-overlay");
-        if (offlineOverlay) offlineOverlay.style.display = "none";
-        if (isForced) this.addToast("success", t("cacheCleared"));
-
-        const isFromCache = res.headers.get("X-From-Cache") === "true";
-        const status = document.getElementById("status");
-        if (status) {
-          if (isFromCache) {
-            status.innerText = t("cached");
-            status.style.color = "#fbbf24"; // Amber color for cached/archived data
-          } else {
-            status.innerText = t("live");
-            status.style.color = "#4ade80"; // Green for fresh live data
-          }
-        }
-        updateConnStrength(duration);
-      }
-    } catch (e) {
-      console.error("Error loading data:", e);
-      const status = document.getElementById("status");
-      if (status) {
-        status.innerText = t("offline");
-        status.style.color = "#f87171";
-      }
-      this.addToast("error", t("offline"));
-      const offlineOverlay = document.getElementById("offline-overlay");
-      if (offlineOverlay && !this.state.store) {
-        offlineOverlay.style.display = "flex";
-      }
-    } finally {
-      if (syncIcon) {
-        syncIcon.classList.remove("spinning");
-        syncIcon.style.display = "none";
-      }
-      document.getElementById("loader").style.display = "none";
-    }
-  }
-
-  toggleLang() {
-    const next = this.state.lang === "en" ? "ne" : "en";
-    this.setLang(next);
-    this.audio.playUi("click");
-  }
-
-  toggleGeminiMenu() {
-    const menu = document.getElementById("gemini-menu");
-    const fabMenu = document.getElementById("fab-menu");
-    if (fabMenu) fabMenu.classList.remove("show");
-    if (menu) menu.classList.toggle("show");
-    this.audio.playUi("pop");
-  }
-
-  toggleFabMenu() {
-    const menu = document.getElementById("fab-menu");
-    const geminiMenu = document.getElementById("gemini-menu");
-    const btn = document.getElementById("fab-main-btn");
-    if (geminiMenu) geminiMenu.classList.remove("show");
-    if (menu) {
-      menu.classList.toggle("show");
-      if (btn) btn.classList.toggle("active", menu.classList.contains("show"));
-    }
-    this.audio.playUi("pop");
-  }
-}
-
-const dashboard = Dashboard.getInstance();
-let deferredPrompt; // PWA prompt remains global as it interacts with browser events
-
-/**
  * Translation Helper
  * Priority: Dynamic JSON from Sheet > Hardcoded I18N fallback > Key name
  */
-let translationQueue = new Set();
+const translationQueue = new Set();
 let translationTimeout = null;
 
 const t = (key, count) => {
@@ -1749,9 +2008,7 @@ window.revertTheme = () => setTheme(originalTheme, false);
 
 window.resetThemeToSystem = () => {
   localStorage.removeItem("theme");
-  const isDark =
-    window.matchMedia &&
-    window.matchMedia("(prefers-color-scheme: dark)").matches;
+  const isDark = window.matchMedia?.("(prefers-color-scheme: dark)").matches;
   const systemTheme = isDark ? "dark" : "light";
   // Apply the theme visually but do not persist it to localStorage
   setTheme(systemTheme, false);
@@ -1848,7 +2105,7 @@ function renderDropdowns() {
 }
 
 window.toggleHistory = toggleHistory;
-async function toggleHistory() {
+function toggleHistory() {
   if (dashboard.state.view === "history") {
     dashboard.setView("table");
     return;
@@ -1884,12 +2141,12 @@ function toggleHistoryTab(tab) {
       .padStart(2, "0");
   }
 
-  if (tab === "weekly") fetchWeeklyHistory();
+  if (tab === "weekly") void fetchWeeklyHistory();
 }
 
 let weeklyArchives = [];
 
-async function logAnalytics(eventName, eventData = {}) {
+function logAnalytics(eventName: string, eventData = {}) {
   const payload = {
     eventName,
     eventData,
@@ -1907,15 +2164,14 @@ async function logAnalytics(eventName, eventData = {}) {
     const tx = db.transaction("analytics", "readwrite");
     tx.objectStore("analytics").add(payload);
 
-    tx.oncomplete = async () => {
+    tx.oncomplete = () => {
       // 2. Register for Sync
       if ("serviceWorker" in navigator && "SyncManager" in window) {
-        const reg = await navigator.serviceWorker.ready;
-        try {
-          await reg.sync.register("send-analytics");
-        } catch (err) {
-          console.warn("Sync registration failed, likely offline", err);
-        }
+        navigator.serviceWorker.ready.then((reg: any) => {
+          reg.sync.register("send-analytics").catch((err: any) => {
+            console.warn("Sync registration failed, likely offline", err);
+          });
+        });
       }
     };
   };
@@ -1933,7 +2189,7 @@ async function fetchWeeklyHistory() {
     if (histBtn) histBtn.style.display = "flex";
   }
 
-  let html = weeklyArchives
+  const html = weeklyArchives
     .map(
       (h) => `
         <div class="chart-card archive-item" style="display:flex; flex-direction:column; justify-content:space-between">
@@ -1966,7 +2222,7 @@ window.selectCurrentWeek = selectCurrentWeek;
 function selectCurrentWeek() {
   if (weeklyArchives && weeklyArchives.length > 0) {
     // Assuming the backend returns reports in descending date order
-    loadSnapshot(weeklyArchives[0].date);
+    void loadSnapshot(weeklyArchives[0].date);
   }
 }
 
@@ -2169,11 +2425,7 @@ function handleSearch(term) {
       clearBtn.style.display = dashboard.state.search ? "block" : "none";
 
     // Populate suggestions from the first column (Indicators)
-    if (
-      dashboard.state.store &&
-      dashboard.state.store.headers &&
-      dashboard.state.store.headers.length > 0
-    ) {
+    if (dashboard.state.store?.headers?.length > 0) {
       const indicatorKey = dashboard.state.store.headers[0];
       const dl = document.getElementById("search-suggestions");
       if (dl) {
@@ -2204,7 +2456,7 @@ function sortData(key) {
 window.shareApp = shareApp;
 function shareApp() {
   if (navigator.share) {
-    navigator.share({
+    void navigator.share({
       title: "DoR MIS Dashboard",
       text: "Check the latest Department of Roads Progress Report.",
       url: window.location.href,
@@ -2386,8 +2638,7 @@ window.checkForUpdates = async () => {
 };
 
 async function getSwChangelog() {
-  if (!navigator.serviceWorker || !navigator.serviceWorker.controller)
-    return null;
+  if (!navigator.serviceWorker?.controller) return null;
   return new Promise((resolve) => {
     const messageChannel = new MessageChannel();
     messageChannel.port1.onmessage = (event) => resolve(event.data.changelog);
@@ -2401,8 +2652,7 @@ async function getSwChangelog() {
 }
 
 async function getActiveSwVersion() {
-  if (!navigator.serviceWorker || !navigator.serviceWorker.controller)
-    return "v2.0.x";
+  if (!navigator.serviceWorker?.controller) return "v2.0.x";
   return new Promise((resolve) => {
     const messageChannel = new MessageChannel();
     messageChannel.port1.onmessage = (event) => resolve(event.data.version);
@@ -2417,15 +2667,18 @@ async function getActiveSwVersion() {
 let snapshotList = [];
 window.createSnapshotManual = async (e) => {
   const btn = e?.target || document.getElementById("create-snapshot-btn");
-  var originalText = btn.innerText;
+  const originalText = btn.innerText;
   btn.innerText = "Creating...";
   btn.disabled = true;
   try {
-    var adminKey = prompt("Enter Admin Secret to create snapshot:");
-    if (!adminKey) {
-      btn.innerText = originalText;
-      btn.disabled = false;
-      return;
+    let snapshotKey = "dev-bypass";
+    if (APP_ENV === "production") {
+      snapshotKey = prompt("Enter Snapshot Key to authorize:") || "";
+      if (!snapshotKey) {
+        btn.innerText = originalText;
+        btn.disabled = false;
+        return;
+      }
     }
     if (!dashboard.state.store) {
       addToast("error", "No data");
@@ -2437,7 +2690,7 @@ window.createSnapshotManual = async (e) => {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        "X-Admin-Secret": adminKey,
+        "X-Snapshot-Key": snapshotKey,
       },
       body: JSON.stringify({
         records: dashboard.state.store.rows || [],
@@ -2465,22 +2718,25 @@ window.createSnapshotManual = async (e) => {
 };
 window.listSnapshots = async (force) => {
   const container = document.getElementById("snapshot-list-container");
-  var listEl = document.getElementById("snapshot-list");
+  const listEl = document.getElementById("snapshot-list");
   if (container.style.display !== "none" && !force) {
     container.style.display = "none";
     return;
   }
   try {
-    var adminKey = prompt("Enter Admin Secret:");
-    if (!adminKey) return; // Early exit if adminKey is not provided
-    var response = await fetch(WORKER_BASE + "/api/snapshots", {
-      headers: { "X-Admin-Secret": adminKey },
+    let snapshotKey = "dev-bypass";
+    if (APP_ENV === "production") {
+      snapshotKey = prompt("Enter Snapshot Key:") || "";
+      if (!snapshotKey) return;
+    }
+    const response = await fetch(WORKER_BASE + "/api/snapshots", {
+      headers: { "X-Snapshot-Key": snapshotKey },
     });
     if (!response.ok) {
       addToast("error", "Failed");
       return;
     }
-    var data = await response.json();
+    const data = await response.json();
     snapshotList = data.snapshots || [];
     if (snapshotList.length === 0) {
       listEl.innerHTML = "<p style='font-size: 0.7rem;'>No snapshots</p>";
@@ -2513,19 +2769,22 @@ window.listSnapshots = async (force) => {
   }
 };
 window.downloadSnapshot = async (date) => {
-  const adminKey = prompt("Enter Admin Secret:");
-  if (!adminKey) return;
+  let snapshotKey = "dev-bypass";
+  if (APP_ENV === "production") {
+    snapshotKey = prompt("Enter Snapshot Key:") || "";
+    if (!snapshotKey) return;
+  }
   try {
-    var response = await fetch(WORKER_BASE + "/api/snapshot?date=" + date, {
-      headers: { "X-Admin-Secret": adminKey },
+    const response = await fetch(WORKER_BASE + "/api/snapshot?date=" + date, {
+      headers: { "X-Snapshot-Key": snapshotKey },
     });
     if (!response.ok) {
       addToast("error", "Failed");
       return;
     }
-    var blob = await response.blob();
-    var url = window.URL.createObjectURL(blob);
-    var a = document.createElement("a");
+    const blob = await response.blob();
+    const url = window.URL.createObjectURL(blob);
+    const a = document.createElement("a");
     a.href = url;
     a.download = "DoR_Snapshot_" + date + ".pdf";
     a.click();
@@ -2537,12 +2796,15 @@ window.downloadSnapshot = async (date) => {
 };
 window.deleteSnapshot = async (date) => {
   if (!confirm("Delete " + date + "?")) return;
-  const adminKey = prompt("Enter Admin Secret:");
-  if (!adminKey) return;
+  let snapshotKey = "dev-bypass";
+  if (APP_ENV === "production") {
+    snapshotKey = prompt("Enter Snapshot Key:") || "";
+    if (!snapshotKey) return;
+  }
   try {
-    var response = await fetch(WORKER_BASE + "/api/snapshot?date=" + date, {
+    const response = await fetch(WORKER_BASE + "/api/snapshot?date=" + date, {
       method: "DELETE",
-      headers: { "X-Admin-Secret": adminKey },
+      headers: { "X-Snapshot-Key": snapshotKey },
     });
     if (response.ok) {
       addToast("success", "Deleted");
@@ -2932,7 +3194,7 @@ window.showSettings = async () => {
     .querySelector(".theme-selector")
     ?.addEventListener("mouseleave", revertTheme);
 
-  updateStorageUsageDisplay(); // Update storage display after modal is rendered
+  void updateStorageUsageDisplay(); // Update storage display after modal is rendered
 };
 
 /**
@@ -2940,6 +3202,7 @@ window.showSettings = async () => {
  */
 window.triggerDatabaseBackup = async () => {
   const btn = document.getElementById("db-backup-btn");
+  if (!btn) return;
   const originalHtml = btn.innerHTML;
   const t = I18N[dashboard.state.lang];
 
@@ -2951,7 +3214,7 @@ window.triggerDatabaseBackup = async () => {
     const db = await new Promise((resolve, reject) => {
       const req = indexedDB.open("dor_mis_db", 2);
       req.onsuccess = () => resolve(req.result);
-      req.onerror = () => reject("IDB_OPEN_FAIL");
+      req.onerror = () => reject(new Error("IDB_OPEN_FAIL"));
     });
 
     const stores = ["analytics", "metadata"];
@@ -2974,19 +3237,22 @@ window.triggerDatabaseBackup = async () => {
     db.close();
 
     // 2. Transmit to Cloudflare Admin endpoint
-    // Note: This requires the X-Admin-Secret header. Adjust as needed if using a prompt.
-    const adminKey = prompt(
-      dashboard.state.lang === "en"
-        ? "Enter Admin Secret to authorize backup:"
-        : "ब्याकअप प्रमाणित गर्न एडमिन गोप्य कुञ्जी प्रविष्ट गर्नुहोस्:",
-    );
-    if (!adminKey) throw new Error("CANCELLED");
+    let snapshotKey = "dev-bypass";
+    if (APP_ENV === "production") {
+      snapshotKey =
+        prompt(
+          dashboard.state.lang === "en"
+            ? "Enter Snapshot Key to authorize backup:"
+            : "ब्याकअप प्रमाणित गर्न गोप्य कुञ्जी प्रविष्ट गर्नुहोस्:",
+        ) || "";
+      if (!snapshotKey) throw new Error("CANCELLED");
+    }
 
     const res = await fetch(`${WORKER_BASE}/api/admin/backup-idb`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        "X-Admin-Secret": adminKey,
+        "X-Snapshot-Key": snapshotKey,
       },
       body: JSON.stringify(snapshot),
     });
@@ -3016,19 +3282,23 @@ window.triggerDatabaseRestore = async () => {
   const t = I18N[dashboard.state.lang];
 
   try {
-    const adminKey = prompt(
-      dashboard.state.lang === "en"
-        ? "Enter Admin Secret to list backups:"
-        : "ब्याकअप सूची हेर्न एडमिन गोप्य कुञ्जी प्रविष्ट गर्नुहोस्:",
-    );
-    if (!adminKey) return;
+    let snapshotKey = "dev-bypass";
+    if (APP_ENV === "production") {
+      snapshotKey =
+        prompt(
+          dashboard.state.lang === "en"
+            ? "Enter Snapshot Key to list backups:"
+            : "ब्याकअप सूची हेर्न गोप्य कुञ्जी प्रविष्ट गर्नुहोस्:",
+        ) || "";
+      if (!snapshotKey) return;
+    }
 
     btn.disabled = true;
     btn.innerHTML = `<span class="spinner" style="border-top-color:var(--primary)"></span>`;
 
     // 1. Fetch list of available backups
     const listRes = await fetch(`${WORKER_BASE}/api/admin/list-backups`, {
-      headers: { "X-Admin-Secret": adminKey },
+      headers: { "X-Snapshot-Key": snapshotKey },
     });
     const keys = await listRes.json();
     if (!keys.length) {
@@ -3046,7 +3316,7 @@ window.triggerDatabaseRestore = async () => {
     addToast("info", "Downloading snapshot...");
     const dataRes = await fetch(
       `${WORKER_BASE}/api/admin/get-backup?key=${selectedKey}`,
-      { headers: { "X-Admin-Secret": adminKey } },
+      { headers: { "X-Snapshot-Key": snapshotKey } },
     );
     const snapshot = await dataRes.json();
 
@@ -3098,7 +3368,7 @@ window.downloadAllOfflineData = async () => {
 
     // 1. Determine scope (fetch list of archives first)
     const histRes = await authenticatedFetch(`/api/reports`);
-    const archives = histRes && histRes.ok ? await histRes.json() : [];
+    const archives = histRes?.ok ? await histRes.json() : [];
     const snapshots = archives.slice(0, 5); // Cache the last 5 weeks
 
     const totalSteps = 3 + snapshots.length; // List + 2 languages + N snapshots
@@ -3132,7 +3402,7 @@ window.downloadAllOfflineData = async () => {
     }
 
     addToast("success", t.downloadComplete);
-    updateStorageUsageDisplay();
+    void updateStorageUsageDisplay();
   } catch (e) {
     addToast("error", "Offline download interrupted.");
   } finally {
@@ -3145,7 +3415,7 @@ async function updateStorageUsageDisplay() {
   const el = document.getElementById("storage-usage-val");
   if (!el) return;
 
-  if (navigator.storage && navigator.storage.estimate) {
+  if (navigator.storage?.estimate) {
     const { usage, quota } = await navigator.storage.estimate();
 
     const formatSize = (bytes) => {
@@ -3191,8 +3461,8 @@ async function updateStorageUsageDisplay() {
   }
 }
 
-window.clearDataCache = async () => {
-  if (navigator.serviceWorker && navigator.serviceWorker.controller) {
+window.clearDataCache = () => {
+  if (navigator.serviceWorker?.controller) {
     // Communicate with Service Worker to clear the correct cache (dor-data-v2)
     navigator.serviceWorker.controller.postMessage({
       action: "clear-data-cache",
@@ -3497,7 +3767,7 @@ setTimeout(() => {
   }
 }, PWA_INSTALL_QUALIFICATION_DELAY_MS);
 // PWA Install Logic for Android/Chrome
-document.getElementById("install-btn").addEventListener("click", async () => {
+document.getElementById("install-btn").addEventListener("click", () => {
   if (deferredPrompt) {
     deferredPrompt.prompt();
     deferredPrompt = null;
@@ -3514,7 +3784,7 @@ if ("serviceWorker" in navigator) {
 
   // Handle Background Data Updates
   navigator.serviceWorker.addEventListener("message", (event) => {
-    if (event.data && event.data.action === "api-data-updated") {
+    if (event.data?.action === "api-data-updated") {
       console.log("[SW Notification] Fresh data available. Updating UI...");
       if (dashboard.syncToast) {
         dashboard.syncToast.click();
@@ -3522,16 +3792,21 @@ if ("serviceWorker" in navigator) {
       }
       // Trigger a silent reload (isForced = false)
       // This will pull the fresh data from the now-updated SW cache
-      dashboard.loadData(false);
+      void dashboard.loadData(false);
     }
   });
 
   window.addEventListener("load", () => {
-    navigator.serviceWorker.register("/sw.v2.js").then((reg) => {
-      reg.update();
-      // Register for background updates
-      registerPeriodicUpdate(reg);
-    });
+    navigator.serviceWorker
+      .register("/sw.v2.js")
+      .then((reg) => {
+        void reg.update();
+        // Register for background updates
+        void registerPeriodicUpdate(reg);
+      })
+      .catch(() => {
+        /* ignore */
+      });
   });
 }
 
@@ -3587,10 +3862,10 @@ window.addEventListener(
 
     if (dist > 0) {
       const indicator = document.getElementById("pull-indicator");
-      indicator.classList.add("visible");
+      if (indicator) indicator.classList.add("visible");
       // Damped movement for natural resistance
       const topOffset = Math.min(dist / 2.5, PULL_THRESHOLD) - 50;
-      indicator.style.top = `${topOffset}px`;
+      if (indicator) indicator.style.top = `${topOffset}px`;
       if (pullIcon) pullIcon.style.transform = `rotate(${dist * 1.5}deg)`;
     }
   },
@@ -3608,7 +3883,7 @@ window.addEventListener("touchend", () => {
     indicator.innerHTML =
       '<span class="spinner" style="border-top-color:var(--primary); width:20px; height:20px;"></span>';
     // Mobile Force Refresh: Pulling down now handles everything including clearing Gemini cache
-    dashboard.loadData(true).finally(() => {
+    void dashboard.loadData(true).finally(() => {
       setTimeout(() => {
         indicator.style.top = "-60px";
         indicator.classList.remove("visible");
@@ -3654,7 +3929,7 @@ function render(json) {
   const headers = json.headers || [];
   let rows = [...(json.rows || [])];
 
-  let compareMap = new Map();
+  const compareMap = new Map();
   if (dashboard.state.diffMode && dashboard.state.compareReport) {
     const primaryKey = headers[0];
     dashboard.state.compareReport.rows.forEach((r) =>
@@ -3675,8 +3950,10 @@ function render(json) {
   // 1. FILTER
   if (dashboard.state.search && dashboard.state.search !== "verify") {
     rows = rows.filter((r) =>
-      Object.values(r).some((v) =>
-        String(v).toLowerCase().includes(dashboard.state.search),
+      Object.values(r).some(
+        (v) =>
+          (typeof v === "string" || typeof v === "number") &&
+          String(v).toLowerCase().includes(dashboard.state.search),
       ),
     );
   }
@@ -3822,7 +4099,7 @@ function render(json) {
       `Last Updated Version: ${json.lastUpdate}`;
   }
   const isLowData = localStorage.getItem("low-data") === "true";
-  if (json.aiSummary && json.aiSummary.brief && !isLowData) {
+  if (json.aiSummary?.brief && !isLowData) {
     document.getElementById("ai-brief-card").style.display = "block";
     let briefText = json.aiSummary.brief;
     if (dashboard.state.lang === "ne") briefText = toNepaliNumerals(briefText);
@@ -4111,7 +4388,7 @@ initDelegation();
  */
 window.generateClientPDF = async () => {
   const store = dashboard.state.store;
-  if (!store || !store.rows.length)
+  if (!store?.rows.length)
     return dashboard.addToast("error", "No data to export");
 
   const lang = dashboard.state.lang;
@@ -4291,9 +4568,9 @@ setupSecurity();
  * This resolves the "AudioContext not allowed to start" error and ensures
  * audio feedback works as soon as the user starts using the dashboard.
  */
-const unlockAudioContext = async () => {
+const unlockAudioContext = () => {
   if (dashboard.audio) {
-    await dashboard.audio.init().catch(() => {});
+    void dashboard.audio.init();
   }
   document.removeEventListener("click", unlockAudioContext);
   document.removeEventListener("keydown", unlockAudioContext);
