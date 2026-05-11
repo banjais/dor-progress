@@ -202,11 +202,13 @@ body[data-theme="dark"]::after {
 }
 
 @keyframes pulse-glow {
+
   0%,
   100% {
     opacity: 1;
     transform: scale(1);
   }
+
   50% {
     opacity: 0.8;
     transform: scale(0.98);
@@ -217,10 +219,12 @@ body[data-theme="dark"]::after {
   .splash-titles h1 {
     font-size: 1.6rem;
   }
+
   .loading-container {
     right: 20px;
     bottom: 20px;
   }
+
   .loader-vertical-box {
     height: 80px;
   }
@@ -416,7 +420,7 @@ header h2 img {
   z-index: 2;
 }
 
-.lang-switch-container input:checked + .lang-slider:before {
+.lang-switch-container input:checked+.lang-slider:before {
   transform: translateX(28px);
 }
 
@@ -675,6 +679,30 @@ tr:hover {
   /* Highlight with primary color */
 }
 
+/* Diff View Styles */
+.diff-changed {
+  background-color: var(--selected-bg);
+  /* General change highlight */
+}
+
+.diff-improved {
+  background-color: rgba(16, 185, 129, 0.1);
+  /* Greenish for improvement */
+  color: var(--good) !important;
+}
+
+.diff-regressed {
+  background-color: rgba(239, 68, 68, 0.1);
+  /* Reddish for regression */
+  color: var(--critical) !important;
+}
+
+.diff-added {
+  background-color: rgba(147, 197, 253, 0.1);
+  /* Light blue for new rows */
+  border-left: 3px solid var(--stable);
+}
+
 /* Modal Styles */
 #modal-overlay {
   position: fixed;
@@ -851,12 +879,10 @@ tr {
 /* Skeleton Loading Styles */
 .skeleton-row td div {
   height: 12px;
-  background: linear-gradient(
-    90deg,
-    var(--bg) 25%,
-    var(--border) 50%,
-    var(--bg) 75%
-  );
+  background: linear-gradient(90deg,
+      var(--bg) 25%,
+      var(--border) 50%,
+      var(--bg) 75%);
   background-size: 200% 100%;
   animation: shimmer 1.5s infinite linear;
   border-radius: 4px;
@@ -901,6 +927,7 @@ tr {
     opacity: 0;
     transform: translateY(20px) scale(0.95);
   }
+
   to {
     opacity: 1;
     transform: translateY(0) scale(1);
@@ -1049,10 +1076,8 @@ tr {
   }
 
   75% {
-    transform: translate(
-      calc(-1 * var(--glitch-offset)),
-      calc(-1 * var(--glitch-offset))
-    );
+    transform: translate(calc(-1 * var(--glitch-offset)),
+        calc(-1 * var(--glitch-offset)));
   }
 
   100% {
@@ -1271,9 +1296,11 @@ tr {
   0% {
     background-position: 0% 50%;
   }
+
   50% {
     background-position: 100% 50%;
   }
+
   100% {
     background-position: 0% 50%;
   }
@@ -1555,7 +1582,7 @@ tr {
   }
 
   /* Memo Print Isolation Logic */
-  body.print-memo-only main > *:not(#ai-brief-card) {
+  body.print-memo-only main>*:not(#ai-brief-card) {
     display: none !important;
   }
 

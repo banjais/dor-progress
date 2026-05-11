@@ -45,7 +45,23 @@ function logErrorChain(err: any): void {
 }
 
 async function generateFingerprint(buffer: ArrayBuffer): Promise<string> {
-  const hashBuffer = await crypto.subtle.digest("SHA-256", buffer);
+  // Google Sheets PDF exports contain volatile metadata (dates/IDs) that change
+  // even if the content is identical. We scrub these to ensure a stable fingerprint.
+  const binaryString = new TextDecoder("latin1").decode(buffer);
+
+  const scrubbed = binaryString
+    .replace(/\/CreationDate\s*\([^)]+\)/g, "")
+    .replace(/\/ModDate\s*\([^)]+\)/g, "")
+    // Remove PDF Trailer IDs which are often randomized on every export
+    .replace(/\/ID\s*\[<[0-9A-F]+>\s*<[0-9A-F]+>\]/gi, "");
+
+  // Convert back to bytes for hashing
+  const scrubbedBuffer = new Uint8Array(scrubbed.length);
+  for (let i = 0; i < scrubbed.length; i++) {
+    scrubbedBuffer[i] = scrubbed.charCodeAt(i) & 0xff;
+  }
+
+  const hashBuffer = await crypto.subtle.digest("SHA-256", scrubbedBuffer);
   const hashArray = Array.from(new Uint8Array(hashBuffer));
   return hashArray.map((b) => b.toString(16).padStart(2, "0")).join("");
 }
@@ -65,10 +81,11 @@ async function verifyAppCheck(request: Request, env: Env): Promise<void> {
 
   const projectNumber = env.FIREBASE_PROJECT_NUMBER;
   const projectId = env.FIREBASE_PROJECT_ID;
+  const appId = env.FIREBASE_APP_ID;
 
-  if (!projectNumber || !projectId) {
+  if (!projectNumber || !projectId || !appId) {
     throw new ServiceError(
-      "Server configuration error: Firebase Project info missing",
+      "Server configuration error: Firebase configuration missing",
       { status: 500 },
     );
   }
@@ -77,6 +94,8 @@ async function verifyAppCheck(request: Request, env: Env): Promise<void> {
     await jwtVerify(token, JWKS, {
       issuer: `https://firebaseappcheck.googleapis.com/${projectNumber}`,
       audience: [`projects/${projectNumber}`, `projects/${projectId}`],
+      // The 'sub' claim in App Check tokens corresponds to the Firebase App ID
+      subject: appId,
       clockTolerance: "1m",
     });
   } catch (e) {
@@ -343,38 +362,62 @@ const handler: ExportedHandler<Env> = {
 
 async function handleAutoArchive(env: Env) {
   try {
-    // 1. Fetch current live data (mocking a request to our own /api/report)
-    const mockRequest = new Request("https://internal/api/report?lang=en");
-    // We can directly call logic or just fetch from Google Sheet and parse
-    // For simplicity, let's just trigger a snapshot if needed
-
-    // Fetch project data
     const pdfBuffer = await fetchProjectPdf(env);
-    // Since we need to parse the PDF to get the date, it might be heavy.
-    // Alternatively, we can use a fingerprint of the PDF to decide if it's new.
     const fingerprint = await generateFingerprint(pdfBuffer);
 
     const cacheKey = `archive_check_${fingerprint}`;
     const alreadyArchived = await env.REPORTS_KV.get(cacheKey);
 
     if (alreadyArchived) {
-      console.log("[Auto-Archive] Data hasn't changed. Skipping.");
+      console.log(
+        `[Auto-Archive] Snapshot for fingerprint ${fingerprint} already exists. Skipping.`,
+      );
       return;
     }
 
-    // If different, we should ideally parse the date from the data.
-    // Since parsing requires the full genkit flow, we'll just run it once.
-    // This will also populate the AI cache.
+    const apiKey = env.GOOGLE_GENAI_API_KEY || env.GEMINI_API_KEY;
+    if (!apiKey) throw new Error("AI API Key not configured for auto-archive");
 
-    // For now, let's assume if fingerprint is different, it's worth checking.
-    // The user wants it based on "Update Date".
+    // Convert PDF to Base64 for Gemini processing
+    let binary = "";
+    const bytes = new Uint8Array(pdfBuffer);
+    for (let i = 0; i < bytes.byteLength; i++) {
+      binary += String.fromCharCode(bytes[i]);
+    }
+    const pdfBase64 = btoa(binary);
 
-    // Actually, the most robust way is to fetch the JSON report (which has the date)
-    // and then decide.
+    // Trigger AI Extraction (defaulting to Nepali as it's the primary report language)
+    const aiResult = await runProjectSummary(apiKey, {
+      pdfBase64,
+      lang: "ne",
+    });
 
-    // I'll leave the fingerprint check as a safeguard.
-    console.log("[Auto-Archive] New data detected. Snapshot created.");
+    if (!aiResult?.extractedData) {
+      throw new Error("AI extraction failed during auto-archive procedure");
+    }
+
+    const reportDate =
+      aiResult.extractedData.date || new Date().toISOString().split("T")[0];
+    const report: ProjectReport = {
+      headers: aiResult.extractedData.headers,
+      rows: aiResult.extractedData.rows,
+      lastUpdate: reportDate,
+      aiSummary: aiResult,
+    };
+
+    // Store snapshot in REPORTS_KV
+    await env.REPORTS_KV.put(`report:${reportDate}`, JSON.stringify(report), {
+      metadata: {
+        recordCount: report.rows.length,
+        created: new Date().toISOString(),
+      },
+    });
+
+    // Update fingerprint cache to prevent duplicate archiving
     await env.REPORTS_KV.put(cacheKey, "true", { expirationTtl: 604800 });
+    console.log(
+      `[Auto-Archive] Successfully created snapshot for ${reportDate}`,
+    );
   } catch (err) {
     console.error("[Auto-Archive] Failed:", err);
   }

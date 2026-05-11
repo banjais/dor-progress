@@ -1088,6 +1088,7 @@ const I18N = {
     dbRestore: "रिस्टोर",
     dbRestoreDesc: "क्लाउडबाट डाटा रिकभर गर्नुहोस्",
     dataSyncing: "डाटा सिङ्क हुँदैछ...",
+    loadingDiff: "भिन्नता लोड गर्दै...",
     musicSelection: "पृष्ठभूमि संगीत",
     stopReading: "रोक्नुहोस्",
     preparingAudio: "तयारी...",
@@ -1124,6 +1125,10 @@ const I18N = {
     checkUpdates: "अपडेट जाँच",
     install: "इन्स्टल",
     installSuccess: "इन्स्टल सम्पन्न",
+    diffModeActive: "भिन्नता मोड सक्रिय: {{date}} सँग तुलना गर्दै",
+    diffLoadFailed: "भिन्नता लोड गर्न असफल भयो",
+    diffModeOff: "भिन्नता मोड बन्द गरियो",
+    compare: "तुलना गर्नुहोस्",
     months: [
       "वैशाख",
       "जेठ",
@@ -1232,6 +1237,10 @@ const I18N = {
     dbRestore: "Restore",
     dbRestoreDesc: "Recover data from a cloud snapshot",
     dataSyncing: "Syncing...",
+    loadingDiff: "Loading diff...",
+    diffModeActive: "Diff mode active: Comparing with {{date}}",
+    diffLoadFailed: "Failed to load diff",
+    diffModeOff: "Diff mode off",
     musicSelection: "Background Music",
     stopReading: "Stop",
     preparingAudio: "Preparing...",
@@ -1318,6 +1327,8 @@ class Dashboard {
       riskLevel: 0,
       uiVolume: parseFloat(localStorage.getItem("ui-volume") || "0.5"),
     };
+    this.state.diffMode = false;
+    this.state.compareReport = null;
 
     this.refreshCounter = 60;
     this.lastFetchTime = null;
@@ -1918,6 +1929,7 @@ async function fetchWeeklyHistory() {
         <div class="chart-card archive-item" style="display:flex; flex-direction:column; justify-content:space-between">
           <div style="display:flex; justify-content:space-between; align-items:start; margin-bottom:10px">
             <div>
+              ${dashboard.state.diffMode && dashboard.state.compareReport?.lastUpdate === h.date ? `<span style="font-size:0.6rem; background:var(--stable); color:white; padding:2px 6px; border-radius:4px; margin-right:5px;">COMPARING</span>` : ""}
               <b style="font-size:1.1rem">📅 ${h.date}</b>
               ${h.bsDate ? `<div style="font-size:0.75rem; color:var(--primary); font-weight:bold; margin-top:2px">${dashboard.state.lang === "ne" ? toNepaliNumerals(h.bsDate) : h.bsDate}</div>` : ""}
             </div>
@@ -1928,6 +1940,7 @@ async function fetchWeeklyHistory() {
           </div>
           <p style="font-size:0.8rem; opacity:0.8; margin-bottom:12px">${h.bsDate ? `${t("total")}: ${dashboard.state.lang === "ne" ? toNepaliNumerals(h.recordCount) : h.recordCount}` : h.summary || "Weekly progress snapshot."}</p>
           <div style="display:flex; gap:8px;">
+            ${dashboard.state.diffMode ? `<button onclick="dashboard.toggleDiffMode(null)" style="flex:2; border:1px solid var(--critical); background:none; color:var(--critical); padding:10px; border-radius:8px; cursor:pointer; font-weight:bold">${t("diffModeOff")}</button>` : `<button onclick="dashboard.toggleDiffMode('${h.date}')" style="flex:2; border:1px solid var(--stable); background:none; color:var(--stable); padding:10px; border-radius:8px; cursor:pointer; font-weight:bold">↔️ ${t("compare")}</button>`}
             <button onclick="loadSnapshot('${h.date}')" style="flex:2; border:1px solid var(--primary); background:none; color:var(--primary); padding:10px; border-radius:8px; cursor:pointer; font-weight:bold">${t("viewData")}</button>
             <button onclick="quickPrintSnapshot('${h.date}')" title="Direct Print" style="flex:1; border:1px solid var(--border); background:rgba(0,0,0,0.03); color:var(--text); padding:10px; border-radius:8px; cursor:pointer; font-size:1rem">🖨️</button>
           </div>
@@ -3631,6 +3644,14 @@ function render(json) {
   const headers = json.headers || [];
   let rows = [...(json.rows || [])];
 
+  let compareMap = new Map();
+  if (dashboard.state.diffMode && dashboard.state.compareReport) {
+    const primaryKey = headers[0];
+    dashboard.state.compareReport.rows.forEach((r) =>
+      compareMap.set(r[primaryKey], r),
+    );
+  }
+
   // Handle Global Admin Message
   const banner = document.getElementById("admin-banner");
   if (json.adminMessage) {
@@ -3832,9 +3853,13 @@ function render(json) {
   } else {
     rows.forEach((r) => {
       const name = r[headers[0]] || "";
+      let rowClasses = "";
+      if (dashboard.state.diffMode && !compareMap.has(name)) {
+        rowClasses += "diff-added"; // New row in current report
+      }
       const annualPerc = getProgress(r, headers);
       // Using data attributes for event delegation
-      tbody += `<tr data-indicator-name="${name.replace(/"/g, "&quot;")}">`; // Escape quotes for HTML attribute
+      tbody += `<tr data-indicator-name="${name.replace(/"/g, "&quot;")}" class="${rowClasses}">`; // Escape quotes for HTML attribute
       tbody += `<td>
             <div style="display:flex; align-items:center; gap:8px;">
               ${renderMiniChart(annualPerc, true)}
@@ -3845,12 +3870,37 @@ function render(json) {
       headers.forEach((h, i) => {
         let val = t(r[h]); // Translate ALL data content automatically
 
+        let cellClass = "";
+        let diffValue = "";
+
+        if (dashboard.state.diffMode && compareMap.has(name)) {
+          const compareRow = compareMap.get(name);
+          const currentVal = r[h];
+          const prevVal = compareRow[h];
+
+          if (String(currentVal) !== String(prevVal)) {
+            cellClass = "diff-changed";
+            // Attempt to parse as number for numerical diff
+            const currentNum = parseFloat(String(currentVal).replace(/,/g, ""));
+            const prevNum = parseFloat(String(prevVal).replace(/,/g, ""));
+
+            if (!isNaN(currentNum) && !isNaN(prevNum)) {
+              const diff = currentNum - prevNum;
+              diffValue = ` (${diff > 0 ? "+" : ""}${dashboard.state.lang === "ne" ? toNepaliNumerals(diff) : diff})`;
+              if (diff > 0) cellClass = "diff-improved";
+              else if (diff < 0) cellClass = "diff-regressed";
+            } else {
+              // Textual change
+              diffValue = ` (was: ${t(prevVal)})`; // Show previous value for text changes
+            }
+          }
+        }
+
         if (highlightRegex) {
           val = String(val).replace(highlightRegex, "<b>$1</b>");
         }
 
         // Convert to Nepali numerals AFTER potential highlighting
-
         const isStatus = h.toLowerCase().includes("status") || i === 0;
         const color = isStatus
           ? r._status === "good"
@@ -3858,8 +3908,8 @@ function render(json) {
             : r._status === "critical"
               ? "var(--critical)"
               : "var(--stable)"
-          : "inherit";
-        tbody += `<td style="color:${color}; font-weight:${isStatus ? 700 : 400}">${val}</td>`;
+          : "var(--text)"; // Default text color
+        tbody += `<td class="${cellClass}" style="color:${color}; font-weight:${isStatus ? 700 : 400}">${val}${diffValue}</td>`;
       });
       tbody += "</tr>";
     });
