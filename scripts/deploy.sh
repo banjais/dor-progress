@@ -146,9 +146,9 @@ VERSION=$(node -p "require('./package.json').version")
 # 7. Full Build (compile + copy + inject + verify)
 echo "🏗️  Starting Fresh Build..."
 
-if [ -f "d:/LNB/dor-progress/src/sw.v2.js" ]; then
+if [ -f "src/sw.v2.js" ]; then
     echo "💉 Injecting version v${VERSION} into src/sw.v2.js..."
-    sed -i "s/const VERSION = .*/const VERSION = \"v${VERSION}\";/" d:/LNB/dor-progress/src/sw.v2.js
+    sed -i "s/const VERSION = .*/const VERSION = \"v${VERSION}\";/" src/sw.v2.js
     echo "   ✅ Version updated."
 fi
 

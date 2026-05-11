@@ -137,7 +137,7 @@ async function checkFreshInstall() {
       const backups = await res.json();
       if (backups.length > 0) {
         const confirmRestore = confirm(
-          currentLang === "en"
+          dashboard.state.lang === "en"
             ? "Fresh Install Detected. Would you like to restore your settings and analytics from a Cloud Backup?"
             : "नयाँ इन्स्टल फेला पर्यो। के तपाईं क्लाउड ब्याकअपबाट आफ्ना सेटिङहरू र तथ्याङ्कहरू रिस्टोर गर्न चाहनुहुन्छ?",
         );
@@ -292,8 +292,12 @@ async function authenticatedFetch(path, options = {}, maxRetries = 3) {
 
         if (isStale) {
           dashboard.addToast("info", t("dataSyncing"), 2000);
-          if (this.syncToast) this.syncToast.click();
-          this.syncToast = this.addToast("info", t("dataSyncing"), -1);
+          if (dashboard.syncToast) dashboard.syncToast.click();
+          dashboard.syncToast = dashboard.addToast(
+            "info",
+            t("dataSyncing"),
+            -1,
+          );
         } else if (isFromCache) {
           const ageStr = cacheTime
             ? getRelativeTimeString(parseInt(cacheTime))
@@ -768,7 +772,7 @@ window.shareAiBriefAudio = async () => {
 
 window.toggleReadAloud = () => {
   const container = document.getElementById("ai-brief-text");
-  if (container) speechEngine.toggle(container);
+  if (container) dashboard.speech.toggle(container);
 };
 
 function typeText(element, text, useSound = false) {
@@ -783,7 +787,7 @@ function typeText(element, text, useSound = false) {
   element._timer = setInterval(() => {
     if (i < text.length) {
       element.innerText += text.charAt(i);
-      if (useSound) playTypeSound();
+      if (useSound) dashboard.audio.playUi("type");
       i++;
     } else {
       clearInterval(element._timer);
@@ -1673,7 +1677,8 @@ document.addEventListener("mousemove", (e) => {
     const title = kpi.innerText.toLowerCase();
     if (title.includes("attention") || title.includes("ध्यान")) {
       typeText(auraText, t("auraAnalyzing"));
-      if (!auraHalo.classList.contains("critical")) playPing();
+      if (!auraHalo.classList.contains("critical"))
+        dashboard.audio.playUi("alert");
       auraGlow.classList.add("pulsing");
       auraHalo.classList.add("critical");
 
@@ -3828,7 +3833,7 @@ function render(json) {
         "beforebegin",
         '<canvas id="ai-visualizer" width="400" height="40" style="width:100%; height:40px; margin-bottom:12px; border-radius:8px; opacity:0.6"></canvas>',
       );
-      audioEngine.startVisualizer(document.getElementById("ai-visualizer"));
+      dashboard.audio.startVisualizer(document.getElementById("ai-visualizer"));
     }
     typeText(container, briefText, true); // Type out with shimmer and sound
   }
