@@ -33,6 +33,8 @@ jobs:
           PUBLISHED_SHEET_ID: ${{ secrets.PUBLISHED_SHEET_ID }}
           FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
           RECAPTCHA_SITE_KEY: ${{ secrets.RECAPTCHA_SITE_KEY }}
+          MONITORING_SECRET: ${{ secrets.MONITORING_SECRET }} # Add this line
+          APP_CHECK_DEBUG_TOKEN: ${{ secrets.APP_CHECK_DEBUG_TOKEN }}
           APP_URL: https://dor-progress.web.app
 
       - name: Audit Dependencies
@@ -90,6 +92,7 @@ jobs:
           VITE_COMMIT_SHA: ${{ github.sha }}
           API_BASE_URL: https://dor-progress.web.app
           VITE_API_BASE_URL: https://dor-progress.web.app
+          APP_CHECK_DEBUG_TOKEN: ${{ secrets.APP_CHECK_DEBUG_TOKEN }}
 
       - name: Verify Build Artifacts
         run: npx tsx scripts/verify-build.js

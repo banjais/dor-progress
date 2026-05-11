@@ -21,6 +21,8 @@ const REQUIRED_SECRETS = [
   "PUBLISHED_SHEET_ID",
   "FIREBASE_SERVICE_ACCOUNT",
   "RECAPTCHA_SITE_KEY",
+  "MONITORING_SECRET", // Add this line
+  "APP_CHECK_DEBUG_TOKEN",
 ];
 
 // Purpose map for "Why" explanation
@@ -211,6 +213,7 @@ const firebaseKeys = [
   "FIREBASE_APP_ID",
   "FIREBASE_MEASUREMENT_ID",
   "RECAPTCHA_SITE_KEY",
+  "MONITORING_SECRET", // Add this for live config check
 ];
 for (const key of firebaseKeys) {
   console.log(`     • ${key}`);

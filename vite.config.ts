@@ -8,11 +8,11 @@ export default defineConfig({
   build: {
     outDir: ".build",
     emptyOutDir: true,
-rollupOptions: {
-       input: {
-         main: path.resolve(__dirname, "index.html"),
-       },
-     },
+    rollupOptions: {
+      input: {
+        main: path.resolve(__dirname, "index.html"),
+      },
+    },
   },
   server: {
     port: 3000,
@@ -64,11 +64,20 @@ rollupOptions: {
     "import.meta.env.VITE_COMMIT_SHA": JSON.stringify(
       process.env.COMMIT_SHA || process.env.GITHUB_SHA || "production",
     ),
-    "import.meta.env.VITE_APP_ENV": JSON.stringify(process.env.VITE_APP_ENV || "production"),
-    WORKER_BASE: JSON.stringify(process.env.API_BASE_URL || "https://dor-progress.banjays.workers.dev"),
+    "import.meta.env.VITE_APP_ENV": JSON.stringify(
+      process.env.VITE_APP_ENV || "production",
+    ),
+    WORKER_BASE: JSON.stringify(
+      process.env.API_BASE_URL || "https://dor-progress.banjays.workers.dev",
+    ),
     APP_ENV: JSON.stringify(process.env.VITE_APP_ENV || "production"),
     APP_VERSION: JSON.stringify("1.0.131"),
     BUILD_ID: JSON.stringify(new Date().toISOString()),
-    COMMIT_SHA: JSON.stringify(process.env.COMMIT_SHA || process.env.GITHUB_SHA || "production"),
+    COMMIT_SHA: JSON.stringify(
+      process.env.COMMIT_SHA || process.env.GITHUB_SHA || "production",
+    ),
+    APP_CHECK_DEBUG_TOKEN: JSON.stringify(
+      process.env.APP_CHECK_DEBUG_TOKEN || false,
+    ),
   },
 });

@@ -177,9 +177,14 @@ async function setupSecurity() {
 
     if (
       location.hostname === "localhost" ||
-      location.hostname === "127.0.0.1"
+      location.hostname === "127.0.0.1" ||
+      (typeof APP_ENV !== "undefined" && APP_ENV === "test")
     ) {
-      self.FIREBASE_APPCHECK_DEBUG_TOKEN = true;
+      // Use static debug token if available (CI), fallback to dynamic true (local)
+      self.FIREBASE_APPCHECK_DEBUG_TOKEN =
+        (typeof APP_CHECK_DEBUG_TOKEN !== "undefined" &&
+          APP_CHECK_DEBUG_TOKEN) ||
+        true;
     }
 
     updateLaunchProgress(60, "Verifying Integrity...");

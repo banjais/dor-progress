@@ -20,6 +20,7 @@ declare global {
   interface Env extends SharedEnv {
     // Specific overrides for global scope if necessary, otherwise inherits SharedEnv
     VITE_API_BASE_URL?: string;
+    MONITORING_SECRET?: string; // Add this line
   }
   type ProjectRow = SharedProjectRow;
   type AiSummary = SharedAiSummary;

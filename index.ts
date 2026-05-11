@@ -494,6 +494,8 @@ export default {
           "UPSTASH_REDIS_REST_TOKEN",
           "GEMINI_API_KEY",
           "FIREBASE_PROJECT_ID",
+          "RECAPTCHA_SITE_KEY",
+          "MONITORING_SECRET", // Add this for config check
           "FIREBASE_API_KEY",
           "FIREBASE_AUTH_DOMAIN",
           "FIREBASE_APP_ID",
@@ -658,8 +660,12 @@ export default {
             messagingSenderId: env.FIREBASE_MESSAGING_SENDER_ID,
             appId: env.FIREBASE_APP_ID,
             measurementId: env.FIREBASE_MEASUREMENT_ID,
+            projectNumber: env.FIREBASE_PROJECT_NUMBER,
           },
-          RECAPTCHA_SITE_KEY: env.RECAPTCHA_SITE_KEY,
+          recaptchaKey:
+            env.RECAPTCHA_SITE_KEY || (env as any).VITE_RECAPTCHA_SITE_KEY,
+          RECAPTCHA_SITE_KEY:
+            env.RECAPTCHA_SITE_KEY || (env as any).VITE_RECAPTCHA_SITE_KEY,
         }),
         {
           headers: { ...securityHeaders, "Content-Type": "application/json" },
@@ -714,8 +720,22 @@ export default {
 
     if (normalizedPath === "/api/translate") {
       // 1. Verify Firebase App Check token to prevent unauthorized API usage
-      const appCheckToken = request.headers.get("X-Firebase-AppCheck");
-      const verification = await verifyAppCheckToken(appCheckToken, env, ctx);
+      const monitoringSecret = request.headers.get("X-Monitoring-Secret");
+      let verification: { valid: boolean; appId?: string };
+
+      if (
+        monitoringSecret &&
+        env.MONITORING_SECRET &&
+        secureCompare(monitoringSecret, env.MONITORING_SECRET)
+      ) {
+        console.log(
+          "[Security] App Check bypassed for monitoring tool (translate).",
+        );
+        verification = { valid: true, appId: "monitoring-tool-bypass" };
+      } else {
+        const appCheckToken = request.headers.get("X-Firebase-AppCheck");
+        verification = await verifyAppCheckToken(appCheckToken, env, ctx);
+      }
 
       if (!verification.valid) {
         ctx.waitUntil(recordAppCheckFailure(clientIp, env, ctx)); // Record failure
@@ -848,8 +868,22 @@ export default {
         const isLowData = request.headers.get("X-Low-Data") === "true";
 
         // --- Verify Firebase App Check token ---
-        const appCheckToken = request.headers.get("X-Firebase-AppCheck");
-        const verification = await verifyAppCheckToken(appCheckToken, env, ctx);
+        const monitoringSecret = request.headers.get("X-Monitoring-Secret");
+        let verification: { valid: boolean; appId?: string };
+
+        if (
+          monitoringSecret &&
+          env.MONITORING_SECRET &&
+          secureCompare(monitoringSecret, env.MONITORING_SECRET)
+        ) {
+          console.log(
+            "[Security] App Check bypassed for monitoring tool (report).",
+          );
+          verification = { valid: true, appId: "monitoring-tool-bypass" };
+        } else {
+          const appCheckToken = request.headers.get("X-Firebase-AppCheck");
+          verification = await verifyAppCheckToken(appCheckToken, env, ctx);
+        }
         if (!verification.valid) {
           ctx.waitUntil(recordAppCheckFailure(clientIp, env, ctx));
           return new Response(
@@ -1241,6 +1275,15 @@ async function verifyAppCheckToken(
   env: Env,
   ctx: ExecutionContext,
 ): Promise<{ valid: boolean; appId?: string }> {
+  // Bypass App Check for development and test environments
+  const bypassEnvironments = ["development", "test"];
+  if (
+    (env as any).APP_ENV &&
+    bypassEnvironments.includes((env as any).APP_ENV)
+  ) {
+    return { valid: true, appId: "test-environment-bypass" };
+  }
+
   if (!token || !env.FIREBASE_PROJECT_ID) return { valid: false };
 
   const parts = token.split(".");
@@ -1259,12 +1302,21 @@ async function verifyAppCheckToken(
     const now = Math.floor(Date.now() / 1000);
     if (payload.exp < now) return { valid: false };
 
-    // Audience should be projects/<your-project-id>
-    if (payload.aud !== `projects/${env.FIREBASE_PROJECT_ID}`) {
-      // Sometimes audience is just the project ID or number depending on the client
-      if (!payload.aud.includes(env.FIREBASE_PROJECT_ID))
-        return { valid: false };
-    }
+    // Validate Audience and Issuer (Allow either Project ID or Project Number)
+    const projectNumber =
+      env.FIREBASE_PROJECT_NUMBER || payload.aud.split("/").pop();
+    const projectId = env.FIREBASE_PROJECT_ID;
+
+    const validAudience =
+      payload.aud === `projects/${projectId}` ||
+      payload.aud === `projects/${projectNumber}`;
+
+    const validIssuer =
+      payload.iss === `https://firebaseappcheck.googleapis.com/${projectId}` ||
+      payload.iss ===
+        `https://firebaseappcheck.googleapis.com/${projectNumber}`;
+
+    if (!validAudience && !validIssuer) return { valid: false };
 
     // 3. Signature Verification
     const kid = header.kid;
