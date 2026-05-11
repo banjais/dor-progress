@@ -1,19 +1,17 @@
 {
   "compilerOptions": {
     "target": "ESNext",
-    "lib": [
-      "ESNext"
-    ],
-    "types": [
-      "@cloudflare/workers-types"
-    ],
+    "lib": ["ESNext"],
+    "types": ["@cloudflare/workers-types"],
     "module": "NodeNext",
     "moduleResolution": "NodeNext",
     "strict": false,
     "noImplicitAny": false,
     "skipLibCheck": true,
-    "composite": true,
-    "resolveJsonModule": true
+    "composite": false,
+    "resolveJsonModule": true,
+    "sourceMap": true,
+    "inlineSources": true
   },
   "include": [
     "src/**/*",
@@ -22,9 +20,5 @@
     "index.ts",
     "ai-service.ts"
   ],
-  "exclude": [
-    "node_modules",
-    ".build",
-    "scripts/index.ts"
-  ]
+  "exclude": ["node_modules", ".build", "dist", ".wrangler", "scripts/index.ts"]
 }

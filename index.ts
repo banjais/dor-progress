@@ -30,12 +30,15 @@ function getReportsKV(env: Env) {
   return (env as any).STAGING_REPORTS_KV || env.REPORTS_KV;
 }
 
-/** 
+/**
  * Derive TranslationKey from the 'ne' keys in the JSON.
  * This ensures the type and data stay perfectly in sync.
  */
 type TranslationKey = keyof (typeof dictionaryData)["ne"];
-const DICTIONARY = dictionaryData as Record<string, Record<TranslationKey, string>>;
+const DICTIONARY = dictionaryData as Record<
+  string,
+  Record<TranslationKey, string>
+>;
 
 // Type for AI prompts
 type AiPrompts = typeof aiPromptsData;
@@ -116,7 +119,7 @@ async function verifyAdminSecret(request: Request, env: Env): Promise<boolean> {
   if (!providedSecret) return false;
 
   const now = Date.now();
-  if (!cachedAdminSecret || (now - lastSecretFetch > SECRET_CACHE_TTL)) {
+  if (!cachedAdminSecret || now - lastSecretFetch > SECRET_CACHE_TTL) {
     cachedAdminSecret = await getTranslationKV(env).get("config:admin_secret");
     lastSecretFetch = now;
   }
@@ -159,8 +162,8 @@ async function recordAppCheckFailure(
   currentCount++;
 
   // Store updated count with a short expiration (e.g., 10 minutes)
-    ctx.waitUntil(
-      getTranslationKV(env).put(failCountKey, currentCount.toString(), {
+  ctx.waitUntil(
+    getTranslationKV(env).put(failCountKey, currentCount.toString(), {
       expirationTtl: COOL_OFF_SECONDS,
     }),
   );
@@ -182,7 +185,9 @@ async function recordAppCheckFailure(
  * Checks if an IP is currently banned.
  */
 async function isIpBanned(ip: string, env: Env): Promise<boolean> {
-  return (await getTranslationKV(env).get(BANNED_IP_KEY_PREFIX + ip)) === "true";
+  return (
+    (await getTranslationKV(env).get(BANNED_IP_KEY_PREFIX + ip)) === "true"
+  );
 }
 
 /**
@@ -255,7 +260,12 @@ async function getRedisCache(key: string, env: Env): Promise<string | null> {
   return data.result ?? null;
 }
 
-async function setRedisCache(key: string, val: string, env: Env, ttl: number = 604800): Promise<void> {
+async function setRedisCache(
+  key: string,
+  val: string,
+  env: Env,
+  ttl: number = 604800,
+): Promise<void> {
   if (!env.UPSTASH_REDIS_REST_URL) return;
   const baseUrl = env.UPSTASH_REDIS_REST_URL.replace(/\/$/, "");
   const cmd = ["SET", key, val, "EX", ttl];
@@ -268,17 +278,23 @@ async function setRedisCache(key: string, val: string, env: Env, ttl: number = 6
 
 async function incrRedis(key: string, env: Env): Promise<number | null> {
   if (!env.UPSTASH_REDIS_REST_URL) return null;
-  const res = await fetch(`${env.UPSTASH_REDIS_REST_URL.replace(/\/$/, "")}/incr/${key}`, {
-    headers: { Authorization: `Bearer ${env.UPSTASH_REDIS_REST_TOKEN}` },
-  });
+  const res = await fetch(
+    `${env.UPSTASH_REDIS_REST_URL.replace(/\/$/, "")}/incr/${key}`,
+    {
+      headers: { Authorization: `Bearer ${env.UPSTASH_REDIS_REST_TOKEN}` },
+    },
+  );
   return res.ok ? ((await res.json()) as { result: number }).result : null;
 }
 
 async function expireRedis(key: string, ttl: number, env: Env): Promise<void> {
   if (!env.UPSTASH_REDIS_REST_URL) return;
-  await fetch(`${env.UPSTASH_REDIS_REST_URL.replace(/\/$/, "")}/expire/${key}/${ttl}`, {
-    headers: { Authorization: `Bearer ${env.UPSTASH_REDIS_REST_TOKEN}` },
-  });
+  await fetch(
+    `${env.UPSTASH_REDIS_REST_URL.replace(/\/$/, "")}/expire/${key}/${ttl}`,
+    {
+      headers: { Authorization: `Bearer ${env.UPSTASH_REDIS_REST_TOKEN}` },
+    },
+  );
 }
 
 /**
@@ -292,12 +308,12 @@ export async function translateWithGemini(
 ): Promise<{
   translated: string;
   source:
-  | "dictionary"
-  | "gemini"
-  | "cache"
-  | "fallback"
-  | "circuit-breaker"
-  | "low-data";
+    | "dictionary"
+    | "gemini"
+    | "cache"
+    | "fallback"
+    | "circuit-breaker"
+    | "low-data";
 }> {
   // 1. Circuit breaker check
   if (await isCircuitBreakerOpen(env)) {
@@ -351,7 +367,7 @@ export async function translateWithGemini(
   try {
     const translated = await runTranslation(apiKey, {
       text,
-      targetLang
+      targetLang,
     });
 
     // Cache successful translation for 7 days
@@ -464,7 +480,10 @@ export default {
 
     if (normalizedPath.startsWith("/api/admin/")) {
       if (!(await verifyAdminSecret(request, env))) {
-        return new Response("Unauthorized", { status: 401, headers: securityHeaders });
+        return new Response("Unauthorized", {
+          status: 401,
+          headers: securityHeaders,
+        });
       }
 
       if (normalizedPath === "/api/admin/config-check") {
@@ -491,13 +510,13 @@ export default {
             const isString = typeof v === "string";
             results[k] = isString
               ? {
-                status: "LOADED",
-                length: v.length,
-                preview:
-                  v.length > 8
-                    ? `${v.substring(0, 4)}...${v.slice(-4)}`
-                    : "****",
-              }
+                  status: "LOADED",
+                  length: v.length,
+                  preview:
+                    v.length > 8
+                      ? `${v.substring(0, 4)}...${v.slice(-4)}`
+                      : "****",
+                }
               : { status: "LOADED", type: typeof v };
           } else {
             results[k] = { status: "NOT_FOUND" };
@@ -572,7 +591,10 @@ export default {
       }
 
       // Admin API: Purge specific translations or the entire manifest
-      if (normalizedPath === "/api/admin/purge-cache" && request.method === "POST") {
+      if (
+        normalizedPath === "/api/admin/purge-cache" &&
+        request.method === "POST"
+      ) {
         const body = (await request.json().catch(() => ({}))) as {
           text?: string;
           targetLang?: string;
@@ -582,47 +604,68 @@ export default {
         // Option A: Purge the entire translations.json manifest
         if (body.type === "manifest") {
           await getTranslationKV(env).delete("translations");
-          return new Response(JSON.stringify({ success: true, message: "Translations manifest purged." }), {
-            headers: { ...securityHeaders, "Content-Type": "application/json" },
-          });
+          return new Response(
+            JSON.stringify({
+              success: true,
+              message: "Translations manifest purged.",
+            }),
+            {
+              headers: {
+                ...securityHeaders,
+                "Content-Type": "application/json",
+              },
+            },
+          );
         }
 
         // Option B: Purge a specific translation entry (requires original text and lang)
         if (body.text && body.targetLang) {
           const key = makeCacheKey(body.text, body.targetLang);
           await getTranslationKV(env).delete(key);
-          return new Response(JSON.stringify({ success: true, purgedKey: key }), {
-            headers: { ...securityHeaders, "Content-Type": "application/json" },
-          });
+          return new Response(
+            JSON.stringify({ success: true, purgedKey: key }),
+            {
+              headers: {
+                ...securityHeaders,
+                "Content-Type": "application/json",
+              },
+            },
+          );
         }
 
-        return new Response(JSON.stringify({ error: "Invalid parameters. Provide 'type: manifest' or both 'text' and 'targetLang'." }), {
-          status: 400,
-          headers: { ...securityHeaders, "Content-Type": "application/json" },
-        });
+        return new Response(
+          JSON.stringify({
+            error:
+              "Invalid parameters. Provide 'type: manifest' or both 'text' and 'targetLang'.",
+          }),
+          {
+            status: 400,
+            headers: { ...securityHeaders, "Content-Type": "application/json" },
+          },
+        );
       }
     }
 
-     // Public API: Client Config (Firebase/Recaptcha keys)
-     if (normalizedPath === "/api/client-config") {
-       return new Response(
-         JSON.stringify({
-           firebase: {
-             apiKey: env.FIREBASE_API_KEY,
-             authDomain: env.FIREBASE_AUTH_DOMAIN,
-             projectId: env.FIREBASE_PROJECT_ID,
-             storageBucket: env.FIREBASE_STORAGE_BUCKET,
-             messagingSenderId: env.FIREBASE_MESSAGING_SENDER_ID,
-             appId: env.FIREBASE_APP_ID,
-             measurementId: env.FIREBASE_MEASUREMENT_ID,
-           },
-           RECAPTCHA_SITE_KEY: env.RECAPTCHA_SITE_KEY,
-         }),
-         {
-           headers: { ...securityHeaders, "Content-Type": "application/json" },
-         },
-       );
-     }
+    // Public API: Client Config (Firebase/Recaptcha keys)
+    if (normalizedPath === "/api/client-config") {
+      return new Response(
+        JSON.stringify({
+          firebase: {
+            apiKey: env.FIREBASE_API_KEY,
+            authDomain: env.FIREBASE_AUTH_DOMAIN,
+            projectId: env.FIREBASE_PROJECT_ID,
+            storageBucket: env.FIREBASE_STORAGE_BUCKET,
+            messagingSenderId: env.FIREBASE_MESSAGING_SENDER_ID,
+            appId: env.FIREBASE_APP_ID,
+            measurementId: env.FIREBASE_MEASUREMENT_ID,
+          },
+          RECAPTCHA_SITE_KEY: env.RECAPTCHA_SITE_KEY,
+        }),
+        {
+          headers: { ...securityHeaders, "Content-Type": "application/json" },
+        },
+      );
+    }
 
     // API: Serve translations.json
     if (normalizedPath === "/api/translations") {
@@ -720,7 +763,10 @@ export default {
         texts = [queryText];
       } else if (request.method === "POST") {
         // Support batching via POST JSON body, fallback to query param
-        const body = (await request.json().catch(() => ({}))) as { texts?: string[]; text?: string };
+        const body = (await request.json().catch(() => ({}))) as {
+          texts?: string[];
+          text?: string;
+        };
         if (Array.isArray(body.texts)) {
           texts = body.texts;
         } else if (body.text) {
@@ -740,7 +786,7 @@ export default {
 
       // Process translations (batch or single)
       const results = await Promise.all(
-        texts.map(t => translateWithGemini(t, targetLang, env, lowData))
+        texts.map((t) => translateWithGemini(t, targetLang, env, lowData)),
       );
 
       // Basic rate limiting for public endpoint (stricter)
@@ -748,13 +794,24 @@ export default {
       const isRateLimited = await getRedisCache(translateKey, env);
 
       // Set rate limit cache if any were not circuit-broken
-      if (results.some(r => r.source !== "circuit-breaker")) {
+      if (results.some((r) => r.source !== "circuit-breaker")) {
         await setRedisCache(translateKey, "active", env, 60);
       }
 
-      const responseData = request.method === "POST"
-        ? { results: results.map((r, i) => ({ original: texts[i], translated: r.translated, source: r.source })) }
-        : { original: texts[0], translated: results[0].translated, source: results[0].source };
+      const responseData =
+        request.method === "POST"
+          ? {
+              results: results.map((r, i) => ({
+                original: texts[i],
+                translated: r.translated,
+                source: r.source,
+              })),
+            }
+          : {
+              original: texts[0],
+              translated: results[0].translated,
+              source: results[0].source,
+            };
 
       return new Response(JSON.stringify(responseData), {
         status: 200,
@@ -772,10 +829,18 @@ export default {
         let date: string | undefined = undefined;
         if (rawDate) {
           if (!/^\d{4}-\d{2}-\d{2}$/.test(rawDate)) {
-            return new Response(JSON.stringify({ error: "Invalid date format, expected YYYY-MM-DD" }), {
-              status: 400,
-              headers: { ...securityHeaders, "Content-Type": "application/json" },
-            });
+            return new Response(
+              JSON.stringify({
+                error: "Invalid date format, expected YYYY-MM-DD",
+              }),
+              {
+                status: 400,
+                headers: {
+                  ...securityHeaders,
+                  "Content-Type": "application/json",
+                },
+              },
+            );
           }
           date = rawDate;
         }
@@ -787,14 +852,24 @@ export default {
         const verification = await verifyAppCheckToken(appCheckToken, env, ctx);
         if (!verification.valid) {
           ctx.waitUntil(recordAppCheckFailure(clientIp, env, ctx));
-          return new Response(JSON.stringify({ error: "Unauthorized: App Check verification failed." }), {
-            status: 401,
-            headers: { ...securityHeaders, "Content-Type": "application/json" },
-          });
+          return new Response(
+            JSON.stringify({
+              error: "Unauthorized: App Check verification failed.",
+            }),
+            {
+              status: 401,
+              headers: {
+                ...securityHeaders,
+                "Content-Type": "application/json",
+              },
+            },
+          );
         }
 
         // --- Helper: generate SHA-256 fingerprint from an ArrayBuffer ---
-        const generateBufferFingerprint = async (buffer: ArrayBuffer): Promise<string> => {
+        const generateBufferFingerprint = async (
+          buffer: ArrayBuffer,
+        ): Promise<string> => {
           const hashBuffer = await crypto.subtle.digest("SHA-256", buffer);
           const hashArray = Array.from(new Uint8Array(hashBuffer));
           return hashArray.map((b) => b.toString(16).padStart(2, "0")).join("");
@@ -817,7 +892,10 @@ export default {
                 statusText: response.statusText,
                 headers: { ...Object.fromEntries(response.headers as any) },
               });
-              cachedResponse.headers.set("Cache-Control", "public, max-age=300");
+              cachedResponse.headers.set(
+                "Cache-Control",
+                "public, max-age=300",
+              );
               await cache.put(publishedUrl, cachedResponse);
             }
           }
@@ -840,12 +918,22 @@ export default {
 
         if (date) {
           // Archived report: fetch from KV
-          const archived = (await getReportsKV(env).get(`report:${date}`, { type: "json" })) as ProjectReport | null;
+          const archived = (await getReportsKV(env).get(`report:${date}`, {
+            type: "json",
+          })) as ProjectReport | null;
           if (!archived) {
-            return new Response(JSON.stringify({ error: `Archived report for ${date} not found.` }), {
-              status: 404,
-              headers: { ...securityHeaders, "Content-Type": "application/json" },
-            });
+            return new Response(
+              JSON.stringify({
+                error: `Archived report for ${date} not found.`,
+              }),
+              {
+                status: 404,
+                headers: {
+                  ...securityHeaders,
+                  "Content-Type": "application/json",
+                },
+              },
+            );
           }
           return new Response(JSON.stringify(archived), {
             status: 200,
@@ -860,7 +948,9 @@ export default {
             const cacheKey = `ai_summary_${lang}_${fingerprint}`;
             let aiResult: AiSummary | null = forceRefresh
               ? null
-              : ((await getReportsKV(env).get(cacheKey, { type: "json" })) as AiSummary | null);
+              : ((await getReportsKV(env).get(cacheKey, {
+                  type: "json",
+                })) as AiSummary | null);
 
             if (!aiResult && pdfBuffer) {
               // Convert ArrayBuffer to base64
@@ -877,15 +967,19 @@ export default {
                   const apiKey = env.GOOGLE_GENAI_API_KEY || env.GEMINI_API_KEY;
                   if (!apiKey) throw new Error("AI API Key not configured");
 
-              aiResult = await summarizePdf(apiKey, {
-                pdfBase64,
-                lang,
-              });
+                  aiResult = await summarizePdf(apiKey, {
+                    pdfBase64,
+                    lang,
+                  });
                   if (aiResult?.brief) {
                     ctx.waitUntil(
-                      getReportsKV(env).put(cacheKey, JSON.stringify(aiResult), {
-                        expirationTtl: 604800, // 7 days
-                      }),
+                      getReportsKV(env).put(
+                        cacheKey,
+                        JSON.stringify(aiResult),
+                        {
+                          expirationTtl: 604800, // 7 days
+                        },
+                      ),
                     );
                   }
                   break;
@@ -909,10 +1003,13 @@ export default {
         });
       } catch (err: any) {
         console.error("Report [/api/report] error:", err);
-        return new Response(JSON.stringify({ error: err.message || "Internal Server Error" }), {
-          status: err.status || 500,
-          headers: { ...securityHeaders, "Content-Type": "application/json" },
-        });
+        return new Response(
+          JSON.stringify({ error: err.message || "Internal Server Error" }),
+          {
+            status: err.status || 500,
+            headers: { ...securityHeaders, "Content-Type": "application/json" },
+          },
+        );
       }
     }
 
@@ -928,16 +1025,26 @@ export default {
         const list = await getReportsKV(env).list({ prefix, limit: 10 });
 
         if (list.keys.length === 0) {
-          return new Response(JSON.stringify({ error: `No snapshots found for ${year}-${month}.` }), {
-            status: 404,
-            headers: { ...securityHeaders, "Content-Type": "application/json" },
-          });
+          return new Response(
+            JSON.stringify({
+              error: `No snapshots found for ${year}-${month}.`,
+            }),
+            {
+              status: 404,
+              headers: {
+                ...securityHeaders,
+                "Content-Type": "application/json",
+              },
+            },
+          );
         }
 
         // Sort descending to get the latest
         list.keys.sort((a, b) => b.name.localeCompare(a.name));
         const latestKey = list.keys[0].name;
-        const report = (await getReportsKV(env).get(latestKey, { type: "json" })) as ProjectReport | null;
+        const report = (await getReportsKV(env).get(latestKey, {
+          type: "json",
+        })) as ProjectReport | null;
         if (!report) throw new Error("Latest report not found in KV");
 
         return new Response(JSON.stringify(report), {
@@ -965,10 +1072,7 @@ export default {
       // GET /api/snapshots - list all snapshots
       if (request.method === "GET" && normalizedPath === "/api/snapshots") {
         const list =
-          (await getTranslationKV(env).get(
-            SNAPSHOT_LIST_KEY,
-            "json",
-          )) || [];
+          (await getTranslationKV(env).get(SNAPSHOT_LIST_KEY, "json")) || [];
         return new Response(JSON.stringify({ snapshots: list }), {
           headers: { ...securityHeaders, "Content-Type": "application/json" },
         });
@@ -989,10 +1093,9 @@ export default {
             },
           );
         }
-        const { value: pdf, metadata } = await getTranslationKV(env).getWithMetadata(
-          `snapshot:pdf:${date}`,
-          "arrayBuffer",
-        );
+        const { value: pdf, metadata } = await getTranslationKV(
+          env,
+        ).getWithMetadata(`snapshot:pdf:${date}`, "arrayBuffer");
         if (!pdf) {
           return new Response(JSON.stringify({ error: "Snapshot not found" }), {
             status: 404,
@@ -1000,7 +1103,14 @@ export default {
           });
         }
         return new Response(pdf, {
-          headers: { ...securityHeaders, "Content-Type": "application/pdf", "X-From-Cache": "true", "X-Cache-Time": metadata?.createdAt ? new Date(metadata.createdAt).getTime().toString() : "" },
+          headers: {
+            ...securityHeaders,
+            "Content-Type": "application/pdf",
+            "X-From-Cache": "true",
+            "X-Cache-Time": metadata?.createdAt
+              ? new Date(metadata.createdAt).getTime().toString()
+              : "",
+          },
         });
       }
 
@@ -1013,7 +1123,11 @@ export default {
         const isDryRun = url.searchParams.get("dryRun") === "true";
 
         if (isDryRun) {
-          const { pdfBytes, metadata } = await generateSnapshotPdf(data, env, ctx);
+          const { pdfBytes, metadata } = await generateSnapshotPdf(
+            data,
+            env,
+            ctx,
+          );
           return new Response(pdfBytes, {
             headers: {
               ...securityHeaders,
@@ -1025,10 +1139,13 @@ export default {
         }
 
         const snapshotMeta = await createSnapshot(env, ctx, data);
-        return new Response(JSON.stringify({ success: true, metadata: snapshotMeta }), {
-          status: 201,
-          headers: { ...securityHeaders, "Content-Type": "application/json" },
-        });
+        return new Response(
+          JSON.stringify({ success: true, metadata: snapshotMeta }),
+          {
+            status: 201,
+            headers: { ...securityHeaders, "Content-Type": "application/json" },
+          },
+        );
       }
 
       // DELETE /api/snapshot?date=YYYY-MM-DD - delete snapshot
@@ -1049,10 +1166,7 @@ export default {
         await getTranslationKV(env).delete(`snapshot:pdf:${date}`);
         await getTranslationKV(env).delete(`snapshot:meta:${date}`);
         const list =
-          (await getTranslationKV(env).get(
-            SNAPSHOT_LIST_KEY,
-            "json",
-          )) || [];
+          (await getTranslationKV(env).get(SNAPSHOT_LIST_KEY, "json")) || [];
         const updated = list.filter((s) => s.date !== date);
         await getTranslationKV(env).put(
           SNAPSHOT_LIST_KEY,
@@ -1073,40 +1187,48 @@ export default {
    * Cron Trigger: Proactively refreshes JWKS cache to handle rotation
    * without impacting user request latency.
    */
-  scheduled(
-    _event: ScheduledEvent,
-    env: Env,
-    ctx: ExecutionContext,
-  ): void {
+  scheduled(_event: ScheduledEvent, env: Env, ctx: ExecutionContext): void {
     // 1. Refresh JWKS Cache (Existing logic)
-    ctx.waitUntil((async () => {
-      const response = await fetch("https://firebaseappcheck.googleapis.com/v1/jwks");
-      const jwks = await response.json();
-      await getTranslationKV(env).put("system:firebase_jwks", JSON.stringify(jwks), {
-        expirationTtl: 86400,
-        metadata: { created: Date.now() },
-      });
-    })());
+    ctx.waitUntil(
+      (async () => {
+        const response = await fetch(
+          "https://firebaseappcheck.googleapis.com/v1/jwks",
+        );
+        const jwks = await response.json();
+        await getTranslationKV(env).put(
+          "system:firebase_jwks",
+          JSON.stringify(jwks),
+          {
+            expirationTtl: 86400,
+            metadata: { created: Date.now() },
+          },
+        );
+      })(),
+    );
 
     // 2. Automated Weekly Snapshot
     // This runs based on the CRON schedule (e.g., every Sunday)
-    ctx.waitUntil((async () => {
-      try {
-        console.log("[Cron] Starting automated snapshot...");
-        // Fetch the actual data from the Google Sheet
-        const projectData = await fetchProjectData(env);
+    ctx.waitUntil(
+      (async () => {
+        try {
+          console.log("[Cron] Starting automated snapshot...");
+          // Fetch the actual data from the Google Sheet
+          const projectData = await fetchProjectData(env);
 
-        // Create the snapshot
-        // The metadata will automatically include the BS Date via our helper
-        const metadata = await createSnapshot(env, ctx, {
-          records: projectData.rows,
-          meta: { lastUpdate: new Date().toISOString() }
-        });
-        console.log(`[Cron] Snapshot created successfully for ${metadata.date} (${metadata.bsDate})`);
-      } catch (err) {
-        console.error("[Cron] Snapshot failed:", err);
-      }
-    })());
+          // Create the snapshot
+          // The metadata will automatically include the BS Date via our helper
+          const metadata = await createSnapshot(env, ctx, {
+            records: projectData.rows,
+            meta: { lastUpdate: new Date().toISOString() },
+          });
+          console.log(
+            `[Cron] Snapshot created successfully for ${metadata.date} (${metadata.bsDate})`,
+          );
+        } catch (err) {
+          console.error("[Cron] Snapshot failed:", err);
+        }
+      })(),
+    );
   },
 }; // End of export default
 
@@ -1154,12 +1276,10 @@ async function verifyAppCheckToken(
 
     // Check In-Memory Cache first
     let kvMetadata: { created: number } | null = null;
-    if (!cachedJwks || (now_ms - lastJwksFetch > JWKS_CACHE_TTL)) {
-      const { value: kvJwks, metadata } =
-        await getTranslationKV(env).getWithMetadata(
-          jwksKey,
-          "json",
-        );
+    if (!cachedJwks || now_ms - lastJwksFetch > JWKS_CACHE_TTL) {
+      const { value: kvJwks, metadata } = await getTranslationKV(
+        env,
+      ).getWithMetadata(jwksKey, "json");
 
       kvMetadata = metadata;
       if (kvJwks) {
@@ -1178,8 +1298,8 @@ async function verifyAppCheckToken(
         "https://firebaseappcheck.googleapis.com/v1/jwks",
       );
       jwks = await res.json();
-       ctx.waitUntil(
-         getTranslationKV(env).put(jwksKey, JSON.stringify(jwks), {
+      ctx.waitUntil(
+        getTranslationKV(env).put(jwksKey, JSON.stringify(jwks), {
           expirationTtl: 86400,
           metadata: { created: Date.now() },
         }),
@@ -1195,7 +1315,7 @@ async function verifyAppCheckToken(
             "https://firebaseappcheck.googleapis.com/v1/jwks",
           );
           const newJwks = await res.json();
-           await getTranslationKV(env).put(jwksKey, JSON.stringify(newJwks), {
+          await getTranslationKV(env).put(jwksKey, JSON.stringify(newJwks), {
             expirationTtl: 86400,
             metadata: { created: Date.now() },
           });
@@ -1257,12 +1377,16 @@ async function generateFingerprint(data: any[]): Promise<string> {
 /**
  * Generates an executive summary using Gemini 2.0 Flash.
  */
-async function generateAiSummary(rows: ProjectRow[], lang: "en" | "ne", env: Env): Promise<string> {
+async function generateAiSummary(
+  rows: ProjectRow[],
+  lang: "en" | "ne",
+  env: Env,
+): Promise<string> {
   const apiKey = env.GOOGLE_GENAI_API_KEY || env.GEMINI_API_KEY;
   if (!apiKey) return "Summary unavailable: API key not configured.";
 
   try {
-    const result = await runProjectSummary(apiKey, { rows, lang });
+    const result = await summarizePdf(apiKey, { rows, lang });
     return result.brief;
   } catch (err) {
     console.error("Consolidated Summary Error:", err);
@@ -1309,14 +1433,17 @@ function generateChecksum(data: unknown): string {
  * Fetches and parses project data from the configured Google Sheet.
  * Adapted for use within the Worker environment.
  */
-async function fetchProjectData(env: Env): Promise<{ headers: string[]; rows: ProjectRow[] }> {
+async function fetchProjectData(
+  env: Env,
+): Promise<{ headers: string[]; rows: ProjectRow[] }> {
   const sheetId = env.PUBLISHED_SHEET_ID;
   if (!sheetId) throw new Error("Google Sheet ID is not configured.");
 
   const publishedUrl = `https://docs.google.com/spreadsheets/d/e/${sheetId}/pub?output=csv`;
   const response = await fetch(publishedUrl);
 
-  if (!response.ok) throw new Error(`Sheet fetch failed: ${response.statusText}`);
+  if (!response.ok)
+    throw new Error(`Sheet fetch failed: ${response.statusText}`);
 
   const csvText = await response.text();
   const lines = csvText.split(/\r?\n/).filter((line) => line.trim() !== "");
@@ -1327,10 +1454,14 @@ async function fetchProjectData(env: Env): Promise<{ headers: string[]; rows: Pr
     .split(/,(?=(?:(?:[^"]*"){2})*[^"]*$)/)
     .map((h: string) => h.replace(/^"|"$/g, "").trim());
 
-  const headers = rawHeaders.map((h: string) => h.replace(/[\u200B-\u200D\uFEFF]/g, ""));
+  const headers = rawHeaders.map((h: string) =>
+    h.replace(/[\u200B-\u200D\uFEFF]/g, ""),
+  );
 
   const rows = lines.slice(1).map((line: string) => {
-    const values = line.split(/,(?=(?:(?:[^"]*"){2})*[^"]*$)/).map((v: string) => v.replace(/^"|"$/g, "").trim());
+    const values = line
+      .split(/,(?=(?:(?:[^"]*"){2})*[^"]*$)/)
+      .map((v: string) => v.replace(/^"|"$/g, "").trim());
     const row: Record<string, any> = {};
 
     headers.forEach((header: string, i: number) => {
@@ -1345,11 +1476,13 @@ async function fetchProjectData(env: Env): Promise<{ headers: string[]; rows: Pr
 
     // Dynamic calculation of progress/status
     const targetKey = headers.find(
-      (h: string) => h.includes("Annual Target") || h.includes("बार्षिक लक्ष्य"),
+      (h: string) =>
+        h.includes("Annual Target") || h.includes("बार्षिक लक्ष्य"),
     );
     const progKey = headers.find(
       (h: string) =>
-        h.includes("Annual Progress") || h.includes("हाल सम्म को बार्षिक प्रगति"),
+        h.includes("Annual Progress") ||
+        h.includes("हाल सम्म को बार्षिक प्रगति"),
     );
 
     if (targetKey && progKey) {
@@ -1357,7 +1490,8 @@ async function fetchProjectData(env: Env): Promise<{ headers: string[]; rows: Pr
       const p = parseFloat(String(row[progKey] || "0"));
       const progress = t > 0 ? Math.round((p / t) * 100) : 0;
       row._progress = progress;
-      row._status = progress >= 80 ? "good" : progress >= 40 ? "stable" : "critical";
+      row._status =
+        progress >= 80 ? "good" : progress >= 40 ? "stable" : "critical";
     }
 
     return row;
@@ -1393,14 +1527,15 @@ async function generateSnapshotPdf(
 
   // Fetch and embed Noto Sans Devanagari to support Nepali characters
   const fontKey = "system:font:noto_sans_devanagari";
-   let fontBytes = await getTranslationKV(env).get(fontKey, "arrayBuffer");
+  let fontBytes = await getTranslationKV(env).get(fontKey, "arrayBuffer");
 
   if (!fontBytes) {
-    const fontUrl = "https://fonts.gstatic.com/s/notosansdevanagari/v28/wf5m9WB_V9fNqbfVp-9ueS5mF-X_S-zY.ttf";
+    const fontUrl =
+      "https://fonts.gstatic.com/s/notosansdevanagari/v28/wf5m9WB_V9fNqbfVp-9ueS5mF-X_S-zY.ttf";
     const res = await fetch(fontUrl);
     if (!res.ok) throw new Error("Failed to fetch Noto Sans font from CDN");
     fontBytes = await res.arrayBuffer();
-     ctx.waitUntil(getTranslationKV(env).put(fontKey, fontBytes));
+    ctx.waitUntil(getTranslationKV(env).put(fontKey, fontBytes));
   }
 
   if (!fontBytes || fontBytes.byteLength === 0) {
@@ -1453,7 +1588,8 @@ async function generateSnapshotPdf(
   y -= 20;
 
   const records = data.records || [];
-  for (let i = 0; i < Math.min(records.length, 50); i++) { // Limit to 50 records for brevity in PDF
+  for (let i = 0; i < Math.min(records.length, 50); i++) {
+    // Limit to 50 records for brevity in PDF
     const record = records[i] as Record<string, unknown>;
     const text = `${i + 1}. ${JSON.stringify(record).substring(0, 100)}`;
     page.drawText(text, {
@@ -1494,10 +1630,7 @@ async function enforceRetentionPolicy(
   ctx: ExecutionContext,
 ): Promise<void> {
   const list =
-    (await getTranslationKV(env).get(
-      SNAPSHOT_LIST_KEY,
-      "json",
-    )) || [];
+    (await getTranslationKV(env).get(SNAPSHOT_LIST_KEY, "json")) || [];
   if (list.length <= SNAPSHOT_RETENTION_COUNT) return;
 
   const toDelete = list.slice(SNAPSHOT_RETENTION_COUNT);
@@ -1531,10 +1664,7 @@ async function createSnapshot(
   );
 
   const list =
-    (await getTranslationKV(env).get(
-      SNAPSHOT_LIST_KEY,
-      "json",
-    )) || [];
+    (await getTranslationKV(env).get(SNAPSHOT_LIST_KEY, "json")) || [];
   const existingIndex = list.findIndex((s) => s.date === metadata.date);
   if (existingIndex >= 0) {
     list[existingIndex] = metadata;
