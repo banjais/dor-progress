@@ -1,6 +1,6 @@
 {
   "name": "dor-progress",
-  "version": "1.0.170",
+  "version": "1.0.171",
   "type": "module",
   "scripts": {
     "dev": "vite",
@@ -10,7 +10,7 @@
     "postbuild": "node scripts/finalize-build.js",
     "deploy": "npm run git:sync && npm run clean && npm run version:patch && npm run build && npm run deploy:worker && npm run deploy:hosting && git push && git push --tags",
     "verify-build": "tsx scripts/verify-build.ts",
-    "deploy:worker": "wrangler deploy",
+    "deploy:worker": "npx tsx scripts/deploy-worker.js",
     "deploy:hosting": "firebase deploy --only hosting --public .build",
     "clean": "node scripts/clean.js",
     "lint:yaml": "npx yaml-lint .github/workflows/*.yml",
