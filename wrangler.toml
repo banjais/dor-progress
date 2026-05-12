@@ -7,8 +7,8 @@ APP_ENV = "production"
 
 [[kv_namespaces]]
 binding = "TRANSLATION_KV"
-id = "${TRANSLATION_KV_ID}"
+id = "${var.TRANSLATION_KV_ID}"
 
 [[kv_namespaces]]
 binding = "REPORTS_KV"
-id = "${REPORTS_KV_ID}"
+id = "${var.REPORTS_KV_ID}"
