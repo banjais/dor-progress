@@ -72,7 +72,7 @@ export interface Env {
   FIREBASE_STORAGE_BUCKET?: string;
   FIREBASE_MEASUREMENT_ID?: string;
   RECAPTCHA_SITE_KEY?: string;
-  ADMIN_SECRET?: string;
+  SNAPSHOT_KEY?: string;
   APP_ENV?: string;
   DEBUG_MODE?: string;
   BUILD_ID?: string;

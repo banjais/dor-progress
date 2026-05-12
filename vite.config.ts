@@ -76,8 +76,5 @@ export default defineConfig({
     COMMIT_SHA: JSON.stringify(
       process.env.COMMIT_SHA || process.env.GITHUB_SHA || "production",
     ),
-    APP_CHECK_DEBUG_TOKEN: JSON.stringify(
-      process.env.APP_CHECK_DEBUG_TOKEN || false,
-    ),
   },
 });

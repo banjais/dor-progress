@@ -1,0 +1,227 @@
+import { Dashboard } from "./Dashboard";
+import { t, authenticatedFetch, toNepaliNumerals, I18N } from "./api-utils";
+
+declare const APP_ENV: "development" | "production" | "test";
+const dashboard = Dashboard.getInstance();
+
+/**
+ * Displays the System Diagnostics modal.
+ * Restricted to non-production environments for security.
+ */
+export function showDiagnostics() {
+  const modalOverlay = document.getElementById("modal-overlay") as HTMLElement;
+  const modalBody = document.getElementById("modal-body");
+
+  // 1. Show an immediate high-speed loading state
+  if (modalBody) {
+    const diagSkeletons = Array(5)
+      .fill(
+        `
+            <div class="skeleton-diag-item">
+                <div class="skeleton-diag-bar" style="height: 14px; width: 60%;"></div>
+                <div class="skeleton-diag-bar" style="height: 14px; width: 15%;"></div>
+            </div>
+        `,
+      )
+      .join("");
+
+    modalBody.innerHTML = `
+            <div class="modal-header">
+              <div class="skeleton-diag-bar" style="height: 24px; width: 50%; margin-bottom: 8px;"></div>
+              <div class="skeleton-diag-bar" style="height: 12px; width: 80%;"></div>
+            </div>
+            <div style="margin-top:20px;">${diagSkeletons}</div>
+        `;
+    modalOverlay.style.display = "flex";
+  }
+
+  if (APP_ENV === "production") {
+    console.warn("[Security] Diagnostic access denied in production.");
+    dashboard.addToast(
+      "error",
+      dashboard.state.lang === "en" ? "Access Denied" : "पहुँच अस्वीकृत",
+    );
+    return;
+  }
+
+  const store = dashboard.state.store;
+  if (!store) return;
+
+  const getProgress = (window as any).getProgress;
+  const criticalRows = store.rows.filter((r) => r._status === "critical");
+  const langStrings = I18N[dashboard.state.lang];
+  const dispCount =
+    dashboard.state.lang === "ne"
+      ? toNepaliNumerals(criticalRows.length)
+      : criticalRows.length;
+
+  const now = new Date();
+  now.setMonth(now.getMonth() - 1);
+  const lastMonth = now.toISOString().slice(0, 7);
+
+  const contentHtml = `
+    <div class="modal-header"> 
+      <h3 style="color:var(--critical); margin:0;">🚨 System Diagnostics</h3>
+      <p style="font-size:0.8rem; opacity:0.8; margin:5px 0 0;">${dispCount} ${dashboard.state.lang === "ne" ? "सूचकहरूलाई तत्काल ध्यान दिनु आवश्यक छ।" : "indicators require immediate attention."}</p>
+    </div>
+    <div id="diag-scroll-container" style="max-height: 400px; overflow-y: auto; margin-top:15px;">
+      <div style="margin-bottom: 15px; padding: 12px; background: var(--bg); border-radius: 12px; border: 1px solid var(--border);">
+        <label id="lbl-diag-period" style="font-size: 0.7rem; font-weight: 800; display: block; margin-bottom: 8px; color:var(--text-light); text-transform:uppercase;"></label>
+        <div style="display:flex; gap:10px;">
+          <select id="diag-period-year" style="flex:1; padding:8px; border-radius:8px; border:1px solid var(--border); background:var(--surface); color:var(--text); outline:none;"></select>
+          <select id="diag-period-month" style="flex:1; padding:8px; border-radius:8px; border:1px solid var(--border); background:var(--surface); color:var(--text); outline:none;"></select>
+        </div>
+        <input type="hidden" id="diag-period" value="${lastMonth}">
+      </div>
+  `;
+
+  // 2. Render content after a tiny "sensing" delay for visual effect
+  setTimeout(() => {
+    if (modalBody) modalBody.innerHTML = contentHtml;
+
+    const diagY = document.getElementById(
+      "diag-period-year",
+    ) as HTMLSelectElement;
+    const diagM = document.getElementById(
+      "diag-period-month",
+    ) as HTMLSelectElement;
+    const diagHidden = document.getElementById(
+      "diag-period",
+    ) as HTMLInputElement;
+
+    const currentADYear = new Date().getFullYear();
+    diagY.innerHTML = [currentADYear, currentADYear - 1, currentADYear - 2]
+      .map(
+        (y) =>
+          `<option value="${y}">${dashboard.state.lang === "ne" ? toNepaliNumerals(y + 57) + " वि.सं." : y + " AD"}</option>`,
+      )
+      .join("");
+
+    diagM.innerHTML = langStrings.months
+      .map(
+        (m, i) =>
+          `<option value="${(i + 1).toString().padStart(2, "0")}">${m}</option>`,
+      )
+      .join("");
+
+    const [y, m] = lastMonth.split("-");
+    diagY.value = y;
+    diagM.value = m;
+
+    diagY.onchange = diagM.onchange = () =>
+      (diagHidden.value = `${diagY.value}-${diagM.value}`);
+
+    const diagListContainer = document.createElement("div");
+    criticalRows.forEach((r, idx) => {
+      const name = r[store.headers[0]];
+      const prog = getProgress ? getProgress(r, store.headers) : 0;
+      const dispProg =
+        dashboard.state.lang === "ne" ? toNepaliNumerals(prog) : prog;
+
+      const itemDiv = document.createElement("div");
+      itemDiv.style.cssText =
+        "padding: 12px; border-bottom: 1px solid var(--border); display: flex; justify-content: space-between; align-items: center; cursor:pointer;";
+      itemDiv.classList.add("fade-in");
+      itemDiv.style.animationDelay = `${idx * 0.05}s`;
+      itemDiv.dataset.indicatorName = name;
+      itemDiv.innerHTML = `
+      <span style="font-weight: 600; font-size:0.85rem;">${name}</span>
+      <span style="color: var(--critical); font-weight: 800; font-size:0.9rem;">${dispProg}%</span>
+    `;
+      diagListContainer.appendChild(itemDiv);
+    });
+    modalBody
+      ?.querySelector("div[style*='max-height: 400px']")
+      ?.appendChild(diagListContainer);
+
+    const footerDiv = document.createElement("div");
+    footerDiv.innerHTML = `
+    <div style="display:flex; gap:10px; margin-top:15px;">
+      <button id="export-health-report-btn" style="flex:1; background:var(--critical); color:white; border:none; padding:10px; border-radius:8px; font-weight:bold; cursor:pointer;">📄 Export Health Report (PDF)</button>
+      <button id="close-diag-modal-btn" style="flex:1; background:var(--bg); border:1px solid var(--border); padding:10px; border-radius:8px; font-weight:bold; cursor:pointer;">Close</button>
+    </div>
+    <p style="font-size:0.7rem; color:var(--text-light); margin-top:10px; text-align:center;">Click an item to isolate the record.</p>`;
+    modalBody?.appendChild(footerDiv);
+  }, 400);
+
+  diagListContainer.addEventListener("click", (e) => {
+    const item = (e.target as HTMLElement).closest(
+      "div[data-indicator-name]",
+    ) as HTMLElement;
+    if (item) (window as any).showModal(item.dataset.indicatorName);
+  });
+  document
+    .getElementById("export-health-report-btn")
+    ?.addEventListener("click", exportHealthReport);
+  document
+    .getElementById("close-diag-modal-btn")
+    ?.addEventListener("click", () => (window as any).closeModal());
+  const lbl = document.getElementById("lbl-diag-period");
+  if (lbl) lbl.textContent = langStrings.diagPeriod;
+}
+
+export async function exportHealthReport() {
+  const period = (document.getElementById("diag-period") as HTMLInputElement)
+    .value;
+  if (!period) return;
+
+  const btn = document.getElementById(
+    "export-health-report-btn",
+  ) as HTMLButtonElement;
+  const originalHtml = btn.innerHTML;
+  btn.disabled = true;
+  btn.innerHTML = `<span class="spinner"></span> Generating...`;
+
+  const [year, month] = period.split("-");
+
+  const loader = document.getElementById("loader");
+  if (loader) loader.style.display = "flex";
+  (window as any).closeModal();
+
+  try {
+    const res = await authenticatedFetch(
+      `/api/summary?type=monthly&year=${year}&month=${month}`,
+    );
+    const json = await res.json();
+
+    const originalStore = dashboard.state.store;
+    const originalView = dashboard.state.view;
+
+    const totalRows = json.rows.length;
+    const criticalCount = json.rows.filter(
+      (r: any) => r._status === "critical",
+    ).length;
+    const auditRiskScore =
+      totalRows > 0 ? Math.round((criticalCount / totalRows) * 100) : 0;
+
+    const riskSummaryEl = document.getElementById(
+      "h-risk-summary",
+    ) as HTMLElement;
+    riskSummaryEl.style.display = "block";
+    riskSummaryEl.innerText =
+      dashboard.state.lang === "en"
+        ? `TOTAL RISK SCORE: ${auditRiskScore}%`
+        : `कुल जोखिम स्कोर: ${toNepaliNumerals(auditRiskScore)}%`;
+
+    dashboard.state.store = json;
+    dashboard.handleSearch("critical");
+    dashboard.setView("table");
+
+    setTimeout(() => {
+      window.print();
+      riskSummaryEl.style.display = "none";
+      dashboard.state.store = originalStore;
+      dashboard.render();
+      dashboard.setView(originalView);
+    }, 800);
+  } catch (e) {
+    dashboard.addToast("error", "Failed to generate historical report.");
+  } finally {
+    btn.disabled = false;
+    btn.innerHTML = originalHtml;
+    if (loader) loader.style.display = "none";
+  }
+}
+
+(window as any).showDiagnostics = showDiagnostics;
+(window as any).exportHealthReport = exportHealthReport;

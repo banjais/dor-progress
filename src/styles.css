@@ -904,6 +904,91 @@ tr {
   border-radius: 50%;
 }
 
+.skeleton-card {
+  background: var(--surface);
+  border-radius: 16px;
+  border: 1px solid var(--border);
+  padding: 1.5rem;
+  display: flex;
+  flex-direction: column;
+}
+
+.fade-in {
+  opacity: 0;
+  animation: fadeIn 0.4s ease-out forwards;
+}
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.skeleton-card div {
+  background: linear-gradient(90deg,
+      var(--bg) 25%,
+      var(--border) 50%,
+      var(--bg) 75%);
+  background-size: 200% 100%;
+  animation: shimmer 1.5s infinite linear;
+  border-radius: 4px;
+}
+
+.skeleton-diag-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 12px;
+  border-bottom: 1px solid var(--border);
+}
+
+.skeleton-diag-bar {
+  background: linear-gradient(90deg,
+      var(--bg) 25%,
+      var(--border) 50%,
+      var(--bg) 75%);
+  background-size: 200% 100%;
+  animation: shimmer 1.5s infinite linear;
+  border-radius: 4px;
+}
+
+/* High Risk KPI Pulse */
+.pulse-critical-card {
+  animation: pulse-red 2s infinite;
+}
+
+@keyframes pulse-red {
+  0% {
+    box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.4);
+  }
+
+  70% {
+    box-shadow: 0 0 0 12px rgba(239, 68, 68, 0);
+  }
+
+  100% {
+    box-shadow: 0 0 0 0 rgba(239, 68, 68, 0);
+  }
+}
+
+.skeleton-brief-line {
+  background: linear-gradient(90deg,
+      var(--bg) 25%,
+      var(--border) 50%,
+      var(--bg) 75%);
+  background-size: 200% 100%;
+  animation: shimmer 1.5s infinite linear;
+  border-radius: 4px;
+  height: 12px;
+  margin-bottom: 10px;
+}
+
 .data-card {
   background: var(--surface);
   border-radius: 16px;

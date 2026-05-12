@@ -10,19 +10,7 @@ declare const PDFLib: any;
 /**
  * Interfaces for Project Data and State
  */
-interface ProjectRow {
-  _status: "good" | "critical" | "stable";
-  _insight?: string;
-  [key: string]: any;
-}
-
-interface ProjectReport {
-  headers: string[];
-  rows: ProjectRow[];
-  lastUpdate: string;
-  aiSummary?: { brief: string } | null;
-  adminMessage?: string;
-}
+import { ProjectRow, ProjectReport } from "../shared/types";
 
 import * as Utils from "./utils";
 const syncStyle = document.createElement("style");
@@ -35,605 +23,42 @@ syncStyle.textContent = `
   }
 `;
 document.head.appendChild(syncStyle);
+import { initPWALogic } from "./PWAManager";
 
-import translationsDataRaw from "./locales/translations.json" with { type: "json" };
-// Cast import to expected structure
-const translationsData = translationsDataRaw as Record<
-  string,
-  Record<string, string>
->;
-
-import { AudioEngine } from "./components/AudioEngine";
-import { BrandingEngine } from "./components/BrandingEngine";
-import { SpeechEngine } from "./components/SpeechEngine";
-import { Header } from "./components/Header";
-
-import { initializeApp } from "firebase/app";
+import { Dashboard } from "./Dashboard";
+import { getToken } from "firebase/app-check";
 import {
-  initializeAppCheck,
-  ReCaptchaEnterpriseProvider,
-  getToken,
-} from "firebase/app-check";
-
-// AudioEngine moved to components/AudioEngine.ts
-class Dashboard {
-  static _instance: Dashboard | null = null;
-  audio: AudioEngine;
-  speech: SpeechEngine;
-  header: Header;
-  state: {
-    lang: string;
-    view: string;
-    search: string;
-    sort: { key: string | null; dir: number };
-    store: ProjectReport | null;
-    riskLevel: number;
-    uiVolume: number;
-    diffMode: boolean;
-    compareReport: ProjectReport | null;
-  };
-  refreshCounter: number = 60;
-  lastFetchTime: number | null = null;
-  syncToast: HTMLDivElement = document.createElement("div");
-  appCheck?: any;
-  latencyHistory: { value: number }[] = [];
-  intentTimer: number | null = null;
-  dynamicCache: Record<string, string> = {};
-  searchTimeout?: number;
-
-  // SpeechEngine moved to components/SpeechEngine.ts
-  constructor() {
-    if (Dashboard._instance) return Dashboard._instance;
-    this.audio = new AudioEngine();
-    this.speech = new SpeechEngine(this.audio);
-    this.header = new Header(this);
-    this.state = {
-      lang:
-        localStorage.getItem("pref-lang") ||
-        (navigator.language.startsWith("en") ? "en" : "ne"),
-      view: "cards",
-      search: "",
-      sort: { key: null, dir: 1 },
-      store: null,
-      riskLevel: 0,
-      uiVolume: parseFloat(localStorage.getItem("ui-volume") || "0.5"),
-      diffMode: false,
-      compareReport: null,
-    };
-    this.dynamicCache = JSON.parse(
-      localStorage.getItem("dynamicTranslations") || "{}",
-    );
-    this.initTimer();
-    this.init();
-    Dashboard._instance = this;
-  }
-
-  static getInstance(): Dashboard {
-    return Dashboard._instance || new Dashboard();
-  }
-
-  private attachGlobalEvents() {
-    document.addEventListener("click", (e) => {
-      const fabBtn = document.getElementById("fab-main-btn");
-      const fabMenu = document.getElementById("fab-menu");
-      const geminiBtn = document.getElementById("gemini-main-btn");
-      const geminiMenu = document.getElementById("gemini-menu");
-
-      if (
-        fabMenu &&
-        !fabMenu.contains(e.target as Node) &&
-        e.target !== fabBtn
-      ) {
-        fabMenu.classList.remove("show");
-        if (fabBtn) fabBtn.classList.remove("active");
-      }
-      if (
-        geminiMenu &&
-        !geminiMenu.contains(e.target as Node) &&
-        e.target !== geminiBtn
-      ) {
-        geminiMenu.classList.remove("show");
-      }
-    });
-  }
-
-  private initTimer() {
-    setInterval(() => {
-      this.refreshCounter--;
-      if (this.refreshCounter <= 0) {
-        this.refreshCounter = 60;
-        void this.loadData();
-      }
-      const timerEl = document.getElementById("refresh-timer");
-      if (timerEl) {
-        timerEl.innerText = `(${this.t("refreshing")} ${this.refreshCounter}${this.t("sec")})`;
-      }
-    }, 1000);
-  }
-
-  private init() {
-    this.initTheme();
-    this.initLowData();
-    void this.setupSecurity();
-    this.attachGlobalEvents();
-    BrandingEngine.apply();
-  }
-
-  private initTheme() {
-    const applyTheme = (theme: string) => {
-      document.body.setAttribute("data-theme", theme);
-      const color = theme === "dark" ? "#0b0f1a" : "#1a5c3a";
-      document
-        .querySelectorAll('meta[name="theme-color"]')
-        .forEach((meta) => ((meta as HTMLMetaElement).content = color));
-    };
-    const startingTheme =
-      localStorage.getItem("theme") ||
-      (window.matchMedia("(prefers-color-scheme: dark)").matches
-        ? "dark"
-        : "light");
-    applyTheme(startingTheme);
-  }
-
-  private initLowData() {
-    if (localStorage.getItem("low-data") === null) {
-      if ((navigator as any).connection?.saveData)
-        localStorage.setItem("low-data", "true");
-    }
-  }
-
-  private updateLaunchProgress(percent: number, status: string) {
-    const fill = document.getElementById("loader-bar-fill") as HTMLDivElement;
-    const statusText = document.querySelector(".loader-status") as HTMLElement;
-    if (fill) fill.style.width = `${percent}%`;
-    if (statusText) statusText.innerText = status;
-  }
-
-  private hideSplashScreen() {
-    const splash = document.getElementById("splash-screen");
-    if (splash) {
-      splash.style.opacity = "0";
-      setTimeout(() => (splash.style.display = "none"), 800);
-    }
-  }
-
-  private async checkFreshInstall() {
-    if (localStorage.getItem("app-initialized")) return;
-    try {
-      const res = await fetch(`${WORKER_BASE}/api/admin/list-backups`);
-      if (res.ok) {
-        const backups = (await res.json()) as any[];
-        if (backups.length > 0) {
-          const confirmRestore = confirm(
-            this.state.lang === "en"
-              ? "Restore from Cloud Backup?"
-              : "रिस्टोर गर्नुहुन्छ?",
-          );
-          if (confirmRestore) {
-            void this.triggerDatabaseRestore();
-          }
-        }
-      }
-    } catch (e) {
-      console.log("Auto-restore check skipped.");
-    } finally {
-      localStorage.setItem("app-initialized", "true");
-    }
-  }
-
-  private async setupSecurity() {
-    try {
-      this.updateLaunchProgress(10, "Connecting to Worker...");
-      // Fetch config injected by Cloudflare Secrets via the Worker
-      const res = await fetch(`${WORKER_BASE}/api/client-config`);
-      const config = await res.json();
-
-      // Validation check for ReCaptcha sitekey to prevent initialization failure
-      if (!config || !(config.recaptchaKey || config.RECAPTCHA_SITE_KEY)) {
-        console.error(
-          "[Security] ReCaptcha Site Key is missing from the client configuration.",
-        );
-        this.updateLaunchProgress(0, "Security Config Error");
-        throw new Error("Missing required parameters: sitekey");
-      }
-
-      this.updateLaunchProgress(30, "Initializing Firebase...");
-      console.log("[App Check Init] Received client config:", config);
-      const app = initializeApp(config.firebase);
-
-      if (
-        location.hostname === "localhost" ||
-        location.hostname === "127.0.0.1" ||
-        APP_ENV === "test"
-      ) {
-        // Use static debug token if available (CI), fallback to dynamic true (local)
-        (self as any).FIREBASE_APPCHECK_DEBUG_TOKEN =
-          APP_CHECK_DEBUG_TOKEN || true;
-      }
-
-      this.updateLaunchProgress(60, "Verifying Integrity...");
-      this.appCheck = initializeAppCheck(app, {
-        provider: new ReCaptchaEnterpriseProvider(
-          config.recaptchaKey || config.RECAPTCHA_SITE_KEY,
-        ),
-        isTokenAutoRefreshEnabled: true,
-      });
-      (window as any).appCheck = this.appCheck;
-      console.log("[App Check Init] App Check initialized successfully.");
-
-      this.setLang(this.state.lang);
-      this.setView("cards");
-      void handleVerification();
-
-      this.updateLaunchProgress(80, "Fetching Project Data...");
-      await this.loadData();
-      this.updateLaunchProgress(100, "Dashboard Ready");
-
-      setTimeout(() => this.hideSplashScreen(), 500);
-
-      setTimeout(() => checkDeepLink(), 1500);
-      setTimeout(() => this.checkFreshInstall(), 3000); // Check for backups after UI is stable
-
-      // Initialize Audio Icon State
-      try {
-        this.audio.updateVolume(this.state.uiVolume);
-      } catch (e) {
-        console.warn("Audio volume UI sync deferred until user interaction.");
-      }
-
-      // Version Badge Check
-      const swVersion = await getActiveSwVersion();
-      const lastSeen = localStorage.getItem("app-version-seen");
-      if (lastSeen && lastSeen !== swVersion) {
-        document.getElementById("settings-btn")?.classList.add("has-badge");
-      }
-    } catch (e) {
-      console.error("Security Bootstrap Failed", e);
-      this.addToast(
-        "error",
-        this.state.lang === "en" ? "Security init failed" : "प्रणाली असफल",
-      );
-      // Ensure loader is removed so user can at least see the UI/Offline state
-      const loader = document.getElementById("loader");
-      if (loader) loader.style.display = "none";
-    }
-  }
-
-  /**
-   * Encapsulated Translation Helper
-   */
-  t(key: string, count?: number): string {
-    const langData = translationsData[this.state.lang] || {};
-    let text = langData[key] || key;
-    if (count !== undefined) {
-      const displayCount =
-        this.state.lang === "ne" ? toNepaliNumerals(count) : count;
-      text = text.replace("{{count}}", String(displayCount));
-    }
-    return text;
-  }
-
-  addToast(
-    type: "success" | "info" | "error",
-    message: string,
-    duration = 4000,
-  ): HTMLDivElement {
-    this.audio.playUi("pop");
-    const container = document.getElementById("toast-container");
-    const dismissAllBtn = document.getElementById("dismiss-all");
-    if (!container || !dismissAllBtn) return document.createElement("div");
-
-    const toast = document.createElement("div");
-    toast.className = `toast ${type}`;
-    const isSyncing = duration === -1;
-    const isPersistent = duration === 0 || isSyncing;
-
-    const icons: Record<string, string> = {
-      success: "✅",
-      info: "ℹ️",
-      error: "❌",
-    };
-    toast.innerHTML = `
-        <span>${icons[type] || ""}</span>
-        <span>${message}</span>
-        ${
-          isSyncing
-            ? `
-          <div class="toast-progress">
-            <div class="toast-bar" style="width: 100%; animation: toast-progress-loop 2s infinite ease-in-out;"></div>
-          </div>`
-            : isPersistent
-              ? ""
-              : `
-          <div class="toast-progress">
-            <div class="toast-bar" style="animation-duration:${duration}ms"></div>
-          </div>`
-        }
-      `;
-
-    const bar = toast.querySelector(".toast-bar") as HTMLElement;
-    const dismiss = () => {
-      if (toast.dataset.dismissing) return;
-      toast.dataset.dismissing = "true";
-      toast.style.animation = "toast-in 0.3s ease-in reverse forwards";
-      setTimeout(() => {
-        toast.remove();
-        const remaining = container.querySelectorAll(".toast");
-        if (remaining.length === 0) {
-          dismissAllBtn?.style.display = "none";
-        }
-        if (toast === this.syncToast) this.syncToast = null;
-      }, 300);
-    };
-
-    let autoDismissId: number | null = isPersistent
-      ? null
-      : window.setTimeout(dismiss, duration);
-    toast.onmouseenter = () => {
-      if (autoDismissId) window.clearTimeout(autoDismissId);
-    };
-    toast.onmouseleave = () => {
-      if (toast.getAttribute("data-dismissing") || isPersistent) return;
-      if (bar) bar.style.animation = "none";
-      void toast.offsetWidth;
-      if (bar)
-        bar.style.animation = `toast-progress-shrink ${duration}ms linear forwards`;
-      autoDismissId = window.setTimeout(dismiss, duration);
-    };
-    toast.onclick = () => {
-      if (autoDismissId) window.clearTimeout(autoDismissId);
-      dismiss();
-    };
-    container.prepend(toast);
-    if (container.querySelectorAll(".toast").length > 1) {
-      dismissAllBtn.style.display = "block";
-    }
-    return toast;
-  }
-
-  async loadData(isForced = false) {
-    const fetchStart = performance.now();
-    const syncIcon = document.getElementById("data-sync-icon");
-    if (syncIcon) {
-      syncIcon.style.display = "inline-block";
-      syncIcon.classList.add("spinning");
-    }
-
-    this.state.store = null;
-    const skeleton = Array(10)
-      .fill(
-        `<tr class="skeleton-row"><td><div></div></td>${Array(5).fill("<td><div></div></td>").join("")}</tr>`,
-      )
-      .join("");
-    const tbody = document.getElementById("tbody");
-    if (tbody) tbody.innerHTML = skeleton;
-
-    try {
-      const endpoint = `/api/report?lang=${this.state.lang}${isForced ? "&force=true" : ""}`;
-      const res = await authenticatedFetch(
-        endpoint,
-        isForced ? { cache: "no-store" } : {},
-      );
-      const json = (await res.json()) as ProjectReport;
-      if (json?.headers) {
-        const fetchEnd = performance.now();
-        const duration = Math.round(fetchEnd - fetchStart);
-        this.lastFetchTime = Date.now();
-        this.latencyHistory.push({ value: duration });
-        if (this.latencyHistory.length > 5) this.latencyHistory.shift();
-        if (res.headers.get("X-Force-Throttled") === "true")
-          this.addToast("info", this.t("forceThrottled"));
-
-        this.state.store = json;
-        if (json.lastUpdate) {
-          void this.header.checkUpdates(json.lastUpdate);
-        }
-        this.render();
-        const offlineOverlay = document.getElementById("offline-overlay");
-        if (offlineOverlay) offlineOverlay.style.display = "none";
-        if (isForced) this.addToast("success", this.t("cacheCleared"));
-        updateConnStrength(duration);
-      }
-    } catch (e) {
-      console.error("Error loading data:", e);
-      this.addToast("error", this.t("offline"));
-    } finally {
-      if (syncIcon) {
-        syncIcon.classList.remove("spinning");
-        syncIcon.style.display = "none";
-      }
-      const loader = document.getElementById("loader");
-      if (loader) loader.style.display = "none";
-    }
-  }
-
-  render() {
-    render(this.state.store);
-  }
-
-  setLang(l: string) {
-    const prevLang = this.state.lang;
-    this.state.lang = l;
-    localStorage.setItem("pref-lang", l);
-    applyTranslations();
-    if (prevLang !== l) {
-      void this.loadData();
-    } else if (this.state.store) {
-      this.render();
-    }
-  }
-
-  setView(v: string) {
-    this.state.view = v;
-    ["table", "cards", "charts"].forEach((mode) => {
-      const btn = document.getElementById("btn-" + mode);
-      if (btn) btn.classList.toggle("active", v === mode);
-    });
-    if (this.state.store) this.render();
-  }
-
-  toggleFabMenu() {
-    const menu = document.getElementById("fab-menu");
-    const geminiMenu = document.getElementById("gemini-menu");
-    const btn = document.getElementById("fab-main-btn");
-    if (geminiMenu) geminiMenu.classList.remove("show");
-    if (menu) {
-      menu.classList.toggle("show");
-      if (btn) btn.classList.toggle("active", menu.classList.contains("show"));
-    }
-    this.audio.playUi("pop");
-  }
-
-  toggleGeminiMenu() {
-    const menu = document.getElementById("gemini-menu");
-    const fabMenu = document.getElementById("fab-menu");
-    if (fabMenu) fabMenu.classList.remove("show");
-    if (menu) menu.classList.toggle("show");
-    this.audio.playUi("pop");
-  }
-
-  toggleLang() {
-    const next = this.state.lang === "en" ? "ne" : "en";
-    this.setLang(next);
-    this.audio.playUi("click");
-  }
-
-  handleSearch(term?: string) {
-    handleSearch(term);
-  }
-
-  typeText(element: HTMLElement, text: string, useSound = false) {
-    typeText(element, text, useSound);
-  }
-
-  triggerDatabaseRestore() {
-    return triggerDatabaseRestore();
-  }
-}
+  t,
+  authenticatedFetch,
+  toNepaliNumerals,
+  toArabicNumerals,
+  I18N,
+} from "./api-utils";
 
 const dashboard = Dashboard.getInstance();
+
+const deferredPrompt: any = null;
 
 // Bind global window handlers for HTML onclick attributes
 (window as any).toggleFabMenu = () => dashboard.toggleFabMenu();
 (window as any).setLang = (l: string) => dashboard.setLang(l);
 
+(window as any).logoutSnapshotSession = () => {
+  sessionStorage.removeItem("_snapshot_key");
+  dashboard.addToast(
+    "info",
+    dashboard.state.lang === "en"
+      ? "Snapshot session cleared"
+      : "स्न्यापसट सेसन मेटाइयो",
+  );
+  // Re-open settings to refresh the UI
+  showSettings();
+};
+
 /**
  * Centralized fetch helper to handle base URLs and Firebase App Check tokens.
  */
-async function authenticatedFetch(
-  path: string,
-  options: RequestInit = {},
-  maxRetries = 3,
-): Promise<Response> {
-  const url = path.startsWith("http")
-    ? path
-    : `${WORKER_BASE}${path.startsWith("/") ? "" : "/"}${path}`;
-
-  const method = (options.method || "GET").toUpperCase();
-  const isIdempotent = ["GET", "PUT", "DELETE", "HEAD", "OPTIONS"].includes(
-    method,
-  );
-  const effectiveRetries = maxRetries;
-
-  const headers: Record<string, string> = {
-    "Content-Type": "application/json",
-    ...(options.headers as Record<string, string>),
-  };
-  headers["X-Low-Data"] =
-    localStorage.getItem("low-data") === "true" ? "true" : "false";
-
-  for (let attempt = 0; attempt < effectiveRetries; attempt++) {
-    try {
-      if (dashboard.appCheck) {
-        try {
-          const tokenResult = await getToken(dashboard.appCheck, attempt > 0); // Force refresh on retries
-          if (tokenResult?.token) {
-            headers["X-Firebase-AppCheck"] = tokenResult.token;
-            console.log(
-              "[Security] App Check token attached to request:",
-              tokenResult.token.substring(0, 10) + "...",
-            ); // Log partial token for privacy
-          } else {
-            console.warn("[Security] getToken returned no token.");
-          }
-        } catch (tokenError) {
-          console.warn(
-            "[Security] AppCheck token fetch failed, proceeding without token:",
-            tokenError,
-          );
-          // Continue without AppCheck token (development fallback)
-        }
-      }
-
-      /** @type {RequestInit} */
-      const fetchConfig = {
-        ...options,
-        headers,
-      };
-
-      const response = await fetch(url, fetchConfig);
-      if (response.ok) {
-        const isFromCache = response.headers.get("X-From-Cache") === "true";
-        const isStale = response.headers.get("X-Is-Stale") === "true";
-        const cacheTime = response.headers.get("X-Cache-Time");
-
-        if (isStale) {
-          dashboard.addToast("info", t("dataSyncing"), 2000);
-          if (dashboard.syncToast) dashboard.syncToast.click();
-          dashboard.syncToast = dashboard.addToast(
-            "info",
-            t("dataSyncing"),
-            -1,
-          );
-        } else if (isFromCache) {
-          const ageStr = cacheTime
-            ? getRelativeTimeString(parseInt(cacheTime))
-            : "";
-          const msg = t("usingCache") + (ageStr ? ` (${ageStr})` : "");
-          dashboard.addToast("info", msg);
-        }
-        return response;
-      }
-
-      // Don't retry on certain client errors like 404 or 400 (unless it's 401, 403 or 429)
-      if (
-        response.status >= 400 &&
-        response.status < 500 &&
-        response.status !== 401 &&
-        response.status !== 403 &&
-        response.status !== 429
-      ) {
-        throw new Error(`HTTP ${response.status}`);
-      }
-
-      // Special handling for 401/403: Security token rejected, missing, or expired
-      if (response.status === 401 || response.status === 403) {
-        console.warn(
-          `[Security] ${response.status} ${response.status === 401 ? "Unauthorized" : "Forbidden"} on attempt ${attempt + 1}. Refreshing App Check token...`,
-        );
-        // The next loop iteration will trigger getToken(..., true) because attempt > 0
-      }
-
-      throw new Error(
-        `Attempt ${attempt + 1} failed with status ${response.status}`,
-      );
-    } catch (err) {
-      const isLastAttempt = attempt === effectiveRetries - 1;
-      if (isLastAttempt) {
-        const errorMsg =
-          dashboard.state.lang === "en"
-            ? "Connection failed after multiple attempts."
-            : "धेरै प्रयास पछि जडान असफल भयो।";
-        dashboard.addToast("error", errorMsg);
-        throw err;
-      }
-
-      const delay = Math.pow(2, attempt) * 1000;
-      console.warn(`Retrying in ${delay}ms...`, err);
-      await new Promise((resolve) => setTimeout(resolve, delay));
-    }
-  }
-}
+// Definitions moved to api-utils.ts
 
 (window as any).checkStatus = checkStatus;
 async function checkStatus() {
@@ -681,39 +106,7 @@ async function checkStatus() {
   }
 }
 
-function getRelativeTimeString(timestamp?: number) {
-  const time = timestamp || dashboard.lastFetchTime;
-  if (!time) return "";
-  const diff = Math.floor((Date.now() - time) / 1000);
-
-  if (diff < 10) return t("justNow");
-  if (diff < 60) return t("secsAgo", diff);
-  const mins = Math.floor(diff / 60);
-  if (mins < 60) return t("minsAgo", mins);
-  const hours = Math.floor(mins / 60);
-  return t("hoursAgo", hours);
-}
-
-function toNepaliNumerals(num: number | string) {
-  const n = ["०", "१", "२", "३", "४", "५", "६", "७", "८", "९"];
-  return String(num).replace(/[0-9]/g, (d) => n[d]);
-}
-
-function toArabicNumerals(str: string) {
-  const n: Record<string, string> = {
-    "०": "0",
-    "१": "1",
-    "२": "2",
-    "३": "3",
-    "४": "4",
-    "५": "5",
-    "६": "6",
-    "७": "7",
-    "८": "8",
-    "९": "9",
-  };
-  return String(str || "").replace(/[०-९]/g, (d) => n[d] || d);
-}
+// Definitions moved to api-utils.ts
 
 (window as any).startVoiceSearch = startVoiceSearch;
 async function startVoiceSearch() {
@@ -874,14 +267,13 @@ async function shareAiBrief() {
     }
   } else {
     navigator.clipboard.writeText(text);
-    addToast("success", t("linkCopied"));
     dashboard.addToast("success", t("linkCopied"));
   }
 }
 
 (window as any).translateAiBrief = translateAiBrief;
 async function translateAiBrief() {
-  const targetLang = dashboard.state.lang === "en" ? "ne" : "en";
+  // Note: targetLang is calculated but the API call uses current state
   const btn = document.getElementById("ai-translate-btn") as HTMLButtonElement;
   if (btn) btn.classList.add("spinning");
 
@@ -935,7 +327,6 @@ async function fetchAiBriefBlob() {
   try {
     btn.disabled = true;
     btn.innerHTML = `<span class="spinner" style="border-top-color:var(--primary); width:14px; height:14px;"></span>`;
-    addToast("info", t("preparingAudio"));
     dashboard.addToast("info", t("preparingAudio"));
 
     const blob = await fetchAiBriefBlob();
@@ -947,7 +338,6 @@ async function fetchAiBriefBlob() {
     a.download = `DoR_Executive_Briefing_${new Date().toISOString().split("T")[0]}.mp3`;
     a.click();
   } catch (e) {
-    addToast("error", "Audio failed");
     dashboard.addToast("error", "Audio failed");
   } finally {
     btn.disabled = false;
@@ -985,11 +375,9 @@ async function fetchAiBriefBlob() {
         text: "Official Department of Roads Audio Summary",
       });
     } else {
-      addToast("error", "Not supported");
       dashboard.addToast("error", "Not supported");
     }
   } catch (e) {
-    addToast("error", "Share failed");
     dashboard.addToast("error", "Share failed");
   } finally {
     btn.disabled = false;
@@ -1027,275 +415,6 @@ function typeText(element: TextElement, text: string, useSound = false) {
   }, 40); // 40ms per character for a smooth terminal feel
 }
 
-/**
- * Core Dashboard Manager
- * Encapsulates application state, rendering lifecycle, and data synchronization.
- */
-class Dashboard {
-  static _instance: Dashboard | null = null;
-
-  audio: AudioEngine;
-  speech: SpeechEngine;
-  header: Header;
-  state: {
-    lang: string;
-    view: string;
-    search: string;
-    sort: { key: string | null; dir: number };
-    store: ProjectReport | null;
-    riskLevel: number;
-    uiVolume: number;
-    diffMode: boolean;
-    compareReport: ProjectReport | null;
-  };
-  refreshCounter: number;
-  lastFetchTime: number | null;
-  latencyHistory: { value: number }[];
-  intentTimer: number | null;
-  dynamicCache: Record<string, string>;
-  lastSnapshotUpdate: string | null;
-  syncToast: HTMLDivElement;
-  addToast: typeof addToast;
-  appCheck?: any;
-  searchTimeout?: number;
-
-  constructor() {
-    if (Dashboard._instance) {
-      return Dashboard._instance;
-    }
-
-    this.audio = new AudioEngine();
-    this.speech = new SpeechEngine(this.audio);
-    this.header = new Header(this);
-
-    this.state = {
-      lang:
-        localStorage.getItem("pref-lang") ||
-        (navigator.language.startsWith("en") ? "en" : "ne"),
-      view: "cards",
-      search: "",
-      sort: { key: null, dir: 1 },
-      store: null,
-      riskLevel: 0,
-      uiVolume: parseFloat(localStorage.getItem("ui-volume") || "0.5"),
-      diffMode: false,
-      compareReport: null,
-    };
-
-    this.refreshCounter = 60;
-    this.lastFetchTime = null;
-    this.latencyHistory = [];
-    this.intentTimer = null;
-    this.dynamicCache = JSON.parse(
-      localStorage.getItem("dynamicTranslations") || "{}",
-    );
-    this.lastSnapshotUpdate = null;
-    this.syncToast = null;
-    this.addToast = addToast;
-
-    this.initTimer();
-    Dashboard._instance = this;
-  }
-
-  static getInstance(): Dashboard {
-    if (!Dashboard._instance) {
-      Dashboard._instance = new Dashboard();
-    }
-    return Dashboard._instance;
-  }
-
-  initTimer() {
-    setInterval(() => {
-      this.refreshCounter--;
-      if (this.refreshCounter <= 0) {
-        this.refreshCounter = 60;
-        void this.loadData();
-      }
-      const timerEl = document.getElementById("refresh-timer");
-      if (timerEl) {
-        timerEl.innerText = `(${t("refreshing")} ${this.refreshCounter}${t("sec")})`;
-      }
-    }, 1000);
-  }
-
-  setLang(l: string) {
-    const prevLang = this.state.lang;
-    this.state.lang = l;
-    localStorage.setItem("pref-lang", l);
-
-    const lbl = document.getElementById("lang-current-label");
-    if (lbl) lbl.innerText = l.toUpperCase();
-
-    applyTranslations();
-    this.state.sort = { key: null, dir: 1 };
-
-    const titleEl = document.getElementById("main-title");
-    if (titleEl) titleEl.innerText = t("mainTitle");
-
-    const gBadge = document.getElementById("gemini-badge");
-    if (gBadge) gBadge.innerHTML = `${t("poweredBy")} <span>Gemini</span>`;
-
-    renderDropdowns();
-
-    if (prevLang !== l) {
-      const loader = document.getElementById("loader");
-      const msg = document.getElementById("loading-msg");
-      if (loader) loader.style.display = "flex";
-      if (msg) msg.innerText = t("loading");
-      void this.loadData();
-    } else if (this.state.store) {
-      this.render();
-    }
-  }
-
-  setView(v: string) {
-    this.state.view = v;
-    ["table", "cards", "charts"].forEach((mode) => {
-      const btn = document.getElementById("btn-" + mode);
-      if (btn) btn.classList.toggle("active", v === mode);
-    });
-
-    const tables = document.getElementById("view-table");
-    const cards = document.getElementById("view-cards");
-    const charts = document.getElementById("view-charts");
-    if (tables) tables.classList.toggle("active-view", v === "table");
-    if (cards) cards.classList.toggle("active-view", v === "cards");
-    if (charts) charts.classList.toggle("active-view", v === "charts");
-
-    const verify = document.getElementById("view-verify");
-    const history = document.getElementById("view-history");
-    if (verify) verify.style.display = v === "verify" ? "block" : "none";
-    if (history) history.style.display = v === "history" ? "block" : "none";
-
-    if (this.state.store) this.render();
-  }
-
-  async loadData(isForced = false) {
-    const fetchStart = performance.now();
-    const syncIcon = document.getElementById("data-sync-icon");
-    if (syncIcon) {
-      syncIcon.style.display = "inline-block";
-      syncIcon.classList.add("spinning");
-    }
-
-    this.state.store = null;
-    const skeleton = Array(10)
-      .fill(
-        `<tr class="skeleton-row"><td><div></div></td>${Array(5).fill("<td><div></div></td>").join("")}</tr>`,
-      )
-      .join("");
-    const tbody = document.getElementById("tbody");
-    if (tbody) tbody.innerHTML = skeleton;
-
-    try {
-      const params = new URLSearchParams(window.location.search);
-      const date = params.get("date");
-      const fetchOptions: RequestInit = isForced ? { cache: "no-store" } : {};
-      const endpoint = date
-        ? `/api/report?date=${date}&lang=${this.state.lang}`
-        : `/api/report?lang=${this.state.lang}${isForced ? "&force=true" : ""}`;
-
-      const res = await authenticatedFetch(endpoint, fetchOptions);
-      const json = (await res.json()) as ProjectReport;
-      if (json?.headers) {
-        const fetchEnd = performance.now();
-        const duration = Math.round(fetchEnd - fetchStart);
-        this.lastFetchTime = Date.now();
-        this.latencyHistory.push({ value: duration });
-        if (this.latencyHistory.length > 5) this.latencyHistory.shift();
-        if (res.headers.get("X-Force-Throttled") === "true")
-          this.addToast("info", t("forceThrottled"));
-
-        this.state.store = json;
-        if (json.lastUpdate) {
-          void this.header.checkUpdates(json.lastUpdate);
-        }
-        this.render();
-        const offlineOverlay = document.getElementById("offline-overlay");
-        if (offlineOverlay) offlineOverlay.style.display = "none";
-        if (isForced) this.addToast("success", t("cacheCleared"));
-
-        const isFromCache = res.headers.get("X-From-Cache") === "true";
-        const status = document.getElementById("status");
-        if (status) {
-          if (isFromCache) {
-            status.innerText = t("cached");
-            status.style.color = "#fbbf24";
-          } else {
-            status.innerText = t("live");
-            status.style.color = "#4ade80";
-          }
-        }
-        updateConnStrength(duration);
-      }
-    } catch (e) {
-      console.error("Error loading data:", e);
-      const status = document.getElementById("status");
-      if (status) {
-        status.innerText = t("offline");
-        status.style.color = "#f87171";
-      }
-      this.addToast("error", t("offline"));
-      const offlineOverlay = document.getElementById("offline-overlay");
-      if (offlineOverlay && !this.state.store) {
-        offlineOverlay.style.display = "flex";
-      }
-    } finally {
-      if (syncIcon) {
-        syncIcon.classList.remove("spinning");
-        syncIcon.style.display = "none";
-      }
-      const loader = document.getElementById("loader");
-      if (loader) loader.style.display = "none";
-    }
-  }
-
-  render() {
-    // Implementation handled globally but can be moved here
-    render(this.state.store);
-  }
-
-  toggleLang() {
-    const next = this.state.lang === "en" ? "ne" : "en";
-    this.setLang(next);
-    this.audio.playUi("click");
-  }
-
-  toggleGeminiMenu() {
-    const menu = document.getElementById("gemini-menu");
-    const fabMenu = document.getElementById("fab-menu");
-    if (fabMenu) fabMenu.classList.remove("show");
-    if (menu) menu.classList.toggle("show");
-    this.audio.playUi("pop");
-  }
-
-  toggleFabMenu() {
-    const menu = document.getElementById("fab-menu");
-    const geminiMenu = document.getElementById("gemini-menu");
-    const btn = document.getElementById("fab-main-btn");
-    if (geminiMenu) geminiMenu.classList.remove("show");
-    if (menu) {
-      menu.classList.toggle("show");
-      if (btn) btn.classList.toggle("active", menu.classList.contains("show"));
-    }
-    this.audio.playUi("pop");
-  }
-
-  handleSearch(term?: string) {
-    handleSearch(term);
-  }
-
-  typeText(element: HTMLElement, text: string, useSound = false) {
-    typeText(element, text, useSound);
-  }
-
-  triggerDatabaseRestore() {
-    return triggerDatabaseRestore();
-  }
-}
-
-const dashboard = Dashboard.getInstance();
-
 function showDiagnostics() {
   // Lock debug access: only allow diagnostics in development mode
   if (APP_ENV === "production") {
@@ -1310,7 +429,7 @@ function showDiagnostics() {
   const store = dashboard.state.store;
   if (!store) return;
   const criticalRows = store.rows.filter((r) => r._status === "critical");
-  const i18n = I18N[dashboard.state.lang];
+  const langStrings = I18N[dashboard.state.lang];
   const dispCount =
     dashboard.state.lang === "ne"
       ? toNepaliNumerals(criticalRows.length)
@@ -1354,7 +473,7 @@ function showDiagnostics() {
     )
     .join("");
 
-  diagM.innerHTML = i18n.months
+  diagM.innerHTML = langStrings.months
     .map(
       (m, i) =>
         `<option value="${(i + 1).toString().padStart(2, "0")}">${m}</option>`,
@@ -1414,7 +533,8 @@ function showDiagnostics() {
   document
     .getElementById("close-diag-modal-btn")
     ?.addEventListener("click", closeModal);
-  document.getElementById("lbl-diag-period").textContent = i18n.diagPeriod;
+  document.getElementById("lbl-diag-period").textContent =
+    langStrings.diagPeriod;
 }
 
 async function exportHealthReport() {
@@ -1427,7 +547,7 @@ async function exportHealthReport() {
 
   // Generate Bikram Sambat date string using I18N months and Nepali numerals
   const bsYear = parseInt(year) + 57;
-  const bsMonthName = t(I18N[dashboard.state.lang].months[parseInt(month) - 1]);
+  const bsMonthName = I18N[dashboard.state.lang].months[parseInt(month) - 1];
   const displayYear =
     dashboard.state.lang === "ne" ? toNepaliNumerals(bsYear) : bsYear;
   const formattedDate =
@@ -1503,418 +623,6 @@ async function exportHealthReport() {
   } finally {
     document.getElementById("loader").style.display = "none";
   }
-}
-
-const I18N = {
-  ne: {
-    govt: "नेपाल सरकार",
-    ministry: "भौतिक पूर्वाधार तथा यातायात मन्त्रालय",
-    dept: "सडक विभाग",
-    city: "चाकुपाट, ललितपुर",
-    reportTitle: "DoR प्रगति प्रतिवेदन (साप्ताहिक)",
-    mainTitle: "DoR सडक विभाग",
-    total: "कुल सूचक",
-    met: "लक्ष्य",
-    attention: "ध्यान",
-    update: "अन्तिम अपडेट",
-    live: "● प्रत्यक्ष",
-    offline: "● अफलाइन",
-    cached: "● क्यास",
-    loading: "लोडिङ",
-    search: "खोज",
-    progress: "प्रगति",
-    refreshing: "रिफ्रेस",
-    sec: "सेकेन्ड",
-    briefTitle: "सारांश",
-    charts: "प्रगति चार्ट",
-    auraText: "🤖 मद्दत?",
-    auraAnalyzing: "जोखिम विश्लेषण... 🤖🧠",
-    auraIsolated: "जोखिम अलग!",
-    auraTracing: "सफलता ट्र्याक... 🤖✨",
-    auraFiltered: "सफलता फिल्टर!",
-    noDataToVisualize: "डाटा छैन",
-    linkCopied: "लिंक प्रतिलिपि!",
-    checkConnection: "जडान",
-    switchLanguage: "भाषा",
-    reportHistory: "इतिहास",
-    exportPdf: "पीडीएफ",
-    downloadOfficialPdf: "डाउनलोड",
-    muteUnmute: "ध्वनि",
-    translateBrief: "अनुवाद",
-    readAloud: "वाचन",
-    shareAudio: "साझा",
-    downloadAudio: "डाउनलोड",
-    shareBrief: "साझा",
-    printMemo: "प्रिन्ट",
-    tableView: "तालिका",
-    chartsView: "चार्ट",
-    cardsView: "कार्ड",
-    stable: "प्रणाली स्थिर: जोखिम १०% भन्दा कम",
-    netHealth: "नेटवर्क अवस्था",
-    latency: "विलम्बता",
-    latest: "भर्खरै",
-    poweredBy: "द्वारा संचालित",
-    ago: "पटक अघि",
-    justNow: "भर्खरै",
-    secsAgo: "{{count}} सेकेन्ड अघि",
-    minsAgo: "{{count}} मिनेट अघि",
-    hoursAgo: "{{count}} घण्टा अघि",
-    usingCache: "क्यास प्रयोग",
-    noResults: "नतिजा भेटिएन",
-    retrySearch: "सफाइ",
-    results: "नतिजाहरू",
-    connStrength: "लिंक:",
-    connExcellent: "उत्कृष्ट",
-    connGood: "राम्रो",
-    connFair: "ठीकै",
-    connPoor: "कमजोर",
-    year: "वर्ष",
-    selectMonth: "महिना छान्नुहोस्",
-    diagPeriod: "लेखापरीक्षण अवधि",
-    verificationTitle: "प्रतिवेदन प्रमाणीकरण",
-    verifiedSuccess: "✅ प्रमाणित",
-    invalidReport: "❌ अमान्य",
-    settings: "सेटिङहरू",
-    theme: "थिम प्राथमिकता",
-    themeLight: "लाइट मोड",
-    themeDark: "डार्क मोड",
-    themeSystem: "प्रणाली पूर्वनिर्धारित",
-    clearCache: "क्यास सफाइ",
-    resetAll: "रिसेट",
-    resetConfirm: "सबै डेटा मेटिनेछ। निश्चित हुनुहुन्छ?",
-    totalCache: "कुल पीवाइई (PWA) क्यास",
-    downloadOffline: "अफलाइन डाउनलोड",
-    downloading: "डाउनलोड",
-    downloadComplete: "डाउनलोड सम्पन्न",
-    forceThrottled: "पुनः लोड सीमा पुग्यो। हालैको डेटा प्रयोग गर्दै।",
-    cacheCleared: "क्यास सफा",
-    qualifying: "योग्यता जाँच्दै...",
-    storageUsage: "भण्डारण उपयोग",
-    calculating: "गणना गर्दै...",
-    lowData: "कम डाटा मोड",
-    uiVolume: "प्रणाली ध्वनि भोल्युम",
-    muteAll: "म्यूट",
-    dbBackup: "क्लाउड ब्याकअप",
-    dbBackupDesc: "डाटाबेस स्न्यापशट सुरक्षित गर्नुहोस्",
-    dbRestore: "रिस्टोर",
-    dbRestoreDesc: "क्लाउडबाट डाटा रिकभर गर्नुहोस्",
-    dataSyncing: "डाटा सिङ्क हुँदैछ...",
-    loadingDiff: "भिन्नता लोड गर्दै...",
-    musicSelection: "पृष्ठभूमि संगीत",
-    stopReading: "रोक्नुहोस्",
-    preparingAudio: "तयारी...",
-    voiceSelection: "आवाज चयन",
-    voiceDesc: "पढ्नको लागि आवाज छान्नुहोस्",
-    speechPitch: "पढ्ने पिच",
-    speechPitchDesc: "आवाजको टोन मिलाउनुहोस्",
-    pauseReading: "पज",
-    resumeReading: "पुनः सुरु",
-    speechRate: "पढ्ने गति",
-    speechRateDesc: "पढेर सुनाउने गति मिलाउनुहोस्",
-    darkSchedule: "डार्क मोड शेड्युल",
-    darkScheduleDesc: "समय अनुसार थिम परिवर्तन",
-    systemFont: "प्रणाली फन्ट प्रयोग गर्नुहोस्",
-    systemFontDesc: "मानक ओएस फन्ट प्रयोग गर्नुहोस्",
-    fontSize: "फन्ट साइज",
-    fontSizeDesc: "राम्रो पढ्न योग्यताको लागि फन्ट साइज मिलाउनुहोस्",
-    soundPitch: "पिच",
-    soundPack: "ध्वनि प्याक",
-    highContrast: "उच्च कन्ट्रास्ट मोड",
-    highContrastDesc: "अधिकतम दृश्यताको लागि कालो र सेतो थिम प्रयोग गर्नुहोस्",
-    grayscale: "ग्रेस्केल मोड",
-    grayscaleDesc: "रंग अन्धोपन भएका प्रयोगकर्ताहरूको लागि रङ्गहरू हटाउनुहोस्",
-    blueLightFilter: "निलो प्रकाश फिल्टर",
-    blueLightDesc: "राती आँखाको आरामको लागि न्यानो रङ्गहरू प्रयोग गर्नुहोस्",
-    resetAudio: "ध्वनि रिसेट",
-    packModern: "आधुनिक",
-    packClassic: "क्लासिक",
-    packRetro: "रेट्रो",
-    updateReady: "नयाँ संस्करण। अपडेट गर्ने?",
-    lowDataDesc: "छिटो लोड गर्न एआई विश्लेषण असक्षम गर्नुहोस्",
-    appVersion: "एप संस्करण",
-    whatsNew: "नयाँ",
-    checkUpdates: "अपडेट जाँच",
-    install: "इन्स्टल",
-    installSuccess: "इन्स्टल सम्पन्न",
-    diffModeActive: "भिन्नता मोड सक्रिय: {{date}} सँग तुलना गर्दै",
-    diffLoadFailed: "भिन्नता लोड गर्न असफल भयो",
-    diffModeOff: "भिन्नता मोड बन्द गरियो",
-    compare: "तुलना गर्नुहोस्",
-    months: [
-      "वैशाख",
-      "जेठ",
-      "असार",
-      "साउन",
-      "भदौ",
-      "असोज",
-      "कात्तिक",
-      "मंसिर",
-      "पुस",
-      "माघ",
-      "फागुन",
-      "चैत",
-    ],
-  },
-  en: {
-    govt: "Government of Nepal",
-    ministry: "Ministry of Physical Infrastructure & Transport",
-    dept: "Department of Roads",
-    city: "Chakupat, Lalitpur",
-    reportTitle: "DoR Progress Report (Weekly)",
-    mainTitle: "DOR Progress Dashboard",
-    total: "Total",
-    met: "Met",
-    attention: "Attention",
-    update: "Updated",
-    live: "● LIVE",
-    offline: "● OFFLINE",
-    cached: "● CACHED",
-    loading: "Loading",
-    search: "Search",
-    progress: "PROGRESS",
-    refreshing: "Refreshing",
-    sec: "s",
-    briefTitle: "Briefing",
-    charts: "Progress Charts",
-    auraText: "🤖 Help?",
-    auraAnalyzing: "Analyzing... 🤖🧠",
-    auraIsolated: "Isolated!",
-    auraTracing: "Tracing... 🤖✨",
-    auraFiltered: "Filtered!",
-    noDataToVisualize: "No data",
-    linkCopied: "Link copied!",
-    stable: "System Stable: Risk level below 10%",
-    netHealth: "Network Health",
-    latency: "Latency",
-    latest: "Latest",
-    poweredBy: "Powered by",
-    ago: "refreshes ago",
-    justNow: "Just now",
-    secsAgo: "{{count}}s ago",
-    minsAgo: "{{count}}m ago",
-    hoursAgo: "{{count}}h ago",
-    usingCache: "Using cache",
-    noResults: "No results",
-    retrySearch: "Clear",
-    results: "Results",
-    connStrength: "Link:",
-    connExcellent: "Excellent",
-    connGood: "Good",
-    connFair: "Fair",
-    connPoor: "Poor",
-    year: "Year",
-    selectMonth: "Select Month",
-    diagPeriod: "Audit Period",
-    verificationTitle: "Report Verification",
-    verifiedSuccess: "✅ Verified",
-    invalidReport: "❌ Invalid",
-    checkConnection: "Connection",
-    switchLanguage: "Language",
-    reportHistory: "History",
-    exportPdf: "PDF",
-    downloadOfficialPdf: "Download",
-    muteUnmute: "Sound",
-    settings: "Settings",
-    translateBrief: "Translate",
-    readAloud: "Narration",
-    shareAudio: "Share",
-    downloadAudio: "Download",
-    shareBrief: "Share",
-    printMemo: "Print",
-    tableView: "Table",
-    chartsView: "Charts",
-    cardsView: "Cards",
-    theme: "Theme Preference",
-    themeLight: "Light Mode",
-    themeDark: "Dark Mode",
-    themeSystem: "System Default",
-    clearCache: "Clear Cache",
-    resetAll: "Reset",
-    resetConfirm: "All data will be deleted. Proceed?",
-    totalCache: "Total PWA Cache",
-    downloadOffline: "Offline Download",
-    downloading: "Downloading",
-    downloadComplete: "Download Complete",
-    forceThrottled: "Refresh limit reached. Using cache.",
-    cacheCleared: "Cache cleared",
-    qualifying: "Qualifying...",
-    storageUsage: "Storage Usage",
-    calculating: "Calculating...",
-    lowData: "Low Data Mode",
-    uiVolume: "UI Sound Volume",
-    muteAll: "Mute",
-    dbBackup: "Cloud Backup",
-    dbBackupDesc: "Save database snapshot to KV",
-    dbRestore: "Restore",
-    dbRestoreDesc: "Recover data from a cloud snapshot",
-    dataSyncing: "Syncing...",
-    loadingDiff: "Loading diff...",
-    diffModeActive: "Diff mode active: Comparing with {{date}}",
-    diffLoadFailed: "Failed to load diff",
-    diffModeOff: "Diff mode off",
-    musicSelection: "Background Music",
-    stopReading: "Stop",
-    preparingAudio: "Preparing...",
-    voiceSelection: "Voice Selection",
-    voiceDesc: "Choose a voice for reading",
-    speechPitch: "Speech Pitch",
-    speechPitchDesc: "Adjust the voice tone",
-    pauseReading: "Pause",
-    resumeReading: "Resume",
-    speechRate: "Speech Speed",
-    speechRateDesc: "Adjust the narration speed",
-    darkSchedule: "Dark Mode Schedule",
-    darkScheduleDesc: "Schedule based theme",
-    systemFont: "Use System Font",
-    systemFontDesc: "Use standard OS typography",
-    fontSize: "Font Size",
-    fontSizeDesc: "Adjust font size for better readability",
-    soundPitch: "Pitch",
-    soundPack: "Sound Pack",
-    highContrast: "High Contrast Mode",
-    highContrastDesc: "Use pure black and white for maximum visibility",
-    grayscale: "Grayscale Mode",
-    grayscaleDesc: "Remove colors for users with color blindness",
-    blueLightFilter: "Blue Light Filter",
-    blueLightDesc: "Use warmer colors for eye comfort at night",
-    resetAudio: "Reset Audio",
-    packModern: "Modern",
-    packClassic: "Classic",
-    packRetro: "Retro",
-    updateReady: "New version. Update?",
-    lowDataDesc: "Disable AI analysis for faster loading",
-    appVersion: "App Version",
-    whatsNew: "What's New",
-    checkUpdates: "Check Updates",
-    install: "Install",
-    installSuccess: "Installed",
-    months: [
-      "January",
-      "February",
-      "March",
-      "April",
-      "May",
-      "June",
-      "July",
-      "August",
-      "September",
-      "October",
-      "November",
-      "December",
-    ],
-  },
-};
-
-/**
- * Translation Helper
- * Priority: Dynamic JSON from Sheet > Hardcoded I18N fallback > Key name
- */
-const translationQueue = new Set();
-let translationTimeout = null;
-
-const t = (key, count) => {
-  if (!key) return "";
-  const currentLang = dashboard.state.lang;
-  const isNepali = currentLang === "ne";
-
-  let finalKey = key;
-
-  if (count !== undefined) {
-    const rule = new Intl.PluralRules(currentLang).select(count);
-    const pKey = `${key}_${rule}`;
-
-    // Optimized lookup for plural/standard keys
-    const lookup = [
-      dashboard.dynamicCache[pKey],
-      translationsData?.[currentLang]?.[pKey],
-      I18N[currentLang]?.[pKey],
-      dashboard.dynamicCache[key],
-      translationsData?.[currentLang]?.[key],
-      I18N[currentLang]?.[key],
-    ];
-
-    finalKey = lookup.find((v) => v !== undefined)
-      ? lookup[0] || lookup[1]
-        ? pKey
-        : key
-      : key;
-  }
-
-  let text =
-    dashboard.dynamicCache[finalKey] ||
-    translationsData?.[currentLang]?.[finalKey] ||
-    I18N[currentLang]?.[finalKey] ||
-    null;
-
-  // AUTO-DETECTION LOGIC:
-  // If translation is missing and we aren't in English, queue for AI
-  if (text === null && isNepali && !translationQueue.has(key)) {
-    translationQueue.add(key);
-    if (translationTimeout) clearTimeout(translationTimeout);
-    translationTimeout = setTimeout(() => processTranslationQueue(), 1000);
-  }
-
-  text = text || key;
-
-  if (count !== undefined) {
-    const displayCount = currentLang === "ne" ? toNepaliNumerals(count) : count;
-    return text.replace("{{count}}", displayCount);
-  }
-  return text;
-};
-
-async function processTranslationQueue() {
-  if (translationQueue.size === 0) return;
-
-  const keysToTranslate = Array.from(translationQueue);
-  translationQueue.clear();
-
-  try {
-    const res = await authenticatedFetch(
-      `/api/translate?targetLang=${dashboard.state.lang}`,
-      {
-        method: "POST",
-        body: JSON.stringify({ texts: keysToTranslate }),
-      },
-    );
-
-    if (res.ok) {
-      const data = await res.json();
-      data.results.forEach((item) => {
-        dashboard.dynamicCache[item.original] = item.translated;
-      });
-      localStorage.setItem(
-        "dynamicTranslations",
-        JSON.stringify(dashboard.dynamicCache),
-      );
-
-      // Re-trigger render and UI updates with new translations
-      if (dashboard.state.store) dashboard.render();
-      applyTranslations();
-    }
-  } catch (e) {
-    console.error("[Auto-Translate] Batch failed", e);
-  }
-}
-
-/**
- * Scans the DOM for elements with data-i18n attributes and updates them.
- */
-function applyTranslations() {
-  // Translate standard text content
-  document.querySelectorAll("[data-i18n]").forEach((el) => {
-    const key = el.getAttribute("data-i18n");
-    const countAttr = el.getAttribute("data-i18n-count");
-    const count = countAttr !== null ? parseFloat(countAttr) : undefined;
-    el.innerText = t(key, count);
-  });
-
-  // Generic attribute translation: title, placeholder, aria-label
-  ["title", "placeholder", "aria-label", "data-title"].forEach((attr) => {
-    document.querySelectorAll(`[data-i18n-${attr}]`).forEach((el) => {
-      el.setAttribute(attr, t(el.getAttribute(`data-i18n-${attr}`)));
-    });
-  });
 }
 
 // AI Intent Sensing (Mind-Reading Effect)
@@ -2013,7 +721,7 @@ window.resetThemeToSystem = () => {
   // Apply the theme visually but do not persist it to localStorage
   setTheme(systemTheme, false);
   originalTheme = systemTheme; // Ensure revertTheme tracks the system state
-  addToast(
+  dashboard.addToast(
     "info",
     dashboard.state.lang === "en"
       ? "Theme reset to system default."
@@ -2071,7 +779,7 @@ function copyDeepLink(name) {
   const url = new URL(window.location.href);
   url.searchParams.set("indicator", name);
   navigator.clipboard.writeText(url.toString());
-  addToast("success", t("linkCopied"));
+  dashboard.addToast("success", t("linkCopied"));
 }
 
 window.renderDropdowns = renderDropdowns;
@@ -2239,14 +947,14 @@ async function loadCumulative(type) {
   const json = await res.json();
   if (!res.ok) {
     document.getElementById("loader").style.display = "none";
-    addToast("info", json.error || t("noDataForPeriod"));
+    dashboard.addToast("info", json.error || t("noDataForPeriod"));
     return;
   }
   dashboard.state.store = json;
   dashboard.render();
   dashboard.setView("table");
   document.getElementById("loader").style.display = "none";
-  addToast("success", t("cumulativeReportSuccess", { period }));
+  dashboard.addToast("success", t("cumulativeReportSuccess", { period }));
 }
 
 window.downloadConsolidatedPdf = downloadConsolidatedPdf;
@@ -2326,7 +1034,7 @@ async function downloadPdf(date) {
       a.click();
       window.URL.revokeObjectURL(downloadUrl); // Clean up the object URL
     } else {
-      addToast(
+      dashboard.addToast(
         "error",
         dashboard.state.lang === "en"
           ? "Failed to download PDF archive."
@@ -2352,7 +1060,7 @@ async function loadSnapshot(date) {
   dashboard.render();
   dashboard.setView("table");
   document.getElementById("loader").style.display = "none";
-  addToast("info", `Viewing data from ${date}`);
+  dashboard.addToast("info", `Viewing data from ${date}`);
 }
 
 async function handleVerification() {
@@ -2434,7 +1142,7 @@ function handleSearch(term) {
           .filter((v) => v.toLowerCase().includes(dashboard.state.search))
           .slice(0, 10);
         dl.innerHTML = [...new Set(matches)]
-          .map((m) => `<option value="${m}">`)
+          .map((m: string) => `<option value="${m}">`)
           .join("");
       }
     }
@@ -2606,7 +1314,7 @@ window.checkForUpdates = async () => {
   const btn = document.getElementById("update-check-btn");
   if (btn) btn.disabled = true;
 
-  addToast(
+  dashboard.addToast(
     "info",
     dashboard.state.lang === "en"
       ? "Checking for updates..."
@@ -2621,7 +1329,7 @@ window.checkForUpdates = async () => {
       // we previously added will trigger the persistent update toast.
       setTimeout(() => {
         if (!reg.installing && !reg.waiting) {
-          addToast(
+          dashboard.addToast(
             "success",
             dashboard.state.lang === "en"
               ? "App is up to date."
@@ -2632,7 +1340,7 @@ window.checkForUpdates = async () => {
       }, 2000);
     }
   } catch (e) {
-    addToast("error", "Update check failed.");
+    dashboard.addToast("error", "Update check failed.");
     if (btn) btn.disabled = false;
   }
 };
@@ -2663,25 +1371,77 @@ async function getActiveSwVersion() {
   });
 }
 
+/**
+ * Requests the Snapshot Key from the user via a custom modal.
+ */
+async function requestSnapshotKey(): Promise<string | null> {
+  if (APP_ENV !== "production") return "dev-bypass";
+
+  const cached = sessionStorage.getItem("_snapshot_key");
+  if (cached) return cached;
+
+  return new Promise((resolve) => {
+    const modalBody = document.getElementById("modal-body");
+    const overlay = document.getElementById("modal-overlay");
+    if (!modalBody || !overlay) return resolve(null);
+
+    modalBody.innerHTML = `
+      <div class="modal-header">
+        <h3 style="margin:0; color:var(--primary)">🔐 ${t("authRequired") || "Authentication Required"}</h3>
+        <p style="font-size:0.8rem; opacity:0.7; margin-top:5px;">Please enter the Snapshot Key to authorize this administrative action.</p>
+      </div>
+      <div style="padding: 20px 0;">
+        <input type="password" id="snapshot-key-input" placeholder="••••••••" 
+          style="width: 100%; padding: 14px; border-radius: 12px; border: 1px solid var(--border); background: var(--bg); color: var(--text); outline: none; font-size: 1.1rem; text-align: center; letter-spacing: 0.2em;">
+      </div>
+      <div style="display:flex; gap:10px;">
+        <button id="snapshot-key-submit" class="retry-btn" style="flex:1; margin:0;">${t("authorize") || "Authorize"}</button>
+        <button id="snapshot-key-cancel" class="toggle-btn" style="flex:1; border:1px solid var(--border);">${t("cancel")}</button>
+      </div>
+    `;
+
+    overlay.style.display = "flex";
+    const input = document.getElementById(
+      "snapshot-key-input",
+    ) as HTMLInputElement;
+    input.focus();
+
+    const closeAndResolve = (val: string | null) => {
+      if (val) sessionStorage.setItem("_snapshot_key", val);
+      overlay.style.display = "none";
+      resolve(val);
+    };
+
+    document
+      .getElementById("snapshot-key-submit")
+      ?.addEventListener("click", () => closeAndResolve(input.value.trim()));
+    document
+      .getElementById("snapshot-key-cancel")
+      ?.addEventListener("click", () => closeAndResolve(null));
+    input.addEventListener("keydown", (e) => {
+      if (e.key === "Enter") closeAndResolve(input.value.trim());
+      if (e.key === "Escape") closeAndResolve(null);
+    });
+  });
+}
+
 // PDF Snapshot Code// PDF Snapshot Management Functions
-let snapshotList = [];
+let snapshotList: any[] = [];
 window.createSnapshotManual = async (e) => {
   const btn = e?.target || document.getElementById("create-snapshot-btn");
   const originalText = btn.innerText;
   btn.innerText = "Creating...";
   btn.disabled = true;
   try {
-    let snapshotKey = "dev-bypass";
-    if (APP_ENV === "production") {
-      snapshotKey = prompt("Enter Snapshot Key to authorize:") || "";
-      if (!snapshotKey) {
-        btn.innerText = originalText;
-        btn.disabled = false;
-        return;
-      }
+    const snapshotKey = await requestSnapshotKey();
+    if (!snapshotKey) {
+      btn.innerText = originalText;
+      btn.disabled = false;
+      return;
     }
+
     if (!dashboard.state.store) {
-      addToast("error", "No data");
+      dashboard.addToast("error", "No data");
       btn.innerText = originalText;
       btn.disabled = false;
       return;
@@ -2704,13 +1464,20 @@ window.createSnapshotManual = async (e) => {
     });
     if (response.ok) {
       await response.json();
-      addToast("success", "Snapshot created!");
+      dashboard.addToast("success", "Snapshot created!");
       listSnapshots(true);
     } else {
-      addToast("error", "Failed");
+      const errorData = await response
+        .json()
+        .catch(() => ({ error: "Unknown error" }));
+      dashboard.addToast(
+        "error",
+        errorData.error || "Failed to create snapshot",
+      );
     }
   } catch (e) {
-    addToast("error", "Failed");
+    console.error("Error creating snapshot:", e);
+    dashboard.addToast("error", "An unexpected error occurred.");
   } finally {
     btn.innerText = originalText;
     btn.disabled = false;
@@ -2724,23 +1491,23 @@ window.listSnapshots = async (force) => {
     return;
   }
   try {
-    let snapshotKey = "dev-bypass";
-    if (APP_ENV === "production") {
-      snapshotKey = prompt("Enter Snapshot Key:") || "";
-      if (!snapshotKey) return;
-    }
+    const snapshotKey = await requestSnapshotKey();
+    if (!snapshotKey) return;
+
     const response = await fetch(WORKER_BASE + "/api/snapshots", {
       headers: { "X-Snapshot-Key": snapshotKey },
     });
     if (!response.ok) {
-      addToast("error", "Failed");
+      dashboard.addToast("error", "Failed");
       return;
     }
     const data = await response.json();
-    snapshotList = data.snapshots || [];
+    snapshotList = data.snapshots || []; // Assuming the API returns { snapshots: [...] }
     if (snapshotList.length === 0) {
       listEl.innerHTML = "<p style='font-size: 0.7rem;'>No snapshots</p>";
     } else {
+      // Sort snapshots by date in descending order for better readability
+      snapshotList.sort((a, b) => b.date.localeCompare(a.date));
       listEl.innerHTML = snapshotList
         .map(function (s) {
           return (
@@ -2765,21 +1532,26 @@ window.listSnapshots = async (force) => {
     }
     container.style.display = "block";
   } catch (e) {
-    addToast("error", "Failed");
+    console.error("Error listing snapshots:", e);
+    dashboard.addToast("error", "An unexpected error occurred.");
   }
 };
 window.downloadSnapshot = async (date) => {
-  let snapshotKey = "dev-bypass";
-  if (APP_ENV === "production") {
-    snapshotKey = prompt("Enter Snapshot Key:") || "";
-    if (!snapshotKey) return;
-  }
+  const snapshotKey = await requestSnapshotKey();
+  if (!snapshotKey) return;
+
   try {
     const response = await fetch(WORKER_BASE + "/api/snapshot?date=" + date, {
       headers: { "X-Snapshot-Key": snapshotKey },
     });
     if (!response.ok) {
-      addToast("error", "Failed");
+      const errorData = await response
+        .json()
+        .catch(() => ({ error: "Unknown error" }));
+      dashboard.addToast(
+        "error",
+        errorData.error || "Failed to download snapshot",
+      );
       return;
     }
     const blob = await response.blob();
@@ -2789,31 +1561,37 @@ window.downloadSnapshot = async (date) => {
     a.download = "DoR_Snapshot_" + date + ".pdf";
     a.click();
     window.URL.revokeObjectURL(url);
-    addToast("success", "Downloaded");
-  } catch (e) {
-    addToast("error", "Failed");
+    dashboard.addToast("success", "Downloaded");
+  } catch (e: any) {
+    console.error("Error downloading snapshot:", e);
+    dashboard.addToast("error", e.message || "An unexpected error occurred.");
   }
 };
 window.deleteSnapshot = async (date) => {
   if (!confirm("Delete " + date + "?")) return;
-  let snapshotKey = "dev-bypass";
-  if (APP_ENV === "production") {
-    snapshotKey = prompt("Enter Snapshot Key:") || "";
-    if (!snapshotKey) return;
-  }
+  const snapshotKey = await requestSnapshotKey();
+  if (!snapshotKey) return;
+
   try {
     const response = await fetch(WORKER_BASE + "/api/snapshot?date=" + date, {
       method: "DELETE",
       headers: { "X-Snapshot-Key": snapshotKey },
     });
     if (response.ok) {
-      addToast("success", "Deleted");
+      dashboard.addToast("success", "Deleted");
       listSnapshots(true);
     } else {
-      addToast("error", "Failed");
+      const errorData = await response
+        .json()
+        .catch(() => ({ error: "Unknown error" }));
+      dashboard.addToast(
+        "error",
+        errorData.error || "Failed to delete snapshot",
+      );
     }
   } catch (e) {
-    addToast("error", "Failed");
+    console.error("Error deleting snapshot:", e);
+    dashboard.addToast("error", "An unexpected error occurred.");
   }
 };
 
@@ -2830,6 +1608,14 @@ window.showSettings = async () => {
   const isGrayscale = localStorage.getItem("grayscale") === "true";
   const isSepia = localStorage.getItem("blue-light") === "true";
   const swVersion = await getActiveSwVersion();
+
+  const isAuthorized = !!sessionStorage.getItem("_snapshot_key");
+  const authStatusBadge = isAuthorized
+    ? `<span style="margin-left: 8px; font-size: 0.55rem; color: var(--good); border: 1px solid var(--good); padding: 2px 6px; border-radius: 4px; vertical-align: middle; font-weight: 900; letter-spacing: 0.05em; background: rgba(74, 222, 128, 0.1); display: inline-flex; align-items: center; gap: 6px;">
+        ACTIVE SESSION 
+        <span onclick="logoutSnapshotSession(); event.stopPropagation();" style="cursor: pointer; opacity: 0.6; font-size: 0.7rem; border-left: 1px solid var(--good); padding-left: 6px;" title="Logout">✕</span>
+      </span>`
+    : "";
 
   // Clear the "New Feature" badge
   localStorage.setItem("app-version-seen", swVersion);
@@ -3024,37 +1810,37 @@ window.showSettings = async () => {
               <div style="font-size: 0.65rem; color: var(--text-light);">${t("blueLightDesc")}</div>
             </div>
             <label class="toggle-btn" style="padding: 4px; display: flex; align-items: center; gap: 8px; cursor: pointer;">
-              <input type="checkbox" id="sepia-toggle" ${isSepia ? "checked" : ""} onchange="toggleSepia(this.checked)" style="width: 18px; height: 18px; cursor: pointer; accent-color: var(--primary);">
+              <input type="checkbox" id="sepia-toggle" ${isSepia ? "checked" : ""} style="width: 18px; height: 18px; cursor: pointer; accent-color: var(--primary);">
             </label>
           </div>
-          <div style="margin-top: 15px;">
+          <div style="margin-top: 15px;" id="sound-pack-selector">
             <label style="font-size: 0.7rem; font-weight: 800; text-transform: uppercase; color: var(--text-light); margin-bottom: 10px; display: block;">${t("soundPack")}</label>
             <div class="theme-selector">
-              <div class="theme-option pack-opt ${currentSoundPack === "modern" ? "active" : ""}" data-pack="modern" onclick="setSoundPack('modern')"><span>${t("packModern")}</span></div>
-              <div class="theme-option pack-opt ${currentSoundPack === "classic" ? "active" : ""}" data-pack="classic" onclick="setSoundPack('classic')"><span>${t("packClassic")}</span></div>
-              <div class="theme-option pack-opt ${currentSoundPack === "retro" ? "active" : ""}" data-pack="retro" onclick="setSoundPack('retro')"><span>${t("packRetro")}</span></div>
+              <div class="theme-option pack-opt" data-pack="modern"><span>${t("packModern")}</span></div>
+              <div class="theme-option pack-opt" data-pack="classic"><span>${t("packClassic")}</span></div>
+              <div class="theme-option pack-opt" data-pack="retro"><span>${t("packRetro")}</span></div>
             </div>
           </div>
           <div style="margin-top: 15px;">
             <label style="font-size: 0.7rem; font-weight: 800; text-transform: uppercase; color: var(--text-light); margin-bottom: 8px; display: block;">${t("uiVolume")}</label>
             <div style="display:flex; align-items:center; gap:10px;">
-              <input type="range" id="ui-volume-slider" min="0" max="1" step="0.1" value="${dashboard.state.uiVolume}" oninput="updateVolume(this.value)" style="flex:1; height:6px; accent-color: var(--primary); background:var(--bg); border-radius:3px; outline:none; cursor:pointer;">
-              <button id="mute-toggle-btn" onclick="toggleMute()" class="icon-btn" style="width:32px; height:32px; font-size:0.8rem; flex-shrink:0;">${dashboard.state.uiVolume === 0 ? "🔇" : "🔊"}</button>
+              <input type="range" id="ui-volume-slider" min="0" max="1" step="0.1" value="${dashboard.state.uiVolume}" style="flex:1; height:6px; accent-color: var(--primary); background:var(--bg); border-radius:3px; outline:none; cursor:pointer;">
+              <button id="mute-toggle-btn" class="icon-btn" style="width:32px; height:32px; font-size:0.8rem; flex-shrink:0;">${dashboard.state.uiVolume === 0 ? "🔇" : "🔊"}</button>
             </div>
             <!-- Mute All Toggle/Indicator that appears when at zero -->
             <div style="margin-top: 15px;">
               <label style="font-size: 0.7rem; font-weight: 800; text-transform: uppercase; color: var(--text-light); margin-bottom: 8px; display: block;">${t("soundPitch")}</label>
-              <input type="range" id="ui-pitch-slider" min="0.5" max="2.0" step="0.1" value="${uiPitch}" oninput="updatePitch(this.value)" style="width:100%; height:6px; accent-color: var(--primary); background:var(--bg); border-radius:3px; outline:none; cursor:pointer;">
+              <input type="range" id="ui-pitch-slider" min="0.5" max="2.0" step="0.1" style="width:100%; height:6px; accent-color: var(--primary); background:var(--bg); border-radius:3px; outline:none; cursor:pointer;">
             </div>
             <div id="mute-all-active" style="display:${dashboard.state.uiVolume === 0 ? "flex" : "none"}; margin-top:10px; align-items:center; justify-content:center; gap:8px; padding:6px; background:rgba(239, 68, 68, 0.1); border:1px solid var(--critical); border-radius:8px; animation: modal-up 0.2s ease-out;">
               <span style="font-size:0.6rem; font-weight:800; color:var(--critical); text-transform:uppercase;">🚫 ${t("muteAll")}</span>
-              <button onclick="toggleMute()" style="background:none; border:none; color:var(--primary); font-size:0.6rem; font-weight:800; cursor:pointer; text-decoration:underline;">UNMUTE</button>
+              <button id="unmute-btn" style="background:none; border:none; color:var(--primary); font-size:0.6rem; font-weight:800; cursor:pointer; text-decoration:underline;">UNMUTE</button>
             </div>
-            <button onclick="resetAudioToDefault()" class="toggle-btn" style="width:100%; margin-top:15px; border:1px solid var(--border); font-size:0.65rem; display:flex; align-items:center; justify-content:center; gap:8px;">
+            <button id="reset-audio-btn" class="toggle-btn" style="width:100%; margin-top:15px; border:1px solid var(--border); font-size:0.65rem; display:flex; align-items:center; justify-content:center; gap:8px;">
                🔄 ${t("resetAudio")}
             </button>
           </div>
-          <button onclick="resetThemeToSystem()" class="toggle-btn" style="width: 100%; margin-top: 15px; border: 1px solid var(--border); display: flex; align-items: center; justify-content: center; gap: 8px;">
+          <button id="reset-theme-btn" class="toggle-btn" style="width: 100%; margin-top: 15px; border: 1px solid var(--border); display: flex; align-items: center; justify-content: center; gap: 8px;">
              🌓 ${t("themeSystem")}
           </button>
           <div style="margin-top: 15px; font-size: 0.7rem; color: var(--text-light); text-align: center; font-weight: 800;">
@@ -3081,7 +1867,7 @@ window.showSettings = async () => {
         </div>
            <hr style="margin: 15px 0; border: none; border-top: 1px solid var(--border);">
            <div style="margin-top: 15px;"> 
-             <label style="font-size: 0.7rem; font-weight: 800; text-transform: uppercase; color: var(--text-light); margin-bottom: 10px; display: block;">PDF Snapshots</label>
+             <label style="font-size: 0.7rem; font-weight: 800; text-transform: uppercase; color: var(--text-light); margin-bottom: 10px; display: block;">PDF Snapshots ${authStatusBadge}</label>
              <p style="font-size: 0.65rem; color: var(--text-light); margin-bottom: 10px;">Create and manage PDF snapshots of report data with date-based versioning.</p>
              <div style="display:flex; flex-direction:column; gap:8px;">
                <button id="create-snapshot-btn" class="toggle-btn" style="width: 100%; border: 1px solid var(--primary); display: flex; align-items: center; justify-content: center; gap: 10px; padding: 10px;">
@@ -3090,6 +1876,13 @@ window.showSettings = async () => {
                <button id="list-snapshots-btn" class="toggle-btn" style="width: 100%; border: 1px solid var(--primary); display: flex; align-items: center; justify-content: center; gap: 10px; padding: 10px;">
                  List Available Snapshots
                </button>
+               ${
+                 isAuthorized
+                   ? `
+                 <button onclick="logoutSnapshotSession()" style="background:none; border:none; color:var(--critical); font-size:0.6rem; font-weight:800; cursor:pointer; text-decoration:underline; align-self:flex-end; margin-top:-4px; padding: 4px;">LOGOUT SESSION</button>
+               `
+                   : ""
+               }
              </div>
 <div id="snapshot-list-container" style="margin-top: 10px; display: none;">
                 <div style="font-size: 0.7rem; font-weight: 800; color: var(--text-light); margin-bottom: 8px;">Snapshot History:</div>
@@ -3258,7 +2051,7 @@ window.triggerDatabaseBackup = async () => {
     });
 
     if (res.ok)
-      addToast(
+      dashboard.addToast(
         "success",
         dashboard.state.lang === "en"
           ? "Cloud backup successful!"
@@ -3266,7 +2059,8 @@ window.triggerDatabaseBackup = async () => {
       );
     else throw new Error("API_FAIL");
   } catch (e) {
-    if (e.message !== "CANCELLED") addToast("error", "Database backup failed.");
+    if (e.message !== "CANCELLED")
+      dashboard.addToast("error", "Database backup failed.");
   } finally {
     btn.disabled = false;
     btn.innerHTML = originalHtml;
@@ -3302,7 +2096,7 @@ window.triggerDatabaseRestore = async () => {
     });
     const keys = await listRes.json();
     if (!keys.length) {
-      addToast("info", "No backups found.");
+      dashboard.addToast("info", "No backups found.");
       return;
     }
 
@@ -3313,7 +2107,7 @@ window.triggerDatabaseRestore = async () => {
     if (!selectedKey) return;
 
     // 2. Download snapshot
-    addToast("info", "Downloading snapshot...");
+    dashboard.addToast("info", "Downloading snapshot...");
     const dataRes = await fetch(
       `${WORKER_BASE}/api/admin/get-backup?key=${selectedKey}`,
       { headers: { "X-Snapshot-Key": snapshotKey } },
@@ -3337,7 +2131,7 @@ window.triggerDatabaseRestore = async () => {
     }
     db.close();
 
-    addToast(
+    dashboard.addToast(
       "success",
       dashboard.state.lang === "en"
         ? "Database successfully restored!"
@@ -3346,7 +2140,7 @@ window.triggerDatabaseRestore = async () => {
     setTimeout(() => window.location.reload(), 1500);
   } catch (e) {
     console.error(e);
-    addToast("error", "Database restore failed.");
+    dashboard.addToast("error", "Database restore failed.");
   } finally {
     btn.disabled = false;
     btn.innerHTML = originalHtml;
@@ -3401,10 +2195,10 @@ window.downloadAllOfflineData = async () => {
       updateProgress();
     }
 
-    addToast("success", t.downloadComplete);
+    dashboard.addToast("success", t.downloadComplete);
     void updateStorageUsageDisplay();
   } catch (e) {
-    addToast("error", "Offline download interrupted.");
+    dashboard.addToast("error", "Offline download interrupted.");
   } finally {
     btn.disabled = false;
     btn.innerHTML = originalHtml;
@@ -3462,26 +2256,29 @@ async function updateStorageUsageDisplay() {
 }
 
 window.clearDataCache = () => {
+  // Clear authentication session for snapshots
+  sessionStorage.removeItem("_snapshot_key");
+
   if (navigator.serviceWorker?.controller) {
     // Communicate with Service Worker to clear the correct cache (dor-data-v2)
     navigator.serviceWorker.controller.postMessage({
       action: "clear-data-cache",
     });
-    addToast(
+    dashboard.addToast(
       "success",
       dashboard.state.lang === "en"
-        ? "Data cache cleared!"
-        : "डाटा क्यास मेटाइयो!",
+        ? "Total cache and session cleared!"
+        : "सबै क्यास र सेसन मेटाइयो!",
     );
     setTimeout(() => dashboard.loadData(true), 500);
   } else {
-    addToast("error", "Service Worker unavailable");
+    dashboard.addToast("error", "Service Worker unavailable");
   }
 };
 
 window.showFactoryResetConfirmation = () => {
   const t = I18N[dashboard.state.lang];
-  playPopSound();
+  dashboard.audio.playUi("pop");
 
   document.getElementById("modal-body").innerHTML = `
         <div class="modal-header">
@@ -3524,6 +2321,7 @@ async function executeFactoryReset() {
 
   // 1. Clear LocalStorage (Themes, Lang, Install State)
   localStorage.clear();
+  sessionStorage.removeItem("_snapshot_key");
 
   // Immediate UI Reset (Remove all accessibility and theme layers)
   document.body.removeAttribute("data-theme");
@@ -3544,7 +2342,7 @@ async function executeFactoryReset() {
     indexedDB.deleteDatabase("dor_mis_db");
   }
 
-  addToast("info", "Resetting application...");
+  dashboard.addToast("info", "Resetting application...");
 
   // 4. Force reload from server bypassing any potential remaining cache
   setTimeout(() => {
@@ -3555,7 +2353,7 @@ async function executeFactoryReset() {
 window.toggleLowData = (enabled) => {
   localStorage.setItem("low-data", enabled);
   if (enabled) {
-    addToast(
+    dashboard.addToast(
       "info",
       dashboard.state.lang === "en"
         ? "Low Data Mode active. AI Briefing disabled."
@@ -3625,13 +2423,13 @@ window.toggleDarkSchedule = (enabled) => {
         localStorage.setItem("last-lat", pos.coords.latitude);
         localStorage.setItem("last-lon", pos.coords.longitude);
         syncAppTheme();
-        addToast(
+        dashboard.addToast(
           "success",
           dashboard.state.lang === "en" ? "Location synced" : "स्थान सिङ्क",
         );
       },
       () => {
-        addToast(
+        dashboard.addToast(
           "info",
           dashboard.state.lang === "en"
             ? "Default schedule"
@@ -3655,182 +2453,10 @@ window.toggleSepia = (enabled) => {
   document.body.setAttribute("data-sepia", enabled);
 };
 
-// --- iOS PWA "Install" Logic ---
-const isIos = () => {
-  const userAgent = window.navigator.userAgent.toLowerCase();
-  return /iphone|ipad|ipod/.test(userAgent);
-};
-const isIosChrome = () => {
-  return window.navigator.userAgent.toLowerCase().includes("crios");
-};
-const isInStandaloneMode = () =>
-  "standalone" in window.navigator && window.navigator.standalone;
+// Initialize PWA logic on app start
+initPWALogic();
 
-function showIosInstallInstructions() {
-  const t = I18N[dashboard.state.lang];
-  const isChrome = isIosChrome();
-
-  const title = isChrome
-    ? dashboard.state.lang === "en"
-      ? "Install via Chrome on iOS"
-      : "iOS मा Chrome मार्फत इन्स्टल गर्नुहोस्"
-    : dashboard.state.lang === "en"
-      ? "Install App on iPhone"
-      : "आइफोनमा एप इन्स्टल गर्नुहोस्";
-
-  const step1 =
-    dashboard.state.lang === "en"
-      ? `1. Tap the 'Share' icon ${isChrome ? "(at the top right)" : "(at the bottom center)"}.`
-      : "१. स्क्रिनको तल रहेको 'Share' आइकनमा ट्याप गर्नुहोस्।";
-  const step2 =
-    dashboard.state.lang === "en"
-      ? "2. Scroll down and select 'Add to Home Screen'."
-      : "२. तल स्क्रोल गर्नुहोस् र 'Add to Home Screen' चयन गर्नुहोस्।";
-
-  document.getElementById("modal-body").innerHTML = `
-        <div class="modal-header">
-          <h3 style="margin:0; color:var(--primary)">${title}</h3>
-        </div>
-        <div style="padding: 20px 0; text-align: left;">
-          <p style="font-size: 0.95rem; margin-bottom: 15px;">${step1}</p>
-          <p style="font-size: 0.95rem; margin-bottom: 20px;">${step2}</p>
-          <div style="text-align: center; opacity: 0.8;">
-             <span style="font-size: 2rem;">⎋</span> <span style="font-size: 1.5rem;">→</span> <span style="font-size: 2rem;">⊞</span>
-          </div>
-        </div>
-        <button onclick="closeModal()" class="retry-btn" style="width:100%; margin:0;">Got it</button>
-      `;
-  document.getElementById("modal-overlay").style.display = "flex";
-}
-
-// Constants for magic numbers
 const PULL_THRESHOLD = 120;
-const REFRESH_INTERVAL_SECONDS = 60;
-const PWA_INSTALL_QUALIFICATION_DELAY_MS = 30000;
-
-// PWA Install Logic for Android/Chrome
-let canShowInstall = false;
-window.addEventListener("beforeinstallprompt", (e) => {
-  e.preventDefault();
-  deferredPrompt = e;
-  // Button visibility is now handled by the engagement timer logic
-});
-
-// Handle successful installation
-window.addEventListener("appinstalled", (event) => {
-  // Log analytics for conversion tracking
-  logAnalytics("pwa_installed");
-  // Hide the install button as it's no longer needed
-  document.getElementById("install-btn").style.display = "none";
-  // Show professional thank you message
-  addToast("success", I18N[dashboard.state.lang].installSuccess);
-});
-
-// PWA Install Logic for iOS
-// Start the qualification timer and progress bar immediately for compatible browsers
-const isIosDevice = isIos() && !isInStandaloneMode();
-const isInstallableBrowser =
-  "BeforeInstallPromptEvent" in window || isIosDevice;
-
-if (isInstallableBrowser) {
-  const btn = document.getElementById("install-btn");
-  btn.style.display = "block";
-  btn.disabled = true;
-  btn.innerHTML = `<span>${I18N[dashboard.state.lang].qualifying}</span><div class="install-progress"></div>`;
-
-  // Trigger the 30s CSS transition
-  requestAnimationFrame(() => {
-    const bar = btn.querySelector(".install-progress");
-    if (bar) bar.style.width = "100%";
-  });
-}
-
-setTimeout(() => {
-  canShowInstall = true;
-  const btn = document.getElementById("install-btn");
-  if (!btn) return;
-
-  // Final eligibility check: If iOS or Android event actually fired
-  if (deferredPrompt || isIosDevice) {
-    btn.disabled = false;
-    btn.innerHTML = I18N[dashboard.state.lang].install;
-    // Apply the bounce and flash animation
-    btn.classList.add("install-ready");
-
-    // Provide subtle haptic feedback for mobile users
-    if ("vibrate" in navigator) {
-      navigator.vibrate(50);
-    }
-  } else {
-    // If the browser hasn't fired the event yet, hide until it does
-    btn.style.display = "none";
-  }
-}, PWA_INSTALL_QUALIFICATION_DELAY_MS);
-// PWA Install Logic for Android/Chrome
-document.getElementById("install-btn").addEventListener("click", () => {
-  if (deferredPrompt) {
-    deferredPrompt.prompt();
-    deferredPrompt = null;
-  } else if (isIos()) {
-    showIosInstallInstructions();
-  }
-});
-
-if ("serviceWorker" in navigator) {
-  // Handle Service Worker updates
-  navigator.serviceWorker.addEventListener("controllerchange", () => {
-    window.location.reload();
-  });
-
-  // Handle Background Data Updates
-  navigator.serviceWorker.addEventListener("message", (event) => {
-    if (event.data?.action === "api-data-updated") {
-      console.log("[SW Notification] Fresh data available. Updating UI...");
-      if (dashboard.syncToast) {
-        dashboard.syncToast.click();
-        dashboard.syncToast = null;
-      }
-      // Trigger a silent reload (isForced = false)
-      // This will pull the fresh data from the now-updated SW cache
-      void dashboard.loadData(false);
-    }
-  });
-
-  window.addEventListener("load", () => {
-    navigator.serviceWorker
-      .register("/sw.v2.js")
-      .then((reg) => {
-        void reg.update();
-        // Register for background updates
-        void registerPeriodicUpdate(reg);
-      })
-      .catch(() => {
-        /* ignore */
-      });
-  });
-}
-
-/**
- * Requests permission and schedules a 24-hour background data refresh.
- */
-async function registerPeriodicUpdate(registration) {
-  if ("periodicSync" in registration) {
-    const status = await navigator.permissions.query({
-      name: "periodic-background-sync",
-    });
-
-    if (status.state === "granted") {
-      try {
-        await registration.periodicSync.register("update-road-data", {
-          minInterval: 24 * 60 * 60 * 1000, // 24 hours in milliseconds
-        });
-        console.log("[Sync] 24h background refresh scheduled.");
-      } catch (e) {
-        console.warn("[Sync] Periodic sync registration failed:", e);
-      }
-    }
-  }
-}
 
 // Pull to Refresh Logic for Mobile
 let touchStartY = 0;
@@ -3903,7 +2529,7 @@ function updateConnStrength(duration) {
   const badge = document.getElementById("conn-strength");
   if (!badge) return;
 
-  const t = I18N[dashboard.state.lang];
+  const langStrings = I18N[dashboard.state.lang];
   let label = t.connExcellent;
   let color = "#4ade80"; // Good
 
@@ -3919,13 +2545,13 @@ function updateConnStrength(duration) {
     color = "var(--primary)";
   }
 
-  badge.innerText = `${t.connStrength} ${label}`;
+  badge.innerText = `${langStrings.connStrength} ${label}`;
   badge.style.color = color;
   badge.style.display = "inline-flex";
 }
 
 function render(json) {
-  const t = I18N[dashboard.state.lang];
+  const langStrings = I18N[dashboard.state.lang];
   const headers = json.headers || [];
   let rows = [...(json.rows || [])];
 
@@ -3965,7 +2591,7 @@ function render(json) {
       dashboard.state.lang === "ne"
         ? toNepaliNumerals(rows.length)
         : rows.length;
-    resCounter.innerText = `${dispNum} ${t.results}`;
+    resCounter.innerText = `${dispNum} ${langStrings.results}`;
     resCounter.style.display = "block";
   } else if (resCounter) {
     resCounter.style.display = "none";
@@ -4082,10 +2708,51 @@ function render(json) {
   const dispPerc =
     dashboard.state.lang === "ne" ? toNepaliNumerals(percent) : percent;
 
+  let trendTotal = "",
+    trendGood = "",
+    trendCrit = "";
+  if (dashboard.state.diffMode && dashboard.state.compareReport) {
+    let compRows = [...dashboard.state.compareReport.rows];
+    if (dashboard.state.search && dashboard.state.search !== "verify") {
+      compRows = compRows.filter((r) =>
+        Object.values(r).some(
+          (v) =>
+            (typeof v === "string" || typeof v === "number") &&
+            String(v).toLowerCase().includes(dashboard.state.search),
+        ),
+      );
+    }
+    const prevTotal = compRows.length;
+    const prevGood = compRows.filter((r) => r._status === "good").length;
+    const prevCrit = compRows.filter((r) => r._status === "critical").length;
+
+    const formatTrend = (diff: number, invert = false) => {
+      if (diff === 0) return "";
+      const isPos = diff > 0;
+      const color = (invert ? !isPos : isPos)
+        ? "var(--good)"
+        : "var(--critical)";
+      const icon = isPos ? "▲" : "▼";
+      const abs = Math.abs(diff);
+      const val = dashboard.state.lang === "ne" ? toNepaliNumerals(abs) : abs;
+      return `<span style="font-size:0.7rem; color:${color}; font-weight:800; margin-left:6px;">${icon}${val}</span>`;
+    };
+
+    trendTotal = formatTrend(total - prevTotal);
+    trendGood = formatTrend(good - prevGood);
+    trendCrit = formatTrend(critical - prevCrit, true);
+  }
+
+  const critPulseClass =
+    dashboard.state.riskLevel > 0.2 ? "pulse-critical-card" : "";
+
   document.getElementById("kpi-stats").innerHTML = `
     <div class="kpi-card"><h4>${t.total}</h4><p>${dispTotal}</p></div>
     <div class="kpi-card" style="border-left-color:var(--good)"><h4>${t.met}</h4><p>${dispGood}</p></div>
-    <div class="kpi-card" style="border-left-color:var(--critical)"><h4>${t.attention}</h4><p>${dispCrit}</p></div>
+    <div class="kpi-card ${critPulseClass}" style="border-left-color:var(--critical)"><h4>${t.attention}</h4><p>${dispCrit}</p></div>
+    <div class="kpi-card"><h4>${t.total}</h4><p style="display:flex; align-items:center;">${dispTotal}${trendTotal}</p></div>
+    <div class="kpi-card" style="border-left-color:var(--good)"><h4>${t.met}</h4><p style="display:flex; align-items:center;">${dispGood}${trendGood}</p></div>
+    <div class="kpi-card ${critPulseClass}" style="border-left-color:var(--critical)"><h4>${t.attention}</h4><p style="display:flex; align-items:center;">${dispCrit}${trendCrit}</p></div>
   `;
   document
     .getElementById("chart-path")
@@ -4100,7 +2767,11 @@ function render(json) {
   }
   const isLowData = localStorage.getItem("low-data") === "true";
   if (json.aiSummary?.brief && !isLowData) {
-    document.getElementById("ai-brief-card").style.display = "block";
+    const briefCard = document.getElementById("ai-brief-card");
+    if (briefCard) {
+      briefCard.style.display = "block";
+      briefCard.classList.add("fade-in");
+    }
     let briefText = json.aiSummary.brief;
     if (dashboard.state.lang === "ne") briefText = toNepaliNumerals(briefText);
 
@@ -4146,7 +2817,7 @@ function render(json) {
       }
       const annualPerc = getProgress(r, headers);
       // Using data attributes for event delegation
-      tbody += `<tr data-indicator-name="${name.replace(/"/g, "&quot;")}" class="${rowClasses}">`; // Escape quotes for HTML attribute
+      tbody += `<tr data-indicator-name="${name.replace(/"/g, "&quot;")}" class="${rowClasses} fade-in">`; // Escape quotes for HTML attribute
       tbody += `<td>
             <div style="display:flex; align-items:center; gap:8px;">
               ${renderMiniChart(annualPerc, true)}
@@ -4255,7 +2926,7 @@ function render(json) {
       });
       const delay = (rows.indexOf(r) % 12) * 0.05;
       cards += `
-            <div class="data-card" style="animation-delay: ${delay}s" data-indicator="${name}" onclick="showModal('${name.replace(/'/g, "\\'")}', this, true)">
+            <div class="data-card fade-in" style="animation-delay: ${delay}s" data-indicator="${name}" onclick="showModal('${name.replace(/'/g, "\\'")}', this, true)">
               <div style="padding:1rem;background:rgba(0,0,0,0.02);display:flex;justify-content:space-between;align-items:center">
                 <div style="display:flex; align-items:center">${renderMiniChart(annPerc)}<b>${t(name)}</b></div>
                 <div style="display:flex; align-items:center; gap:6px">
@@ -4304,7 +2975,7 @@ function render(json) {
             ? "var(--stable)"
             : "var(--critical)";
       chartHtml += `
-      <div class="chart-card" data-indicator="${name}" onclick="showModal('${name.replace(/'/g, "\\'")}', this, true)" style="cursor:pointer">
+      <div class="chart-card fade-in" data-indicator="${name}" onclick="showModal('${name.replace(/'/g, "\\'")}', this, true)" style="cursor:pointer">
         <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px">
           <b style="font-size:0.9rem">${t(name)}</b>
           <div style="display:flex; align-items:center; gap:6px"> 
@@ -4559,9 +3230,6 @@ function lockFrontend() {
   document.body.style.userSelect = "none";
   document.addEventListener("selectstart", (e) => e.preventDefault());
 }
-
-// Initialize App via Security Handshake
-setupSecurity();
 
 /**
  * Unlocks the AudioContext on the first user interaction.
