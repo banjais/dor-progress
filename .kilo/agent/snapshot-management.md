@@ -43,7 +43,6 @@ Headers: { "X-Admin-Secret": adminKey }
 ## Configuration
 
 - SNAPSHOT_RETENTION_COUNT: Number of snapshots to keep (default: 30)
-- ADMIN_SECRET: Secret key for authentication
 
 ## Storage
 

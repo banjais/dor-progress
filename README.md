@@ -99,7 +99,6 @@ Access snapshot management from the Settings panel:
 ### Configuration
 
 - SNAPSHOT_RETENTION_COUNT in index.ts (default: 30)
-- ADMIN_SECRET in .dev.vars
 
 ## Environment Variables
 
@@ -107,7 +106,6 @@ Create .dev.vars file:
 
 `
 # Cloudflare
-ADMIN_SECRET=your-admin-secret
 
 # Firebase
 FIREBASE_API_KEY=your-key

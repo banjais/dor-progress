@@ -79,13 +79,6 @@ const SNAPSHOT_LIST_KEY = "snapshots:list";
 const SNAPSHOT_RETENTION_COUNT = 10;
 
 /**
- * In-memory cache for the admin secret to avoid redundant KV calls.
- */
-let cachedAdminSecret: string | null = null;
-let lastSecretFetch = 0;
-const SECRET_CACHE_TTL = 300_000; // 5 minutes
-
-/**
  * In-memory cache for the JWKS public keys.
  */
 let cachedJwks: Jwks | null = null;
@@ -109,23 +102,6 @@ async function isCircuitBreakerOpen(env: Env): Promise<boolean> {
     await translationKV.delete(FAIL_COUNT_KEY);
   }
   return false;
-}
-
-/**
- * Helper to verify admin secret with timing-attack resistant comparison and caching.
- */
-async function verifyAdminSecret(request: Request, env: Env): Promise<boolean> {
-  const providedSecret = request.headers.get("X-Admin-Secret");
-  if (!providedSecret) return false;
-
-  const now = Date.now();
-  if (!cachedAdminSecret || now - lastSecretFetch > SECRET_CACHE_TTL) {
-    cachedAdminSecret = await getTranslationKV(env).get("config:admin_secret");
-    lastSecretFetch = now;
-  }
-
-  if (!cachedAdminSecret) return false;
-  return secureCompare(providedSecret, cachedAdminSecret);
 }
 
 /**
@@ -478,14 +454,8 @@ export default {
       );
     }
 
+    // Admin API routes
     if (normalizedPath.startsWith("/api/admin/")) {
-      if (!(await verifyAdminSecret(request, env))) {
-        return new Response("Unauthorized", {
-          status: 401,
-          headers: securityHeaders,
-        });
-      }
-
       if (normalizedPath === "/api/admin/config-check") {
         // List all critical environment variables to check their loading status
         const keys: (keyof Env)[] = [
@@ -495,7 +465,6 @@ export default {
           "GEMINI_API_KEY",
           "FIREBASE_PROJECT_ID",
           "RECAPTCHA_SITE_KEY",
-          "MONITORING_SECRET", // Add this for config check
           "FIREBASE_API_KEY",
           "FIREBASE_AUTH_DOMAIN",
           "FIREBASE_APP_ID",
@@ -720,22 +689,8 @@ export default {
 
     if (normalizedPath === "/api/translate") {
       // 1. Verify Firebase App Check token to prevent unauthorized API usage
-      const monitoringSecret = request.headers.get("X-Monitoring-Secret");
-      let verification: { valid: boolean; appId?: string };
-
-      if (
-        monitoringSecret &&
-        env.MONITORING_SECRET &&
-        secureCompare(monitoringSecret, env.MONITORING_SECRET)
-      ) {
-        console.log(
-          "[Security] App Check bypassed for monitoring tool (translate).",
-        );
-        verification = { valid: true, appId: "monitoring-tool-bypass" };
-      } else {
-        const appCheckToken = request.headers.get("X-Firebase-AppCheck");
-        verification = await verifyAppCheckToken(appCheckToken, env, ctx);
-      }
+      const appCheckToken = request.headers.get("X-Firebase-AppCheck");
+      const verification = await verifyAppCheckToken(appCheckToken, env, ctx);
 
       if (!verification.valid) {
         ctx.waitUntil(recordAppCheckFailure(clientIp, env, ctx)); // Record failure
@@ -868,24 +823,11 @@ export default {
         const isLowData = request.headers.get("X-Low-Data") === "true";
 
         // --- Verify Firebase App Check token ---
-        const monitoringSecret = request.headers.get("X-Monitoring-Secret");
-        let verification: { valid: boolean; appId?: string };
+        const appCheckToken = request.headers.get("X-Firebase-AppCheck");
+        const verification = await verifyAppCheckToken(appCheckToken, env, ctx);
 
-        if (
-          monitoringSecret &&
-          env.MONITORING_SECRET &&
-          secureCompare(monitoringSecret, env.MONITORING_SECRET)
-        ) {
-          console.log(
-            "[Security] App Check bypassed for monitoring tool (report).",
-          );
-          verification = { valid: true, appId: "monitoring-tool-bypass" };
-        } else {
-          const appCheckToken = request.headers.get("X-Firebase-AppCheck");
-          verification = await verifyAppCheckToken(appCheckToken, env, ctx);
-        }
         if (!verification.valid) {
-          ctx.waitUntil(recordAppCheckFailure(clientIp, env, ctx));
+          ctx.waitUntil(recordAppCheckFailure(clientIp, env, ctx)); // Record failure
           return new Response(
             JSON.stringify({
               error: "Unauthorized: App Check verification failed.",
@@ -1094,15 +1036,8 @@ export default {
       }
     }
 
-    // Snapshot API routes (require admin auth)
+    // Snapshot API routes
     if (normalizedPath.startsWith("/api/snapshot")) {
-      if (!(await verifyAdminSecret(request, env))) {
-        return new Response(JSON.stringify({ error: "Unauthorized" }), {
-          status: 401,
-          headers: { ...securityHeaders, "Content-Type": "application/json" },
-        });
-      }
-
       // GET /api/snapshots - list all snapshots
       if (request.method === "GET" && normalizedPath === "/api/snapshots") {
         const list =
