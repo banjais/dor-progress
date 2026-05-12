@@ -1,6 +1,6 @@
 {
   "name": "dor-progress",
-  "version": "1.0.172",
+  "version": "1.0.173",
   "type": "module",
   "scripts": {
     "dev": "vite",
@@ -45,6 +45,8 @@
     "@typescript-eslint/utils": {
       "eslint": "$eslint"
     },
+    "@opentelemetry/auto-instrumentations-node": ">=0.75.0",
+    "@opentelemetry/sdk-node": ">=0.217.0",
     "@tootallnate/once": "3.0.1",
     "uuid": "^14.0.0",
     "glob": "^13.0.6"
