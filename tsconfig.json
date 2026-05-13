@@ -1,24 +1,16 @@
 {
   "compilerOptions": {
     "target": "ESNext",
-    "lib": ["ESNext"],
-    "types": ["@cloudflare/workers-types"],
-    "module": "NodeNext",
+    "module": "ESNext",
     "moduleResolution": "NodeNext",
+    "lib": ["ESNext", "DOM", "DOM.Iterable"],
     "strict": false,
-    "noImplicitAny": false,
     "skipLibCheck": true,
-    "composite": false,
     "resolveJsonModule": true,
-    "sourceMap": true,
-    "inlineSources": true
+    "jsx": "preserve",
+    "baseUrl": ".",
+    "types": ["@cloudflare/workers-types"]
   },
-  "include": [
-    "src/**/*",
-    "scripts/**/*",
-    "shared/**/*.ts",
-    "index.ts",
-    "ai-service.ts"
-  ],
-  "exclude": ["node_modules", ".build", "dist", ".wrangler", "scripts/index.ts"]
+  "include": ["**/*.ts", "index.html"],
+  "exclude": ["node_modules", ".build", "dist", ".wrangler"]
 }

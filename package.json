@@ -1,93 +1,35 @@
 {
   "name": "dor-progress",
-  "version": "1.0.179",
+  "version": "1.0.194",
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "dev:worker": "wrangler dev",
-    "dev:all": "concurrently \"npm run dev\" \"npm run dev:worker\"",
     "build": "vite build",
-    "postbuild": "node scripts/finalize-build.js",
-    "deploy": "npm run git:sync && npm run clean && npm run version:patch && npm run build && npm run deploy:worker && npm run deploy:hosting && git push && git push --tags",
-    "verify-build": "tsx scripts/verify-build.ts",
-    "deploy:worker": "npx tsx scripts/deploy-worker.js",
-    "deploy:hosting": "firebase deploy --only hosting --public .build",
-    "clean": "node scripts/clean.js",
-    "lint:yaml": "npx yaml-lint .github/workflows/*.yml",
+    "preview": "vite preview",
     "lint": "eslint . --max-warnings 0",
     "typecheck": "tsc --noEmit",
-    "test": "vitest run",
-    "test:watch": "vitest",
-    "version:patch": "npm version patch --no-git-tag-version && node scripts/sync-branding.js && node scripts/commit-version.js",
-    "version:minor": "npm version minor --no-git-tag-version && node scripts/sync-branding.js && node scripts/commit-version.js",
-    "version:major": "npm version major --no-git-tag-version && node scripts/sync-branding.js && node scripts/commit-version.js",
-    "info": "tsx scripts/project-info.ts",
-    "git:sync": "git add -A && (git rm -r --cached .qwen --ignore-unmatch > /dev/null 2>&1 || true)",
-    "logs": "wrangler tail --format pretty",
-    "prepare": "husky"
-  },
-  "lint-staged": {
-    "*.{ts,js,json}": [
-      "prettier --write"
-    ],
-    "src/**/*.{ts,js}": [
-      "eslint --fix"
-    ]
-  },
-  "overrides": {
-    "eslint": "$eslint",
-    "eslint-plugin-react": {
-      "eslint": "$eslint"
-    },
-    "@typescript-eslint/eslint-plugin": {
-      "eslint": "$eslint"
-    },
-    "@typescript-eslint/utils": {
-      "eslint": "$eslint"
-    },
-    "@opentelemetry/auto-instrumentations-node": ">=0.75.0",
-    "@opentelemetry/sdk-node": ">=0.217.0",
-    "@tootallnate/once": "3.0.1",
-    "uuid": "^14.0.0",
-    "glob": "^13.0.6"
+    "deploy:worker": "cmd /c \"set TRANSLATION_KV_ID=d032e134adec47ab85ea1b5a8c18caab&& set REPORTS_KV_ID=d8701afe5c9b49159942de3049bb4af0&& wrangler deploy index.ts\"",
+    "deploy:hosting": "firebase deploy --only hosting",
+    "update-version": "node scripts/update-version.js",
+    "clean": "rimraf .build",
+    "deploy:git": "git add . && git commit --no-verify -m \"chore(release): v$npm_package_version\" && git push",
+    "deploy": "npm run update-version && npm run clean && npm run build && npm run deploy:worker && npm run deploy:hosting && npm run deploy:git"
   },
   "dependencies": {
-    "js-tiktoken": "^1.0.17",
     "pdf-lib": "^1.17.1"
   },
   "devDependencies": {
     "@cloudflare/workers-types": "^4.20260426.1",
-    "@eslint/compat": "^2.1.0",
     "@eslint/js": "^9.39.4",
-    "@genkit-ai/google-genai": "^1.33.0",
-    "@google/generative-ai": "^0.24.1",
-    "@types/node": "^20.12.7",
-    "@typescript-eslint/eslint-plugin": "^8.59.1",
-    "@typescript-eslint/parser": "^8.59.1",
-    "concurrently": "^9.0.0",
     "dotenv": "^17.4.2",
-    "esbuild": "^0.28.0",
+    "env-cmd": "^11.0.0",
     "eslint": "^10.3.0",
     "eslint-config-prettier": "^10.1.8",
-    "eslint-plugin-n": "^17.24.0",
-    "eslint-plugin-react": "^7.37.5",
-    "eslint-plugin-react-hooks": "^7.1.1",
     "firebase": "^12.13.0",
-    "genkit": "^1.33.0",
-    "globals": "^17.6.0",
-    "husky": "^9.1.7",
-    "jose": "^6.2.2",
-    "lint-staged": "^16.4.0",
     "prettier": "^3.8.3",
-    "sharp": "^0.34.5",
-    "tsx": "^4.21.0",
+    "rimraf": "^6.1.3",
     "typescript": "^6.0.3",
-    "typescript-eslint": "^8.59.2",
     "vite": "^7.3.2",
-    "vite-plugin-checker": "^0.13.0",
-    "vite-tsconfig-paths": "^6.1.1",
-    "vitest": "^3.0.5",
-    "wrangler": "^4.90.0",
-    "yaml-lint": "^1.7.0"
+    "wrangler": "^4.90.0"
   }
 }

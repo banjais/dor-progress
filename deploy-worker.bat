@@ -1,0 +1,4 @@
+@echo off
+set TRANSLATION_KV_ID=d032e134adec47ab85ea1b5a8c18caab
+set REPORTS_KV_ID=d8701afe5c9b49159942de3049bb4af0
+wrangler deploy index.ts

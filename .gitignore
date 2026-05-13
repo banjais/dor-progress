@@ -37,6 +37,9 @@ dist/
 # dotenv / local secrets (NEVER commit)
 .env
 .dev.vars
+.dev.vars.backup
+.env.simple
+.env.test
 
 # Firebase service account keys (NEVER commit)
 *-firebase-adminsdk-*.json
