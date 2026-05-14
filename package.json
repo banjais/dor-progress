@@ -1,6 +1,6 @@
 {
   "name": "dor-progress",
-  "version": "1.0.228",
+  "version": "1.0.229",
   "type": "module",
   "scripts": {
     "dev": "node --no-deprecation ./node_modules/vite/bin/vite.js",
@@ -8,6 +8,7 @@
     "preview": "node --no-deprecation ./node_modules/vite/bin/vite.js preview",
     "lint": "node --no-deprecation ./node_modules/eslint/bin/eslint.js . --max-warnings 0",
     "typecheck": "node --no-deprecation ./node_modules/typescript/bin/tsc --noEmit",
+    "verify": "npm run lint && npm run typecheck",
     "test": "echo \"No tests specified\" && exit 0",
     "update-version": "node scripts/update-version.js",
     "clean": "rimraf .build",
