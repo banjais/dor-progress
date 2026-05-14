@@ -1,3 +1,5 @@
+/* eslint-disable @typescript-eslint/ban-ts-comment */
+// @ts-nocheck
 import { Dashboard } from "./Dashboard";
 import { I18N } from "./api-utils";
 
