@@ -1,6 +1,6 @@
 {
   "name": "dor-progress",
-  "version": "1.0.194",
+  "version": "1.0.199",
   "type": "module",
   "scripts": {
     "dev": "vite",
@@ -8,12 +8,14 @@
     "preview": "vite preview",
     "lint": "eslint . --max-warnings 0",
     "typecheck": "tsc --noEmit",
-    "deploy:worker": "cmd /c \"set TRANSLATION_KV_ID=d032e134adec47ab85ea1b5a8c18caab&& set REPORTS_KV_ID=d8701afe5c9b49159942de3049bb4af0&& wrangler deploy index.ts\"",
-    "deploy:hosting": "firebase deploy --only hosting",
+    "test": "echo \"No tests specified\" && exit 0",
     "update-version": "node scripts/update-version.js",
     "clean": "rimraf .build",
-    "deploy:git": "git add . && git commit --no-verify -m \"chore(release): v$npm_package_version\" && git push",
-    "deploy": "npm run update-version && npm run clean && npm run build && npm run deploy:worker && npm run deploy:hosting && npm run deploy:git"
+    "deploy:worker": "cmd /c \"set TRANSLATION_KV_ID=d032e134adec47ab85ea1b5a8c18caab&& set REPORTS_KV_ID=d8701afe5c9b49159942de3049bb4af0&& wrangler deploy index.ts\"",
+    "deploy:hosting": "firebase deploy --only hosting",
+    "deploy:firebase": "firebase deploy --only hosting",
+    "deploy:git": "git add -A && git reset .dev.vars.backup .env.simple .env.test deploy-worker.bat scripts/build/ scripts/deploy/ scripts/system/ scripts/update-version.js && git add . && git commit --no-verify -m \"chore(release): v$npm_package_version\" && git push",
+    "deploy": "npm run update-version && npm install && npm run clean && npm run build && npm run deploy:worker && npm run deploy:hosting && npm run deploy:git"
   },
   "dependencies": {
     "pdf-lib": "^1.17.1"
@@ -26,9 +28,11 @@
     "eslint": "^10.3.0",
     "eslint-config-prettier": "^10.1.8",
     "firebase": "^12.13.0",
+    "globals": "^17.6.0",
     "prettier": "^3.8.3",
     "rimraf": "^6.1.3",
     "typescript": "^6.0.3",
+    "typescript-eslint": "^8.59.3",
     "vite": "^7.3.2",
     "wrangler": "^4.90.0"
   }
