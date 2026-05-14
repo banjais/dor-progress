@@ -8,7 +8,7 @@
     "skipLibCheck": true,
     "resolveJsonModule": true,
     "jsx": "preserve",
-    "baseUrl": ".",
+
     "types": ["@cloudflare/workers-types"]
   },
   "include": ["**/*.ts", "index.html"],
