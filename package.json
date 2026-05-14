@@ -1,6 +1,6 @@
 {
   "name": "dor-progress",
-  "version": "1.0.219",
+  "version": "1.0.220",
   "type": "module",
   "scripts": {
     "dev": "vite",
@@ -15,7 +15,7 @@
     "deploy:hosting": "firebase deploy --only hosting",
     "deploy:firebase": "firebase deploy --only hosting",
     "deploy:git": "git add -A && git reset .dev.vars.backup .env.simple .env.test deploy-worker.bat scripts/build/ scripts/deploy/ scripts/system/ scripts/update-version.js && git add . && git commit --no-verify --allow-empty -m \"chore(release): v$npm_package_version\" && git push",
-    "deploy": "npm run update-version && npm install && npm run clean && npm run build && npm run deploy:worker && npm run deploy:hosting && npm run deploy:git && echo \"\n\n======================================\n✅ ALL DEPLOY TASKS COMPLETED SUCCESSFULLY!\n======================================\n\""
+    "deploy": "npm run update-version && npm install && npm run lint && npm run clean && npm run build && npm run deploy:worker && npm run deploy:hosting && npm run deploy:git && echo \"\n\n======================================\n✅ ALL DEPLOY TASKS COMPLETED SUCCESSFULLY!\n======================================\n\""
   },
   "dependencies": {
     "pdf-lib": "^1.17.1"
