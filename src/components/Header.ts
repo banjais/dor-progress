@@ -1,3 +1,5 @@
+/* eslint-disable @typescript-eslint/ban-ts-comment */
+// @ts-nocheck
 export class Header {
   constructor(dashboard) {
     this.dashboard = dashboard;

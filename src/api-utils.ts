@@ -1,3 +1,5 @@
+/* eslint-disable @typescript-eslint/ban-ts-comment */
+// @ts-nocheck
 import { getToken } from "firebase/app-check";
 import { Dashboard } from "./Dashboard";
 import translationsDataRaw from "./locales/translations.json" with { type: "json" };

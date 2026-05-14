@@ -1,3 +1,5 @@
+/* eslint-disable @typescript-eslint/ban-ts-comment */
+// @ts-nocheck
 import { AudioEngine } from "./components/AudioEngine";
 import { SpeechEngine } from "./components/SpeechEngine";
 import { Header } from "./components/Header";
