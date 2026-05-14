@@ -8,7 +8,7 @@
 // import { PDFDocument, rgb, StandardFonts } from "pdf-lib";
 // import { runTranslation, runProjectSummary } from "./ai-service.js";
 // import aiPromptsData from "./ai-prompts.json" with { type: "json" };
-import dictionaryData from "./translations.json" with { type: "json" };
+// import dictionaryData from "./translations.json" with { type: "json" };
 
 export interface Env {
   TRANSLATION_KV: KVNamespace;
@@ -75,7 +75,7 @@ export default {
   async fetch(request: Request, env: Env, _ctx: ExecutionContext): Promise<Response> {
     const url = new URL(request.url);
     const normalizedPath = url.pathname.replace(/\/+$/, "");
-    const _clientIp = request.headers.get("cf-connecting-ip") || "127.0.0.1";
+    // const _clientIp = request.headers.get("cf-connecting-ip") || "127.0.0.1";
 
     const securityHeaders = {
       "Content-Security-Policy": "default-src 'self'; script-src 'self' https://unpkg.com https://www.gstatic.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; img-src 'self' data: https:; connect-src 'self' https: blob:;",
