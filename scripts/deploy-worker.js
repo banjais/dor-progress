@@ -35,16 +35,3 @@ async function deployWorker() {
 }
 
 deployWorker();
-  } catch (error) {
-    console.error('Deployment failed:', error.message);
-    if (error.stderr) {
-      console.error('stderr:', error.stderr.toString());
-    }
-    if (error.stdout) {
-      console.error('stdout:', error.stdout.toString());
-    }
-    process.exit(1);
-  }
-}
-
-deployWorker();
