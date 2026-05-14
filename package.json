@@ -1,6 +1,6 @@
 {
   "name": "dor-progress",
-  "version": "1.0.210",
+  "version": "1.0.217",
   "type": "module",
   "scripts": {
     "dev": "vite",
@@ -11,11 +11,11 @@
     "test": "echo \"No tests specified\" && exit 0",
     "update-version": "node scripts/update-version.js",
     "clean": "rimraf .build",
-    "deploy:worker": "cmd /c \"set TRANSLATION_KV_ID=d032e134adec47ab85ea1b5a8c18caab&& set REPORTS_KV_ID=d8701afe5c9b49159942de3049bb4af0&& wrangler deploy index.ts\"",
+    "deploy:worker": "wrangler deploy index.ts",
     "deploy:hosting": "firebase deploy --only hosting",
     "deploy:firebase": "firebase deploy --only hosting",
     "deploy:git": "git add -A && git reset .dev.vars.backup .env.simple .env.test deploy-worker.bat scripts/build/ scripts/deploy/ scripts/system/ scripts/update-version.js && git add . && git commit --no-verify --allow-empty -m \"chore(release): v$npm_package_version\" && git push",
-    "deploy": "npm run update-version && npm install && npm run clean && npm run build && npm run deploy:worker && npm run deploy:hosting && npm run deploy:git"
+    "deploy": "npm run update-version && npm install && npm run clean && npm run build && npm run deploy:worker && npm run deploy:hosting && npm run deploy:git && echo \"\n\n======================================\n✅ ALL DEPLOY TASKS COMPLETED SUCCESSFULLY!\n======================================\n\""
   },
   "dependencies": {
     "pdf-lib": "^1.17.1"

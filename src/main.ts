@@ -4,15 +4,11 @@
 declare const WORKER_BASE: string;
 declare const APP_ENV: "development" | "production" | "test";
 declare const APP_VERSION: string;
-declare const APP_CHECK_DEBUG_TOKEN: string | boolean | undefined;
 declare const PDFLib: any;
 
 /**
  * Interfaces for Project Data and State
  */
-import { ProjectRow, ProjectReport } from "../shared/types";
-
-import * as Utils from "./utils";
 const syncStyle = document.createElement("style");
 syncStyle.textContent = `
   @keyframes toast-progress-loop {
@@ -26,18 +22,14 @@ document.head.appendChild(syncStyle);
 import { initPWALogic } from "./PWAManager";
 
 import { Dashboard } from "./Dashboard";
-import { getToken } from "firebase/app-check";
 import {
   t,
   authenticatedFetch,
   toNepaliNumerals,
-  toArabicNumerals,
   I18N,
 } from "./api-utils";
 
 const dashboard = Dashboard.getInstance();
-
-const deferredPrompt: any = null;
 
 // Bind global window handlers for HTML onclick attributes
 (window as any).toggleFabMenu = () => dashboard.toggleFabMenu();
@@ -93,7 +85,7 @@ async function checkStatus() {
     } else {
       throw new Error();
     }
-  } catch (e) {
+  } catch (_e) {
     statusEl.innerText = t("offline");
     statusEl.style.color = "#f87171";
     dashboard.addToast(
@@ -289,7 +281,7 @@ async function translateAiBrief() {
         true,
       );
     }
-  } catch (e) {
+  } catch (_e) {
     dashboard.addToast(
       "error",
       dashboard.state.lang === "en" ? "Failed" : "असफल",
@@ -297,21 +289,6 @@ async function translateAiBrief() {
   } finally {
     if (btn) btn.classList.remove("spinning");
   }
-}
-
-/**
- * Centralized Audio Fetcher
- */
-async function fetchAiBriefBlob() {
-  const text =
-    (document.getElementById("ai-brief-text") as HTMLElement)?.innerText || "";
-  if (!text) return null;
-  const isPremium = localStorage.getItem("premium-tts") === "true";
-  const res = await authenticatedFetch(
-    `/api/tts?lang=${dashboard.state.lang}&quality=${isPremium ? "premium" : "standard"}&text=${encodeURIComponent(text)}`,
-  );
-  if (!res.ok) throw new Error();
-  return await res.blob();
 }
 
 /**
@@ -329,7 +306,7 @@ async function fetchAiBriefBlob() {
     btn.innerHTML = `<span class="spinner" style="border-top-color:var(--primary); width:14px; height:14px;"></span>`;
     dashboard.addToast("info", t("preparingAudio"));
 
-    const blob = await fetchAiBriefBlob();
+    const blob = await dashboard.fetchAiBriefBlob();
     if (!blob) return;
 
     const url = window.URL.createObjectURL(blob);
@@ -337,7 +314,7 @@ async function fetchAiBriefBlob() {
     a.href = url;
     a.download = `DoR_Executive_Briefing_${new Date().toISOString().split("T")[0]}.mp3`;
     a.click();
-  } catch (e) {
+  } catch (_e) {
     dashboard.addToast("error", "Audio failed");
   } finally {
     btn.disabled = false;
@@ -359,7 +336,7 @@ async function fetchAiBriefBlob() {
     btn.disabled = true;
     btn.innerHTML = `<span class="spinner" style="border-top-color:var(--primary); width:14px; height:14px;"></span>`;
 
-    const blob = await fetchAiBriefBlob();
+    const blob = await dashboard.fetchAiBriefBlob();
     if (!blob) return;
 
     const file = new File(
@@ -377,7 +354,7 @@ async function fetchAiBriefBlob() {
     } else {
       dashboard.addToast("error", "Not supported");
     }
-  } catch (e) {
+  } catch (_e) {
     dashboard.addToast("error", "Share failed");
   } finally {
     btn.disabled = false;
@@ -413,128 +390,6 @@ function typeText(element: TextElement, text: string, useSound = false) {
       element.classList.remove("shimmer-text");
     }
   }, 40); // 40ms per character for a smooth terminal feel
-}
-
-function showDiagnostics() {
-  // Lock debug access: only allow diagnostics in development mode
-  if (APP_ENV === "production") {
-    console.warn("[Security] Diagnostic access denied in production.");
-    dashboard.addToast(
-      "error",
-      dashboard.state.lang === "en" ? "Access Denied" : "पहुँच अस्वीकृत",
-    );
-    return;
-  }
-
-  const store = dashboard.state.store;
-  if (!store) return;
-  const criticalRows = store.rows.filter((r) => r._status === "critical");
-  const langStrings = I18N[dashboard.state.lang];
-  const dispCount =
-    dashboard.state.lang === "ne"
-      ? toNepaliNumerals(criticalRows.length)
-      : criticalRows.length;
-
-  // Calculate "Last Month" as default
-  const now = new Date();
-  now.setMonth(now.getMonth() - 1);
-  const lastMonth = now.toISOString().slice(0, 7); // YYYY-MM
-
-  const html = `
-        <div class="modal-header"> 
-          <h3 style="color:var(--critical); margin:0;">🚨 System Diagnostics</h3>
-          <p style="font-size:0.8rem; opacity:0.8; margin:5px 0 0;">${dispCount} ${dashboard.state.lang === "ne" ? "सूचकहरूलाई तत्काल ध्यान दिनु आवश्यक छ।" : "indicators require immediate attention."}</p>
-        </div>
-        <div style="max-height: 400px; overflow-y: auto; margin-top:15px;">
-          <div style="margin-bottom: 15px; padding: 12px; background: var(--bg); border-radius: 12px; border: 1px solid var(--border);">
-            <label id="lbl-diag-period" style="font-size: 0.7rem; font-weight: 800; display: block; margin-bottom: 8px; color:var(--text-light); text-transform:uppercase;"></label>
-            <div style="display:flex; gap:10px;">
-              <select id="diag-period-year" style="flex:1; padding:8px; border-radius:8px; border:1px solid var(--border); background:var(--surface); color:var(--text); outline:none;"></select>
-              <select id="diag-period-month" style="flex:1; padding:8px; border-radius:8px; border:1px solid var(--border); background:var(--surface); color:var(--text); outline:none;"></select>
-            </div>
-            <input type="hidden" id="diag-period" value="${lastMonth}">
-          </div>
-      `;
-  const modalBody = document.getElementById("modal-body");
-  if (modalBody) {
-    modalBody.innerHTML = html;
-  }
-
-  // Populate Year and Month selectors
-  const diagY = document.getElementById("diag-period-year");
-  const diagM = document.getElementById("diag-period-month");
-  const diagHidden = document.getElementById("diag-period");
-
-  const currentADYear = new Date().getFullYear();
-  diagY.innerHTML = [currentADYear, currentADYear - 1, currentADYear - 2]
-    .map(
-      (y) =>
-        `<option value="${y}">${dashboard.state.lang === "ne" ? toNepaliNumerals(y + 57) + " वि.सं." : y + " AD"}</option>`,
-    )
-    .join("");
-
-  diagM.innerHTML = langStrings.months
-    .map(
-      (m, i) =>
-        `<option value="${(i + 1).toString().padStart(2, "0")}">${m}</option>`,
-    )
-    .join("");
-
-  const [y, m] = lastMonth.split("-");
-  diagY.value = y;
-  diagM.value = m;
-
-  const updateDiagHidden = () =>
-    (diagHidden.value = `${diagY.value}-${diagM.value}`);
-  diagY.onchange = updateDiagHidden;
-  diagM.onchange = updateDiagHidden;
-
-  const diagListContainer = document.createElement("div");
-  criticalRows.forEach((r) => {
-    const name = r[store.headers[0]];
-    const prog = getProgress(r, store.headers);
-    const dispProg =
-      dashboard.state.lang === "ne" ? toNepaliNumerals(prog) : prog;
-
-    const itemDiv = document.createElement("div");
-    itemDiv.style.cssText =
-      "padding: 12px; border-bottom: 1px solid var(--border); display: flex; justify-content: space-between; align-items: center; cursor:pointer;";
-    itemDiv.dataset.indicatorName = name; // Use data attribute for event delegation
-
-    itemDiv.innerHTML = `
-      <span style="font-weight: 600; font-size:0.85rem;">${name}</span>
-      <span style="color: var(--critical); font-weight: 800; font-size:0.9rem;">${dispProg}%</span>
-    `;
-    diagListContainer.appendChild(itemDiv);
-  });
-  modalBody
-    .querySelector("div[style*='max-height: 400px']")
-    .appendChild(diagListContainer);
-
-  const footerDiv = document.createElement("div");
-  footerDiv.innerHTML = `
-        <div style="display:flex; gap:10px; margin-top:15px;">
-          <button id="export-health-report-btn" style="flex:1; background:var(--critical); color:white; border:none; padding:10px; border-radius:8px; font-weight:bold; cursor:pointer;">📄 Export Health Report (PDF)</button>
-          <button id="close-diag-modal-btn" style="flex:1; background:var(--bg); border:1px solid var(--border); padding:10px; border-radius:8px; font-weight:bold; cursor:pointer;">Close</button>
-        </div>
-        <p style="font-size:0.7rem; color:var(--text-light); margin-top:10px; text-align:center;">Click an item to isolate the record.</p>`;
-  modalBody.appendChild(footerDiv);
-
-  document.getElementById("modal-overlay").style.display = "flex";
-
-  // Attach event listeners programmatically
-  diagListContainer.addEventListener("click", (e) => {
-    const item = e.target.closest("div[data-indicator-name]");
-    if (item) showModal(item.dataset.indicatorName);
-  });
-  document
-    .getElementById("export-health-report-btn")
-    ?.addEventListener("click", exportHealthReport);
-  document
-    .getElementById("close-diag-modal-btn")
-    ?.addEventListener("click", closeModal);
-  document.getElementById("lbl-diag-period").textContent =
-    langStrings.diagPeriod;
 }
 
 async function exportHealthReport() {
@@ -618,7 +473,7 @@ async function exportHealthReport() {
       dashboard.render();
       dashboard.setView(originalView);
     }, 800);
-  } catch (e) {
+  } catch (_e) {
     dashboard.addToast("error", "Failed to generate historical report.");
   } finally {
     document.getElementById("loader").style.display = "none";
@@ -737,9 +592,6 @@ window.toggleTheme = () => {
 window.setLang = (l) => dashboard.setLang(l);
 window.setView = (v) => dashboard.setView(v);
 
-const getLang = () => dashboard.state.lang;
-const getStore = () => dashboard.state.store;
-
 window.showInChartView = showInChartView;
 function showInChartView(name) {
   setView("charts");
@@ -854,37 +706,6 @@ function toggleHistoryTab(tab) {
 
 let weeklyArchives = [];
 
-function logAnalytics(eventName: string, eventData = {}) {
-  const payload = {
-    eventName,
-    eventData,
-    url: window.location.href,
-    time: new Date().toISOString(),
-  };
-
-  // 1. Save to IndexedDB
-  const dbRequest = indexedDB.open("dor_mis_db", 1);
-  dbRequest.onupgradeneeded = (e) =>
-    e.target.result.createObjectStore("analytics", { autoIncrement: true });
-
-  dbRequest.onsuccess = (e) => {
-    const db = e.target.result;
-    const tx = db.transaction("analytics", "readwrite");
-    tx.objectStore("analytics").add(payload);
-
-    tx.oncomplete = () => {
-      // 2. Register for Sync
-      if ("serviceWorker" in navigator && "SyncManager" in window) {
-        navigator.serviceWorker.ready.then((reg: any) => {
-          reg.sync.register("send-analytics").catch((err: any) => {
-            console.warn("Sync registration failed, likely offline", err);
-          });
-        });
-      }
-    };
-  };
-}
-
 async function fetchWeeklyHistory() {
   const res = await authenticatedFetch(`/api/reports`);
   weeklyArchives = await res.json();
@@ -959,13 +780,8 @@ async function loadCumulative(type) {
 
 window.downloadConsolidatedPdf = downloadConsolidatedPdf;
 async function downloadConsolidatedPdf() {
-  const year = document.getElementById("summary-year").value;
-  const type = document
-    .getElementById("hist-weekly-btn")
-    .classList.contains("active")
-    ? "weekly"
-    : "monthly";
   const month = document.getElementById("summary-month").value;
+  const year = document.getElementById("summary-year").value;
 
   const res = await authenticatedFetch(
     `/api/consolidated-pdf?type=monthly&year=${year}&month=${month}`,
@@ -1093,7 +909,7 @@ async function handleVerification() {
     } else {
       throw new Error();
     }
-  } catch (e) {
+  } catch (_e) {
     const verifyMsg = document.getElementById("verify-msg");
     if (verifyMsg) {
       verifyMsg.innerText = I18N[dashboard.state.lang].invalidReport;
@@ -1657,16 +1473,15 @@ window.showSettings = async () => {
           </div>
         </div>
         <div style="padding: 10px 0;">
-          ${
-            changelog
-              ? `
+          ${changelog
+      ? `
             <div style="margin-bottom: 20px; background: var(--bg); border-radius: 12px; padding: 12px; border: 1px solid var(--border);">
               <div style="font-size: 0.7rem; font-weight: 800; color: var(--primary); text-transform: uppercase; margin-bottom: 8px;">✨ ${t.whatsNew}</div>
               <div style="max-height: 120px; overflow-y: auto; font-size: 0.75rem; scrollbar-width: thin;">
                 ${Object.entries(changelog)
-                  .slice(0, 3)
-                  .map(
-                    ([v, changes]) => `
+        .slice(0, 3)
+        .map(
+          ([v, changes]) => `
                   <div style="margin-bottom: 10px;">
                     <b style="color: var(--text-light)">Version ${v}</b>
                     <ul style="margin: 4px 0 0 15px; padding: 0; list-style-type: disc; color: var(--text);">
@@ -1674,13 +1489,13 @@ window.showSettings = async () => {
                     </ul>
                   </div>
                 `,
-                  )
-                  .join("")}
+        )
+        .join("")}
               </div>
             </div>
           `
-              : ""
-          }
+      : ""
+    }
           <label style="font-size: 0.7rem; font-weight: 800; text-transform: uppercase; color: var(--text-light); margin-bottom: 10px; display: block;">${t("theme")}</label>
           <div class="theme-selector">
             <div class="theme-option light-opt ${originalTheme === "light" ? "active" : ""}" data-theme="light">
@@ -1876,13 +1691,12 @@ window.showSettings = async () => {
                <button id="list-snapshots-btn" class="toggle-btn" style="width: 100%; border: 1px solid var(--primary); display: flex; align-items: center; justify-content: center; gap: 10px; padding: 10px;">
                  List Available Snapshots
                </button>
-               ${
-                 isAuthorized
-                   ? `
+               ${isAuthorized
+      ? `
                  <button onclick="logoutSnapshotSession()" style="background:none; border:none; color:var(--critical); font-size:0.6rem; font-weight:800; cursor:pointer; text-decoration:underline; align-self:flex-end; margin-top:-4px; padding: 4px;">LOGOUT SESSION</button>
                `
-                   : ""
-               }
+      : ""
+    }
              </div>
 <div id="snapshot-list-container" style="margin-top: 10px; display: none;">
                 <div style="font-size: 0.7rem; font-weight: 800; color: var(--text-light); margin-bottom: 8px;">Snapshot History:</div>
@@ -1997,7 +1811,6 @@ window.triggerDatabaseBackup = async () => {
   const btn = document.getElementById("db-backup-btn");
   if (!btn) return;
   const originalHtml = btn.innerHTML;
-  const t = I18N[dashboard.state.lang];
 
   try {
     btn.disabled = true;
@@ -2058,7 +1871,7 @@ window.triggerDatabaseBackup = async () => {
           : "क्लाउड ब्याकअप सफल भयो!",
       );
     else throw new Error("API_FAIL");
-  } catch (e) {
+  } catch (_e) {
     if (e.message !== "CANCELLED")
       dashboard.addToast("error", "Database backup failed.");
   } finally {
@@ -2073,7 +1886,6 @@ window.triggerDatabaseBackup = async () => {
 window.triggerDatabaseRestore = async () => {
   const btn = document.getElementById("db-restore-btn");
   const originalHtml = btn.innerHTML;
-  const t = I18N[dashboard.state.lang];
 
   try {
     let snapshotKey = "dev-bypass";
@@ -2158,7 +1970,6 @@ window.downloadAllOfflineData = async () => {
 
   try {
     btn.disabled = true;
-    btn.innerHTML = `<span class="spinner" style="border-top-color:var(--primary)"></span> ${t.downloading} ०%`;
 
     // 1. Determine scope (fetch list of archives first)
     const histRes = await authenticatedFetch(`/api/reports`);
@@ -2197,7 +2008,7 @@ window.downloadAllOfflineData = async () => {
 
     dashboard.addToast("success", t.downloadComplete);
     void updateStorageUsageDisplay();
-  } catch (e) {
+  } catch (_e) {
     dashboard.addToast("error", "Offline download interrupted.");
   } finally {
     btn.disabled = false;
@@ -2287,11 +2098,10 @@ window.showFactoryResetConfirmation = () => {
         <div style="padding: 20px 0; text-align: center;">
           <p style="font-weight: 800; color: var(--text); font-size: 1.1rem;">${t.resetConfirm}</p>
           <p style="font-size: 0.8rem; color: var(--text-light); margin-top: 10px; line-height: 1.5;">
-            ${
-              dashboard.state.lang === "en"
-                ? "This action is irreversible. All cached road reports, offline data, theme preferences, and audio settings will be permanently deleted."
-                : "यो कार्य अपरिवर्तनीय छ। सबै क्यास गरिएका सडक प्रतिवेदनहरू, अफलाइन डेटा, थिम प्राथमिकताहरू, र ध्वनि सेटिङहरू स्थायी रूपमा मेटिनेछन्।"
-            }
+            ${dashboard.state.lang === "en"
+      ? "This action is irreversible. All cached road reports, offline data, theme preferences, and audio settings will be permanently deleted."
+      : "यो कार्य अपरिवर्तनीय छ। सबै क्यास गरिएका सडक प्रतिवेदनहरू, अफलाइन डेटा, थिम प्राथमिकताहरू, र ध्वनि सेटिङहरू स्थायी रूपमा मेटिनेछन्।"
+    }
           </p>
         </div>
         <div style="display:flex; flex-direction:column; gap:10px;">
@@ -2747,9 +2557,6 @@ function render(json) {
     dashboard.state.riskLevel > 0.2 ? "pulse-critical-card" : "";
 
   document.getElementById("kpi-stats").innerHTML = `
-    <div class="kpi-card"><h4>${t.total}</h4><p>${dispTotal}</p></div>
-    <div class="kpi-card" style="border-left-color:var(--good)"><h4>${t.met}</h4><p>${dispGood}</p></div>
-    <div class="kpi-card ${critPulseClass}" style="border-left-color:var(--critical)"><h4>${t.attention}</h4><p>${dispCrit}</p></div>
     <div class="kpi-card"><h4>${t.total}</h4><p style="display:flex; align-items:center;">${dispTotal}${trendTotal}</p></div>
     <div class="kpi-card" style="border-left-color:var(--good)"><h4>${t.met}</h4><p style="display:flex; align-items:center;">${dispGood}${trendGood}</p></div>
     <div class="kpi-card ${critPulseClass}" style="border-left-color:var(--critical)"><h4>${t.attention}</h4><p style="display:flex; align-items:center;">${dispCrit}${trendCrit}</p></div>
@@ -2781,7 +2588,7 @@ function render(json) {
         "beforebegin",
         '<canvas id="ai-visualizer" width="400" height="40" style="width:100%; height:40px; margin-bottom:12px; border-radius:8px; opacity:0.6"></canvas>',
       );
-      dashboard.audio.startVisualizer(document.getElementById("ai-visualizer"));
+      // SpeechEngine will manage starting and stopping the visualizer
     }
     typeText(container, briefText, true); // Type out with shimmer and sound
   }
@@ -2875,30 +2682,22 @@ function render(json) {
   document.getElementById("tbody").innerHTML = tbody;
 
   // 5. CARDS
-  let cards = "";
+  let cardHtml = "";
   if (rows.length === 0) {
     if (dashboard.state.search) {
-      cards = `<div class="chart-card" style="text-align:center; grid-column: 1 / -1; padding: 4rem;">
+      cardHtml = `<div class="chart-card" style="text-align:center; grid-column: 1 / -1; padding: 4rem;">
             <div style="font-size:3rem; margin-bottom:10px">🔎</div>
             <p style="font-weight:bold; font-size:1.1rem; color:var(--text)" data-i18n="noResults"></p>
             <p style="margin-bottom:15px; opacity:0.8">"${dashboard.state.search}"</p>
             <button onclick="clearSearch()" class="retry-btn" data-i18n="retrySearch"></button>
           </div>`;
     } else {
-      cards = `<p style='padding:2rem;text-align:center;opacity:0.5' data-i18n="noDataToVisualize"></p>`;
+      cardHtml = `<p style='padding:2rem;text-align:center;opacity:0.5' data-i18n="noDataToVisualize"></p>`;
     }
   } else {
     rows.forEach((r) => {
       const name = r[headers[0]] || "—";
 
-      const annTargetKey = headers.find(
-        (h) => h.includes("Annual Target") || h.includes("बार्षिक लक्ष्य"),
-      );
-      const annProgKey = headers.find(
-        (h) =>
-          h.includes("Annual Progress") ||
-          h.includes("हाल सम्म को बार्षिक प्रगति"),
-      );
       const totTargetKey = headers.find(
         (h) => h.includes("Total Target") || h.includes("कुल लक्ष्य"),
       );
@@ -2913,19 +2712,17 @@ function render(json) {
 
       const dispAnn =
         dashboard.state.lang === "ne" ? toNepaliNumerals(annPerc) : annPerc;
-      const dispTot =
-        dashboard.state.lang === "ne" ? toNepaliNumerals(totPerc) : totPerc;
 
       const annColor = annPerc < 50 ? "var(--critical)" : "var(--primary)";
       const annPulseClass = annPerc < 20 ? "pulse-critical" : "";
 
       let details = "";
-      headers.slice(1, 6).forEach((h, i) => {
+      headers.slice(1, 6).forEach((h) => {
         if (r[h])
           details += `<div style="font-size:0.75rem;margin-bottom:4px"><span style="color:var(--text-light)">${h}:</span> <span style="font-weight:600">${dashboard.state.lang === "ne" ? toNepaliNumerals(r[h]) : r[h]}</span></div>`; // Use textContent for safety
       });
       const delay = (rows.indexOf(r) % 12) * 0.05;
-      cards += `
+      cardHtml += `
             <div class="data-card fade-in" style="animation-delay: ${delay}s" data-indicator="${name}" onclick="showModal('${name.replace(/'/g, "\\'")}', this, true)">
               <div style="padding:1rem;background:rgba(0,0,0,0.02);display:flex;justify-content:space-between;align-items:center">
                 <div style="display:flex; align-items:center">${renderMiniChart(annPerc)}<b>${t(name)}</b></div>
@@ -2956,6 +2753,7 @@ function render(json) {
             </div>`;
     });
   }
+  document.getElementById("view-cards").innerHTML = cardHtml;
 
   // 6. CHARTS
   let chartHtml = "";
@@ -2988,12 +2786,12 @@ function render(json) {
         </div>
         <div style="font-size:0.65rem; color:var(--text-light); text-transform:uppercase; letter-spacing:0.05em">
           ${headers
-            .slice(1, 4)
-            .map(
-              (h) =>
-                `<span>${h}: <b>${dashboard.state.lang === "ne" ? toNepaliNumerals(r[h]) : r[h]}</b></span>`,
-            )
-            .join(" | ")}
+          .slice(1, 4)
+          .map(
+            (h) =>
+              `<span>${h}: <b>${dashboard.state.lang === "ne" ? toNepaliNumerals(r[h]) : r[h]}</b></span>`,
+          )
+          .join(" | ")}
         </div>
       </div>`;
     });
@@ -3084,6 +2882,7 @@ window.generateClientPDF = async () => {
 
     const helveticaBold = await pdfDoc.embedFont(StandardFonts.HelveticaBold);
 
+    console.log(helveticaBold);
     // 2. Embed Logo
     const logoUrl = `${window.location.origin}/icons/logo.png`;
     const logoBytes = await fetch(logoUrl).then((res) =>
@@ -3206,31 +3005,6 @@ window.generateClientPDF = async () => {
  * Frontend Security Shield
  * Prevents unauthorized code copying, editing, and inspection.
  */
-function lockFrontend() {
-  if (APP_ENV !== "production") return;
-
-  // Disable Right-Click
-  document.addEventListener("contextmenu", (e) => e.preventDefault());
-
-  // Disable F12, Ctrl+Shift+I (Inspect), Ctrl+Shift+J (Console), Ctrl+U (View Source)
-  document.addEventListener("keydown", (e) => {
-    if (
-      e.keyCode === 123 ||
-      (e.ctrlKey &&
-        e.shiftKey &&
-        (e.keyCode === 73 || e.keyCode === 74 || e.keyCode === 67)) ||
-      (e.ctrlKey && e.keyCode === 85)
-    ) {
-      e.preventDefault();
-      return false;
-    }
-  });
-
-  // Disable Text Selection globally
-  document.body.style.userSelect = "none";
-  document.addEventListener("selectstart", (e) => e.preventDefault());
-}
-
 /**
  * Unlocks the AudioContext on the first user interaction.
  * This resolves the "AudioContext not allowed to start" error and ensures

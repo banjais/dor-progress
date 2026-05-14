@@ -236,8 +236,8 @@ const handler: ExportedHandler<Env> = {
           let aiResult = forceRefresh
             ? null
             : ((await env.REPORTS_KV.get(cacheKey, {
-                type: "json",
-              })) as AiSummary | null);
+              type: "json",
+            })) as AiSummary | null);
 
           if (!aiResult && pdfBuffer) {
             let binary = "";
@@ -292,7 +292,6 @@ const handler: ExportedHandler<Env> = {
     if (url.pathname === "/api/summary") {
       try {
         await verifyAppCheck(request, env);
-        const type = url.searchParams.get("type") || "monthly";
         const year = url.searchParams.get("year");
         const month = url.searchParams.get("month");
 

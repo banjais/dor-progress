@@ -143,21 +143,23 @@ export function showDiagnostics() {
     <p style="font-size:0.7rem; color:var(--text-light); margin-top:10px; text-align:center;">Click an item to isolate the record.</p>`;
     modalBody?.appendChild(footerDiv);
   }, 400);
-
-  diagListContainer.addEventListener("click", (e) => {
-    const item = (e.target as HTMLElement).closest(
-      "div[data-indicator-name]",
-    ) as HTMLElement;
-    if (item) (window as any).showModal(item.dataset.indicatorName);
-  });
-  document
-    .getElementById("export-health-report-btn")
-    ?.addEventListener("click", exportHealthReport);
-  document
-    .getElementById("close-diag-modal-btn")
-    ?.addEventListener("click", () => (window as any).closeModal());
-  const lbl = document.getElementById("lbl-diag-period");
-  if (lbl) lbl.textContent = langStrings.diagPeriod;
+  // All event listeners for elements created within the setTimeout must be attached within that block
+  setTimeout(() => {
+    diagListContainer.addEventListener("click", (e) => {
+      const item = (e.target as HTMLElement).closest(
+        "div[data-indicator-name]",
+      ) as HTMLElement;
+      if (item) (window as any).showModal(item.dataset.indicatorName);
+    });
+    document
+      .getElementById("export-health-report-btn")
+      ?.addEventListener("click", exportHealthReport);
+    document
+      .getElementById("close-diag-modal-btn")
+      ?.addEventListener("click", () => (window as any).closeModal());
+    const lbl = document.getElementById("lbl-diag-period");
+    if (lbl) lbl.textContent = langStrings.diagPeriod;
+  }, 400); // Ensure this runs after the elements are in the DOM
 }
 
 export async function exportHealthReport() {

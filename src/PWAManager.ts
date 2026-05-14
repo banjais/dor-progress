@@ -1,5 +1,5 @@
 import { Dashboard } from "./Dashboard";
-import { I18N, toNepaliNumerals } from "./api-utils";
+import { I18N } from "./api-utils";
 
 const dashboard = Dashboard.getInstance();
 let deferredPrompt: any = null;
@@ -19,7 +19,6 @@ const isInStandaloneMode = () =>
   "standalone" in window.navigator && (window.navigator as any).standalone;
 
 function showIosInstallInstructions() {
-  const t = I18N[dashboard.state.lang];
   const isChrome = isIosChrome();
 
   const title = isChrome
@@ -137,7 +136,7 @@ async function registerPeriodicUpdate(registration: ServiceWorkerRegistration) {
         await (registration as any).periodicSync.register("update-road-data", {
           minInterval: 24 * 60 * 60 * 1000,
         });
-      } catch (e) {
+      } catch (_e) {
         /* silent */
       }
     }

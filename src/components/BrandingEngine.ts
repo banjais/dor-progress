@@ -1,4 +1,3 @@
-// @ts-nocheck
 import branding from "../branding.json" with { type: "json" };
 
 export class BrandingEngine {

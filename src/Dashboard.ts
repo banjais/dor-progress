@@ -7,18 +7,16 @@ import {
   initializeAppCheck,
   ReCaptchaEnterpriseProvider,
 } from "firebase/app-check";
-import { ProjectReport, ProjectRow } from "../shared/types";
-import { t, authenticatedFetch, toNepaliNumerals } from "./api-utils";
+import { ProjectReport } from "../shared/types";
+import { t, authenticatedFetch } from "./api-utils";
 
 declare const WORKER_BASE: string;
 declare const APP_ENV: string;
 declare const APP_CHECK_DEBUG_TOKEN: string | boolean | undefined;
-declare const APP_VERSION: string;
 
 // External helper references from main.ts/utils.ts
 // eslint-disable-next-line @typescript-eslint/no-redundant-type-constituents
 declare const render: (json: ProjectReport | null) => void;
-declare function applyTranslations(): void;
 declare const handleSearch: (term?: string) => void;
 declare const typeText: (
   element: HTMLElement,
@@ -27,10 +25,7 @@ declare const typeText: (
 ) => void;
 declare function triggerDatabaseRestore(): Promise<void>;
 declare function handleVerification(): Promise<void>;
-declare function checkDeepLink(): void;
-declare function getActiveSwVersion(): Promise<string>;
 declare function updateConnStrength(duration: number): void;
-
 export class Dashboard {
   static _instance: Dashboard | null = null;
   audio: AudioEngine;
@@ -41,7 +36,6 @@ export class Dashboard {
     view: string;
     search: string;
     sort: { key: string | null; dir: number };
-    // eslint-disable-next-line @typescript-eslint/no-redundant-type-constituents
     store: ProjectReport | null;
     riskLevel: number;
     uiVolume: number;
@@ -51,8 +45,6 @@ export class Dashboard {
   };
   refreshCounter: number = 60;
   lastFetchTime: number | null = null;
-  // eslint-disable-next-line @typescript-eslint/no-redundant-type-constituents
-  syncToast: HTMLDivElement | null = null;
   appCheck?: any;
   latencyHistory: { value: number }[] = [];
   intentTimer: number | null = null;
@@ -193,19 +185,18 @@ export class Dashboard {
     toast.innerHTML = `
             <span>${icons[type] || ""}</span>
             <span>${message}</span>
-            ${
-              isSyncing
-                ? `
+            ${isSyncing
+        ? `
                 <div class="toast-progress">
                     <div class="toast-bar" style="width: 100%; animation: toast-progress-loop 2s infinite ease-in-out;"></div>
                 </div>`
-                : isPersistent
-                  ? ""
-                  : `
+        : isPersistent
+          ? ""
+          : `
                 <div class="toast-progress">
                     <div class="toast-bar" style="animation-duration:${duration}ms"></div>
                 </div>`
-            }
+      }
         `;
 
     const bar = toast.querySelector(".toast-bar") as HTMLElement;
@@ -316,7 +307,7 @@ export class Dashboard {
         if (isForced) this.addToast("success", this.t("cacheCleared"));
         updateConnStrength(duration);
       }
-    } catch (e) {
+    } catch (_e) {
       console.error("Error loading data:", e);
       this.addToast("error", this.t("offline"));
       // Explicitly show the offline overlay if data fails to load
@@ -393,6 +384,21 @@ export class Dashboard {
 
   triggerDatabaseRestore() {
     return triggerDatabaseRestore();
+  }
+
+  /**
+   * Centralized Audio Fetcher for AI Briefing.
+   */
+  async fetchAiBriefBlob() {
+    const text =
+      (document.getElementById("ai-brief-text") as HTMLElement)?.innerText || "";
+    if (!text) return null;
+    const isPremium = localStorage.getItem("premium-tts") === "true";
+    const res = await authenticatedFetch(
+      `/api/tts?lang=${this.state.lang}&quality=${isPremium ? "premium" : "standard"}&text=${encodeURIComponent(text)}`,
+    );
+    if (!res.ok) throw new Error();
+    return await res.blob();
   }
 
   private attachGlobalEvents() {

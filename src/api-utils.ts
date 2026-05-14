@@ -54,22 +54,22 @@ export const t = (key: string, count?: number): string => {
     const pKey = `${key}_${rule}`;
 
     const lookup = [
-      dashboard.dynamicCache[pKey],
-      translationsData?.[currentLang]?.[pKey],
-      dashboard.dynamicCache[key],
-      translationsData?.[currentLang]?.[key],
+      dashboard.dynamicCache[pKey], // Check dynamic cache for plural key
+      I18N?.[currentLang]?.[pKey], // Check static translations for plural key
+      dashboard.dynamicCache[key], // Check dynamic cache for base key
+      I18N?.[currentLang]?.[key], // Check static translations for base key
     ];
 
     finalKey = lookup.find((v) => v !== undefined)
-      ? lookup[0] || lookup[1]
+      ? lookup[0] || lookup[1] // If plural key exists in either cache or static, use it
         ? pKey
         : key
       : key;
   }
 
   let text =
-    dashboard.dynamicCache[finalKey] ||
-    translationsData?.[currentLang]?.[finalKey] ||
+    dashboard.dynamicCache[finalKey] || // Check dynamic cache for finalKey
+    I18N?.[currentLang]?.[finalKey] || // Check static translations for finalKey
     null;
 
   text = text || key;

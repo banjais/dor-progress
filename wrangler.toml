@@ -8,8 +8,8 @@ APP_ENV = "production"
 
 [[kv_namespaces]]
 binding = "TRANSLATION_KV"
-id = "${TRANSLATION_KV_ID}"
+id = "d032e134adec47ab85ea1b5a8c18caab"
 
 [[kv_namespaces]]
 binding = "REPORTS_KV"
-id = "${REPORTS_KV_ID}"
+id = "d8701afe5c9b49159942de3049bb4af0"
