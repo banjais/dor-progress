@@ -1,4 +1,3 @@
-// @ts-nocheck
 export class SpeechEngine {
   constructor(audio, dashboard) {
     this.audio = audio;

@@ -16,3 +16,12 @@ self.addEventListener("install", (event) => {
 self.addEventListener("activate", (event) => {
   self.clients.claim();
 });
+
+self.addEventListener("fetch", (event) => {
+  // Handle fetch events for offline support
+  event.respondWith(
+    caches.match(event.request).then((response) => {
+      return response || fetch(event.request);
+    })
+  );
+});

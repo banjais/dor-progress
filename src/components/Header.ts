@@ -1,4 +1,3 @@
-// @ts-nocheck
 export class Header {
   constructor(dashboard) {
     this.dashboard = dashboard;

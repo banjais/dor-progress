@@ -1,4 +1,3 @@
-// @ts-nocheck
 export class AudioEngine {
   static SOUND_PROFILES = {
     modern: {
