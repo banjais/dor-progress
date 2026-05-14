@@ -15,7 +15,7 @@ declare const APP_ENV: string;
 declare const APP_CHECK_DEBUG_TOKEN: string | boolean | undefined;
 
 // External helper references from main.ts/utils.ts
-// eslint-disable-next-line @typescript-eslint/no-redundant-type-constituents
+ 
 declare const render: (json: ProjectReport | null) => void;
 declare const handleSearch: (term?: string) => void;
 declare const typeText: (
@@ -40,7 +40,7 @@ export class Dashboard {
     riskLevel: number;
     uiVolume: number;
     diffMode: boolean;
-    // eslint-disable-next-line @typescript-eslint/no-redundant-type-constituents
+     
     compareReport: ProjectReport | null;
   };
   refreshCounter: number = 60;
