@@ -5,9 +5,9 @@
  * Clean Root Structure - Full Production Version
  */
 
-import { PDFDocument, rgb, StandardFonts } from "pdf-lib";
-import { runTranslation, runProjectSummary } from "./ai-service.js";
-import aiPromptsData from "./ai-prompts.json" with { type: "json" };
+// import { PDFDocument, rgb, StandardFonts } from "pdf-lib";
+// import { runTranslation, runProjectSummary } from "./ai-service.js";
+// import aiPromptsData from "./ai-prompts.json" with { type: "json" };
 import dictionaryData from "./translations.json" with { type: "json" };
 
 export interface Env {
@@ -31,18 +31,19 @@ export interface Env {
 }
 
 // ======================== CONSTANTS ========================
-const FAIL_COUNT_KEY = "system:gemini_failure_count";
-const CIRCUIT_BREAKER_KEY = "system:circuit_open";
-const FAIL_THRESHOLD = 5;
-const COOL_OFF_SECONDS = 600;
+// const FAIL_COUNT_KEY = "system:gemini_failure_count";
+// const CIRCUIT_BREAKER_KEY = "system:circuit_open";
+// const FAIL_THRESHOLD = 5;
+// const COOL_OFF_SECONDS = 600;
 
-const APP_CHECK_FAIL_THRESHOLD = 5;
-const BAN_DURATION_SECONDS = 3600;
+// const APP_CHECK_FAIL_THRESHOLD = 5;
+// const BAN_DURATION_SECONDS = 3600;
 
-const SNAPSHOT_LIST_KEY = "snapshots:list";
-const SNAPSHOT_RETENTION_COUNT = 10;
+// const SNAPSHOT_LIST_KEY = "snapshots:list";
+// const SNAPSHOT_RETENTION_COUNT = 10;
 
 // ======================== HELPERS ========================
+/*
 function getTranslationKV(env: Env) {
   return env.TRANSLATION_KV;
 }
@@ -67,13 +68,14 @@ function makeCacheKey(text: string, targetLang: string): string {
   }
   return `trans:${targetLang}:${hash.toString(16)}`;
 }
+*/
 
 // ======================== MAIN WORKER ========================
 export default {
-  async fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
+  async fetch(request: Request, env: Env, _ctx: ExecutionContext): Promise<Response> {
     const url = new URL(request.url);
     const normalizedPath = url.pathname.replace(/\/+$/, "");
-    const clientIp = request.headers.get("cf-connecting-ip") || "127.0.0.1";
+    const _clientIp = request.headers.get("cf-connecting-ip") || "127.0.0.1";
 
     const securityHeaders = {
       "Content-Security-Policy": "default-src 'self'; script-src 'self' https://unpkg.com https://www.gstatic.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; img-src 'self' data: https:; connect-src 'self' https: blob:;",
@@ -137,7 +139,7 @@ export default {
     });
   },
 
-  async scheduled(event: ScheduledEvent, env: Env, ctx: ExecutionContext) {
+  async scheduled(_event: ScheduledEvent, _env: Env, _ctx: ExecutionContext) {
     console.log(`[Cron] Scheduled task at ${new Date().toISOString()}`);
     // Add automated snapshot, cleanup, etc. here
   }

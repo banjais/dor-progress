@@ -307,8 +307,8 @@ export class Dashboard {
         if (isForced) this.addToast("success", this.t("cacheCleared"));
         updateConnStrength(duration);
       }
-    } catch (_e) {
-      console.error("Error loading data:", e);
+    } catch {
+      console.error("Error loading data");
       this.addToast("error", this.t("offline"));
       // Explicitly show the offline overlay if data fails to load
       const offlineOverlay = document.getElementById("offline-overlay");
@@ -402,7 +402,7 @@ export class Dashboard {
   }
 
   private attachGlobalEvents() {
-    document.addEventListener("click", (e) => {
+    document.addEventListener("click", () => {
       // Global menu closing logic
     });
   }

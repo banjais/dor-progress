@@ -2,7 +2,7 @@ const VERSION = "v0.0.0"; // Updated automatically by deploy.sh
 console.log(`[Service Worker] Script loaded. Version: ${VERSION}`);
 
 const STATIC_CACHE_NAME = "dor-static-v2";
-const DATA_CACHE_NAME = "dor-data-v2";
+// const DATA_CACHE_NAME = "dor-data-v2";
 const OFFLINE_URL = "/";
 
 self.addEventListener("install", (event) => {
@@ -13,7 +13,7 @@ self.addEventListener("install", (event) => {
   );
 });
 
-self.addEventListener("activate", (event) => {
+self.addEventListener("activate", () => {
   self.clients.claim();
 });
 

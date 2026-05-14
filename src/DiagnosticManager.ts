@@ -1,5 +1,5 @@
 import { Dashboard } from "./Dashboard";
-import { t, authenticatedFetch, toNepaliNumerals, I18N } from "./api-utils";
+import { authenticatedFetch, toNepaliNumerals, I18N } from "./api-utils";
 
 declare const APP_ENV: "development" | "production" | "test";
 const dashboard = Dashboard.getInstance();
@@ -216,7 +216,7 @@ export async function exportHealthReport() {
       dashboard.render();
       dashboard.setView(originalView);
     }, 800);
-  } catch (e) {
+  } catch {
     dashboard.addToast("error", "Failed to generate historical report.");
   } finally {
     btn.disabled = false;

@@ -136,7 +136,7 @@ async function registerPeriodicUpdate(registration: ServiceWorkerRegistration) {
         await (registration as any).periodicSync.register("update-road-data", {
           minInterval: 24 * 60 * 60 * 1000,
         });
-      } catch (_e) {
+      } catch {
         /* silent */
       }
     }
