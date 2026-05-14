@@ -1,6 +1,6 @@
 {
   "name": "dor-progress",
-  "version": "1.0.205",
+  "version": "1.0.209",
   "type": "module",
   "scripts": {
     "dev": "vite",

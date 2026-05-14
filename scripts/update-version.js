@@ -1,24 +1,30 @@
-import fs from 'fs';
+import fs from 'fs/promises';
 import path from 'path';
 
-const versionFilePath = path.join(process.cwd(), 'VERSION');
-const packageJsonPath = path.join(process.cwd(), 'package.json');
+async function updateVersion() {
+  const versionFilePath = path.join(process.cwd(), 'VERSION');
+  const packageJsonPath = path.join(process.cwd(), 'package.json');
 
-// Read current version from VERSION file
-let currentVersion = fs.readFileSync(versionFilePath, 'utf8').trim();
-console.log(`Current version: ${currentVersion}`);
+  // Read current version from VERSION file
+  let currentVersion = await fs.readFile(versionFilePath, 'utf8');
+  currentVersion = currentVersion.trim();
+  console.log(`Current version: ${currentVersion}`);
 
-// Parse version (assuming semantic versioning: major.minor.patch)
-const [major, minor, patch] = currentVersion.split('.').map(Number);
-const newVersion = `${major}.${minor}.${patch + 1}`;
-console.log(`New version: ${newVersion}`);
+  // Parse version (assuming semantic versioning: major.minor.patch)
+  const [major, minor, patch] = currentVersion.split('.').map(Number);
+  const newVersion = `${major}.${minor}.${patch + 1}`;
+  console.log(`New version: ${newVersion}`);
 
-// Update VERSION file
-fs.writeFileSync(versionFilePath, newVersion + '\n');
+  // Update VERSION file
+  await fs.writeFile(versionFilePath, newVersion + '\n');
 
-// Update package.json
-const packageJson = JSON.parse(fs.readFileSync(packageJsonPath, 'utf8'));
-packageJson.version = newVersion;
-fs.writeFileSync(packageJsonPath, JSON.stringify(packageJson, null, 2) + '\n');
+  // Update package.json
+  const packageJsonContent = await fs.readFile(packageJsonPath, 'utf8');
+  const packageJson = JSON.parse(packageJsonContent);
+  packageJson.version = newVersion;
+  await fs.writeFile(packageJsonPath, JSON.stringify(packageJson, null, 2) + '\n');
 
-console.log('Version updated successfully.');
+  console.log('Version updated successfully.');
+}
+
+updateVersion().catch(console.error);
