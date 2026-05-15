@@ -8,10 +8,28 @@ on:
   workflow_dispatch:
 
 jobs:
+  validate-env:
+    name: 🔒 Environment Secrets Check
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check Cloudflare Token
+        run: |
+          if [ -z "${{ secrets.CLOUDFLARE_API_TOKEN }}" ]; then
+            echo "::warning::CLOUDFLARE_API_TOKEN is missing"
+          else
+            echo "Cloudflare API Token is set"
+          fi
+      - name: Check Firebase Service Account
+        run: |
+          if [ -z "${{ secrets.FIREBASE_SERVICE_ACCOUNT }}" ]; then
+            echo "::warning::FIREBASE_SERVICE_ACCOUNT is missing"
+          else
+            echo "Firebase Service Account is set"
+          fi
+
   ci:
     name: 🧪 CI (Lint + Typecheck + Test)
     runs-on: ubuntu-latest
-
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -34,12 +52,10 @@ jobs:
       - name: Test
         run: npm test
 
-
-  build:
-    name: 🏗️ Build Verification
+  build-frontend:
+    name: 🏗️ Build Frontend
     needs: ci
     runs-on: ubuntu-latest
-
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -62,13 +78,18 @@ jobs:
       - name: Verify build
         run: npm run verify
 
+      - name: Upload Build Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: frontend-build
+          path: .build/
+          retention-days: 1
 
-  deploy:
-    name: 🚀 Deploy (Production)
-    needs: build
+  deploy-worker:
+    name: 🚀 Deploy Worker (Backend)
+    needs: [ci, validate-env]
     if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
-
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -83,15 +104,57 @@ jobs:
         run: npm install
 
       - name: Deploy Worker
-        run: npm run deploy:worker
-        env:
-          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+
+  deploy-frontend:
+    name: 🚀 Deploy Hosting (Frontend)
+    needs: [build-frontend, validate-env]
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: Download Build Artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: frontend-build
+          path: .build/
 
       - name: Deploy Firebase Hosting
-        run: npm run deploy:hosting
-        env:
-          FIREBASE_TOKEN: ${{ secrets.FIREBASE_TOKEN }}
+        run: |
+          echo '${{ secrets.FIREBASE_SERVICE_ACCOUNT }}' > firebase-service-account.json
+          export GOOGLE_APPLICATION_CREDENTIALS=firebase-service-account.json
+          npm run deploy:hosting
+
+  log-deployment:
+    name: 📝 Log Deployment
+    needs: [deploy-worker, deploy-frontend]
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm install
 
       - name: Log deployment
         run: npx tsx scripts/deploy/deploy-log.ts
