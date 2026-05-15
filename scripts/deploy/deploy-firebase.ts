@@ -2,7 +2,7 @@ import { execSync } from "child_process";
 
 console.log("🚀 Deploying Firebase Hosting...");
 
-execSync("firebase deploy --only hosting --public .build", {
+execSync("node --no-deprecation firebase deploy --only hosting --public .build", {
   stdio: "inherit",
 });
 

@@ -100,6 +100,10 @@ jobs:
         with:
           node-version: 22
           cache: npm
+      - name: Update npm and firebase-tools
+        run: |
+          npm install -g npm@latest
+          npm install -g firebase-tools@latest
 
       - name: Install dependencies
         run: npm install
