@@ -1,10 +1,7 @@
 /* eslint-disable @typescript-eslint/ban-ts-comment */
 // @ts-nocheck
-import { Dashboard } from "./Dashboard";
-import { t } from "./api-utils";
-
-declare const WORKER_BASE: string;
-declare const APP_ENV: "development" | "production" | "test";
+import { Dashboard } from "./Dashboard.js";
+import { t } from "./api-utils.js";
 
 const dashboard = Dashboard.getInstance();
 let snapshotList: any[] = [];

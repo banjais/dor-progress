@@ -1,7 +1,7 @@
 /* eslint-disable @typescript-eslint/ban-ts-comment */
 // @ts-nocheck
-import { Dashboard } from "./Dashboard";
-import { I18N } from "./api-utils";
+import { Dashboard } from "./Dashboard.js";
+import { I18N } from "./api-utils.js";
 
 const dashboard = Dashboard.getInstance();
 let deferredPrompt: any = null;

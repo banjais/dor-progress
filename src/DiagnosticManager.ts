@@ -1,9 +1,8 @@
 /* eslint-disable @typescript-eslint/ban-ts-comment */
 // @ts-nocheck
-import { Dashboard } from "./Dashboard";
-import { authenticatedFetch, toNepaliNumerals, I18N } from "./api-utils";
+import { Dashboard } from "./Dashboard.js";
+import { authenticatedFetch, toNepaliNumerals, I18N } from "./api-utils.js";
 
-declare const APP_ENV: "development" | "production" | "test";
 const dashboard = Dashboard.getInstance();
 
 /**

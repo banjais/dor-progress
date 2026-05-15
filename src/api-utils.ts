@@ -1,7 +1,5 @@
-/* eslint-disable @typescript-eslint/ban-ts-comment */
-// @ts-nocheck
 import { getToken } from "firebase/app-check";
-import { Dashboard } from "./Dashboard";
+import { Dashboard } from "./Dashboard.js";
 import translationsDataRaw from "./locales/translations.json" with { type: "json" };
 
 interface TranslationContent {
@@ -9,17 +7,22 @@ interface TranslationContent {
   [key: string]: string | string[]; // Allow other keys to be strings or string arrays
 }
 
-export const I18N: Record<string, TranslationContent> =
-  translationsDataRaw as Record<string, TranslationContent>;
+/**
+ * Type-safe access to translations including metadata
+ */
+export const I18N = translationsDataRaw as unknown as Record<string, TranslationContent> & {
+  _metadata?: { syncAt: string; fingerprint: string };
+};
 
-declare const WORKER_BASE: string;
+/** Cache for PluralRules to boost performance */
+const pluralRulesCache = new Map<string, Intl.PluralRules>();
 
 /**
  * Converts Arabic numerals to Nepali numerals.
  */
 export function toNepaliNumerals(num: number | string): string {
   const n = ["०", "१", "२", "३", "४", "५", "६", "७", "८", "९"];
-  return String(num).replace(/[0-9]/g, (d) => n[parseInt(d)]);
+  return String(num).replace(/[0-9]/g, (d) => n[Number(d)]);
 }
 
 /**
@@ -38,7 +41,7 @@ export function toArabicNumerals(str: string): string {
     "८": "8",
     "९": "9",
   };
-  return String(str || "").replace(/[०-९]/g, (d) => n[d] || d);
+  return String(str || "").replace(/[०-९]/g, (d) => n[d] ?? d);
 }
 
 /**
@@ -47,40 +50,39 @@ export function toArabicNumerals(str: string): string {
 export const t = (key: string, count?: number): string => {
   if (!key) return "";
   const dashboard = Dashboard.getInstance();
-  const currentLang = dashboard.state.lang;
+  let currentLang = (dashboard.state.lang || "en") as string;
+  if (currentLang === "_metadata") currentLang = "en";
 
   let finalKey = key;
+  const langData = I18N[currentLang as keyof typeof I18N] as TranslationContent | undefined;
 
   if (count !== undefined) {
-    const rule = new Intl.PluralRules(currentLang).select(count);
+    if (!pluralRulesCache.has(currentLang)) {
+      pluralRulesCache.set(currentLang, new Intl.PluralRules(currentLang));
+    }
+    const rule = pluralRulesCache.get(currentLang)!.select(count);
     const pKey = `${key}_${rule}`;
 
-    const lookup = [
-      dashboard.dynamicCache[pKey], // Check dynamic cache for plural key
-      I18N?.[currentLang]?.[pKey], // Check static translations for plural key
-      dashboard.dynamicCache[key], // Check dynamic cache for base key
-      I18N?.[currentLang]?.[key], // Check static translations for base key
-    ];
+    // If plural key exists in either cache or static, use it
+    const hasPlural =
+      dashboard.dynamicCache[pKey] !== undefined ||
+      (langData && langData[pKey] !== undefined);
 
-    finalKey = lookup.find((v) => v !== undefined)
-      ? lookup[0] || lookup[1] // If plural key exists in either cache or static, use it
-        ? pKey
-        : key
-      : key;
+    finalKey = hasPlural ? pKey : key;
   }
 
-  let text =
-    dashboard.dynamicCache[finalKey] || // Check dynamic cache for finalKey
-    I18N?.[currentLang]?.[finalKey] || // Check static translations for finalKey
-    null;
+  const rawText =
+    dashboard.dynamicCache[finalKey] ||
+    (langData ? langData[finalKey] : null);
+
+  // Convert array translations to strings if necessary
+  let text = Array.isArray(rawText) ? rawText.join(", ") : (rawText as string | null);
 
   text = text || key;
 
   if (count !== undefined) {
-    const displayCount = (
-      currentLang === "ne" ? toNepaliNumerals(count) : count
-    ) as string;
-    return text.replace("{{count}}", displayCount);
+    const displayCount = currentLang === "ne" ? toNepaliNumerals(count) : String(count);
+    return text.split("{{count}}").join(displayCount);
   }
   return text;
 };
@@ -94,33 +96,41 @@ export async function authenticatedFetch(
   maxRetries = 3,
 ): Promise<Response> {
   const dashboard = Dashboard.getInstance();
-  const url = path.startsWith("http")
-    ? path
-    : `${WORKER_BASE}${path.startsWith("/") ? "" : "/"}${path}`;
 
-  const headers: Record<string, string> = {
-    "Content-Type": "application/json",
-    ...(options.headers as Record<string, string>),
-  };
-  headers["X-Low-Data"] =
-    localStorage.getItem("low-data") === "true" ? "true" : "false";
+  // Normalize URL joining
+  const baseUrl = WORKER_BASE.endsWith("/") ? WORKER_BASE.slice(0, -1) : WORKER_BASE;
+  const url = path.startsWith("http") ? path : `${baseUrl}/${path.replace(/^\//, "")}`;
+
+  // Use native Headers API for robust merging
+  const headers = new Headers(options.headers);
+  if (!headers.has("Content-Type")) {
+    headers.set("Content-Type", "application/json");
+  }
+
+  const isLowData = typeof window !== "undefined" && localStorage.getItem("low-data") === "true";
+  headers.set("X-Low-Data", isLowData ? "true" : "false");
 
   for (let attempt = 0; attempt < maxRetries; attempt++) {
     try {
       if (dashboard.appCheck) {
-        const tokenResult = await getToken(dashboard.appCheck, attempt > 0);
-        if (tokenResult?.token) {
-          headers["X-Firebase-AppCheck"] = tokenResult.token;
+        try {
+          const tokenResult = await getToken(dashboard.appCheck, attempt > 0);
+          if (tokenResult?.token) {
+            headers.set("X-Firebase-AppCheck", tokenResult.token);
+          }
+        } catch (authErr) {
+          console.warn("AppCheck token fetch failed, proceeding without it", authErr);
         }
       }
 
       const response = await fetch(url, { ...options, headers });
       if (response.ok) return response;
 
-      throw new Error(`HTTP ${response.status}`);
+      throw new Error(`HTTP ${response.status}: ${url}`);
     } catch (err) {
       if (attempt === maxRetries - 1) throw err;
-      const delay = Math.pow(2, attempt) * 1000;
+      // Exponential backoff with jitter
+      const delay = Math.pow(2, attempt) * 1000 + Math.random() * 1000;
       await new Promise((resolve) => setTimeout(resolve, delay));
     }
   }

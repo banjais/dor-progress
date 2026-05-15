@@ -16,14 +16,16 @@ const JWKS = createRemoteJWKSet(
   new URL("https://firebaseappcheck.googleapis.com/v1/jwks"),
 );
 
-const CORS_HEADERS = {
+const getCorsHeaders = (origin: string | null) => ({
   "Content-Type": "application/json",
-  "Access-Control-Allow-Origin": "*",
+  "Access-Control-Allow-Origin": origin && (origin.endsWith(".web.app") || origin.endsWith(".firebaseapp.com") || origin.includes("localhost"))
+    ? origin
+    : "https://dor-progress.web.app",
   "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
-  "Access-Control-Allow-Headers":
-    "Content-Type, X-Firebase-AppCheck, X-Low-Data, X-Snapshot-Key",
+  "Access-Control-Allow-Headers": "Content-Type, X-Firebase-AppCheck, X-Low-Data, X-Snapshot-Key",
   "Access-Control-Max-Age": "86400",
-};
+  "Vary": "Origin"
+});
 
 function jsonResponse(data: any, status = 200): Response {
   return new Response(JSON.stringify(data), {
@@ -119,11 +121,12 @@ const ReportRequestSchema = z.object({
 
 const handler: ExportedHandler<Env> = {
   async fetch(request, env, ctx) {
+    const origin = request.headers.get("Origin");
     const url = new URL(request.url);
 
     // Handle CORS preflight requests
     if (request.method === "OPTIONS") {
-      return new Response(null, { status: 204, headers: CORS_HEADERS });
+      return new Response(null, { status: 204, headers: getCorsHeaders(origin) });
     }
 
     if (url.pathname === "/api/ping" || url.pathname === "/api/health") {

@@ -1,14 +1,6 @@
 /* eslint-disable @typescript-eslint/ban-ts-comment */
 // @ts-nocheck
 /**
- * Global type declarations for environment variables injected during build.
- */
-declare const WORKER_BASE: string;
-declare const APP_ENV: "development" | "production" | "test";
-declare const APP_VERSION: string;
-declare const PDFLib: any;
-
-/**
  * Interfaces for Project Data and State
  */
 const syncStyle = document.createElement("style");
@@ -21,15 +13,15 @@ syncStyle.textContent = `
   }
 `;
 document.head.appendChild(syncStyle);
-import { initPWALogic } from "./PWAManager";
+import { initPWALogic } from "./PWAManager.js";
 
-import { Dashboard } from "./Dashboard";
+import { Dashboard } from "./Dashboard.js";
 import {
   t,
   authenticatedFetch,
   toNepaliNumerals,
   I18N,
-} from "./api-utils";
+} from "./api-utils.js";
 
 const dashboard = Dashboard.getInstance();
 

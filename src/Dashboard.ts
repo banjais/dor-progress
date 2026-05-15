@@ -1,33 +1,17 @@
 /* eslint-disable @typescript-eslint/ban-ts-comment */
 // @ts-nocheck
-import { AudioEngine } from "./components/AudioEngine";
-import { SpeechEngine } from "./components/SpeechEngine";
-import { Header } from "./components/Header";
-import { BrandingEngine } from "./components/BrandingEngine";
+import { AudioEngine } from "./components/AudioEngine.js";
+import { SpeechEngine } from "./components/SpeechEngine.js";
+import { Header } from "./components/Header.js";
+import { BrandingEngine } from "./components/BrandingEngine.js";
 import { initializeApp } from "firebase/app";
 import {
   initializeAppCheck,
   ReCaptchaEnterpriseProvider,
 } from "firebase/app-check";
-import { ProjectReport } from "../shared/types";
-import { t, authenticatedFetch } from "./api-utils";
+import { ProjectReport } from "../shared/types.js";
+import { t, authenticatedFetch } from "./api-utils.js";
 
-declare const WORKER_BASE: string;
-declare const APP_ENV: string;
-declare const APP_CHECK_DEBUG_TOKEN: string | boolean | undefined;
-
-// External helper references from main.ts/utils.ts
- 
-declare const render: (json: ProjectReport | null) => void;
-declare const handleSearch: (term?: string) => void;
-declare const typeText: (
-  element: HTMLElement,
-  text: string,
-  useSound?: boolean,
-) => void;
-declare function triggerDatabaseRestore(): Promise<void>;
-declare function handleVerification(): Promise<void>;
-declare function updateConnStrength(duration: number): void;
 export class Dashboard {
   static _instance: Dashboard | null = null;
   audio: AudioEngine;
@@ -42,7 +26,7 @@ export class Dashboard {
     riskLevel: number;
     uiVolume: number;
     diffMode: boolean;
-     
+
     compareReport: ProjectReport | null;
   };
   refreshCounter: number = 60;

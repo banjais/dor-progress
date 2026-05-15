@@ -41,7 +41,7 @@ jobs:
           cache: npm
 
       - name: Install dependencies
-        run: npm install
+        run: npm ci
 
       - name: Lint
         run: npm run lint
@@ -67,7 +67,7 @@ jobs:
           cache: npm
 
       - name: Install dependencies
-        run: npm install
+        run: npm ci
 
       - name: Build project
         run: npm run build
@@ -82,7 +82,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: frontend-build
-          path: dist/
+          path: .build/
           if-no-files-found: error
           retention-days: 1
 
@@ -91,6 +91,9 @@ jobs:
     needs: [ci, validate-env]
     if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -118,6 +121,9 @@ jobs:
     needs: [build-frontend, validate-env]
     if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -135,13 +141,19 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           name: frontend-build
-          path: dist/
+          path: .build/
+
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@v2
+        with:
+          # For Workload Identity Federation (Recommended):
+          # workload_identity_provider: 'projects/123456789/locations/global/workloadIdentityPools/my-pool/providers/my-provider'
+          # service_account: 'my-service-account@my-project.iam.gserviceaccount.com'
+          # OR for existing JSON Secret (Cleaner than manual echo):
+          credentials_json: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
 
       - name: Deploy Firebase Hosting
-        run: |
-          echo '${{ secrets.FIREBASE_SERVICE_ACCOUNT }}' > firebase-service-account.json
-          export GOOGLE_APPLICATION_CREDENTIALS=firebase-service-account.json
-          npm run deploy:hosting
+        run: npm run deploy:hosting
 
   log-deployment:
     name: 📝 Log Deployment
