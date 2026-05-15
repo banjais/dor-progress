@@ -1,6 +1,6 @@
 {
   "name": "dor-progress",
-  "version": "1.0.236",
+  "version": "1.0.237",
   "type": "module",
   "scripts": {
     "dev": "node --no-deprecation ./node_modules/vite/bin/vite.js",
@@ -10,9 +10,9 @@
     "typecheck": "node --no-deprecation ./node_modules/typescript/bin/tsc --noEmit",
     "verify": "npm run lint && npm run typecheck",
     "test": "echo \"No tests specified\" && exit 0",
-    "update-version": "node scripts/update-version.js",
+    "update-version": "node --no-deprecation scripts/update-version.js",
     "clean": "rimraf .build",
-    "deploy:worker": "wrangler deploy index.ts",
+    "deploy:worker": "node --no-deprecation ./node_modules/wrangler/bin/wrangler.js deploy index.ts",
     "deploy:hosting": "firebase deploy --only hosting",
     "deploy:firebase": "firebase deploy --only hosting",
     "deploy:git": "git add -A && git reset .dev.vars.backup .env.simple .env.test deploy-worker.bat scripts/build/ scripts/deploy/ scripts/system/ scripts/update-version.js && git add . && git commit --no-verify --allow-empty -m \"chore(release): v$npm_package_version\" && git push",
