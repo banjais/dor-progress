@@ -82,22 +82,64 @@ jobs:
 
       - name: Debug Build Output
         run: |
-          echo "Checking root directory:"
-          ls -la
-          echo "Checking build directory:"
-          ls -R .build || echo "Directory .build not found"
+          echo "Checking for build output..."
+          ls -R dist || ls -R .build || echo "No build output found in dist or .build"
 
       - name: Upload Build Artifact
         uses: actions/upload-artifact@v4
         with:
           name: frontend-build
-          path: .build
+          path: dist
           if-no-files-found: error
           retention-days: 1
 
-  deploy-worker:
-    name: 🚀 Deploy Worker (Backend)
+  deploy-staging-worker:
+    name: 🧪 Deploy Staging Worker
     needs: [ci, validate-env]
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    environment: staging
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - name: Install dependencies
+        run: npm install
+      - name: Deploy Staging Worker
+        uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          # This assumes you have a [env.staging] block in your wrangler.toml
+          environment: staging
+
+  deploy-staging-frontend:
+    name: 🧪 Deploy Staging Hosting
+    needs: [build-frontend, validate-env]
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    environment: staging
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Download Build Artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: frontend-build
+          path: .build
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@v2
+        with:
+          credentials_json: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+      - name: Deploy to Staging Channel
+        run: npx firebase-tools hosting:channel:deploy staging --expires 7d
+
+  deploy-worker:
+    name: 🚀 Deploy Worker (Production)
+    needs: [deploy-staging-worker]
     if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     permissions:
@@ -126,8 +168,8 @@ jobs:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
 
   deploy-frontend:
-    name: 🚀 Deploy Hosting (Frontend)
-    needs: [build-frontend, validate-env]
+    name: 🚀 Deploy Hosting (Production)
+    needs: [deploy-staging-frontend]
     if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     permissions:

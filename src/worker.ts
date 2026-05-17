@@ -411,14 +411,6 @@ const handler: ExportedHandler<Env> = { // No citation needed, this is internal 
           return jsonResponse(report, 200, origin);
         }
 
-        if (request.method === "GET") {
-          const date = url.searchParams.get("date");
-          if (!date) throw new Error("Missing date parameter");
-          const report = await env.REPORTS_KV.get(`report:${date}`, { type: "json" });
-          if (!report) return jsonResponse({ error: "Snapshot not found" }, 404, origin);
-          return jsonResponse(report, 200, origin);
-        }
-
         if (request.method === "POST") {
           const bodyResult = SnapshotRequestSchema.safeParse(await request.json());
           if (!bodyResult.success) {
