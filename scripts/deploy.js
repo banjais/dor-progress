@@ -32,7 +32,11 @@ function runJob(job) {
 
     const cp = spawn(cmd, args, {
       shell: true,
-      stdio: 'inherit'
+      stdio: 'inherit',
+      env: {
+        ...process.env,
+        NODE_NO_WARNINGS: '1'
+      }
     });
 
     cp.on('close', (code) => {
