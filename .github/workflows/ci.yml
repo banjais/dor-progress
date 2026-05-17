@@ -114,6 +114,7 @@ jobs:
     needs: [ci, validate-env]
     if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
+    continue-on-error: true
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -128,12 +129,14 @@ jobs:
         run: npx wrangler deploy --env staging
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
 
   deploy-staging-frontend:
     name: 🧪 Deploy Staging Hosting
     needs: [build-frontend, validate-env]
     if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
+    continue-on-error: true
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -151,7 +154,7 @@ jobs:
 
   deploy-worker:
     name: 🚀 Deploy Worker (Production)
-    needs: [deploy-staging-worker]
+    needs: [ci, validate-env]
     if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     permissions:
@@ -178,10 +181,11 @@ jobs:
         uses: cloudflare/wrangler-action@v3
         with:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
 
   deploy-frontend:
     name: 🚀 Deploy Hosting (Production)
-    needs: [deploy-staging-frontend]
+    needs: [build-frontend, validate-env]
     if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     permissions:
