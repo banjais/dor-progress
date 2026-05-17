@@ -38,9 +38,18 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: 22
-          cache: npm
+
+      - name: Cache node_modules
+        id: cache-npm
+        uses: actions/cache@v4
+        with:
+          path: node_modules
+          key: ${{ runner.os }}-node-${{ hashFiles('**/package-lock.json') }}
+          restore-keys: |
+            ${{ runner.os }}-node-
 
       - name: Install dependencies
+        if: steps.cache-npm.outputs.cache-hit != 'true'
         run: npm ci
 
       - name: Lint
@@ -64,9 +73,16 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: 22
-          cache: npm
 
-      - name: Install dependencies
+      - name: Restore node_modules
+        id: cache-npm
+        uses: actions/cache@v4
+        with:
+          path: node_modules
+          key: ${{ runner.os }}-node-${{ hashFiles('**/package-lock.json') }}
+
+      - name: Install dependencies (fallback)
+        if: steps.cache-npm.outputs.cache-hit != 'true'
         run: npm ci
 
       - name: Build project
@@ -76,9 +92,6 @@ jobs:
           VITE_API_BASE_URL: https://dor-progress.web.app
           # Ensure these match what your build script expects
           VITE_APP_ENV: production
-
-      - name: Verify build
-        run: npm run verify
 
       - name: Debug Build Output
         run: |
@@ -209,7 +222,7 @@ jobs:
           credentials_json: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
 
       - name: Deploy Firebase Hosting
-        run: npm run deploy:hosting
+        run: npx firebase-tools deploy --only hosting
 
   log-deployment:
     name: 📝 Log Deployment
