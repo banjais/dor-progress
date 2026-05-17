@@ -1,6 +1,6 @@
 {
   "name": "dor-progress",
-  "version": "1.0.279",
+  "version": "1.0.280",
   "type": "module",
   "scripts": {
     "dev": "node --no-deprecation ./node_modules/vite/bin/vite.js",
@@ -12,7 +12,7 @@
     "test": "echo \"No tests specified\" && exit 0",
     "update-version": "node --no-deprecation scripts/update-version.js",
     "clean": "rimraf dist",
-    "deploy:worker": "node --no-deprecation ./node_modules/wrangler/bin/wrangler.js deploy src/worker.ts",
+    "deploy:worker": "node --no-deprecation ./node_modules/wrangler/bin/wrangler.js deploy src/worker.ts --env=\"\"",
     "deploy:hosting": "firebase deploy --only hosting",
     "deploy:firebase": "firebase deploy --only hosting",
     "deploy:git": "git push --follow-tags",
