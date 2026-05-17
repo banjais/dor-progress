@@ -125,11 +125,9 @@ jobs:
       - name: Install dependencies
         run: npm install
       - name: Deploy Staging Worker
-        uses: cloudflare/wrangler-action@v3
-        with:
-          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          # This assumes you have a [env.staging] block in your wrangler.toml
-          environment: staging
+        run: npx wrangler deploy --env staging
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
 
   deploy-staging-frontend:
     name: 🧪 Deploy Staging Hosting
