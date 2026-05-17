@@ -1,6 +1,6 @@
 {
   "name": "dor-progress",
-  "version": "1.0.261",
+  "version": "1.0.262",
   "type": "module",
   "scripts": {
     "dev": "node --no-deprecation ./node_modules/vite/bin/vite.js",
