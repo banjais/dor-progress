@@ -114,8 +114,6 @@ jobs:
     needs: [ci, validate-env]
     if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
-    environment:
-      name: staging
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -138,8 +136,6 @@ jobs:
     needs: [build-frontend, validate-env]
     if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
-    environment:
-      name: staging
     steps:
       - name: Checkout
         uses: actions/checkout@v4
