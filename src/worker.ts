@@ -398,7 +398,19 @@ const handler: ExportedHandler<Env> = { // No citation needed, this is internal 
         if (!isDev && (!snapshotKey || snapshotKey !== env.SNAPSHOT_KEY)) {
           return jsonResponse({ error: "Unauthorized" }, 401, origin);
         }
-        // No citation needed, this is internal code.
+
+        if (request.method === "GET") {
+          const date = url.searchParams.get("date");
+          if (!date) throw new Error("Missing date parameter");
+          const report = await env.REPORTS_KV.get(`report:${date}`, { type: "json" });
+          if (!report) return jsonResponse({ error: "Snapshot not found" }, 404, origin);
+
+          // Note: If you intend to serve a PDF file here, you would need to 
+          // have stored the PDF bytes in KV or generate it here.
+          // For now, we return the JSON report.
+          return jsonResponse(report, 200, origin);
+        }
+
         if (request.method === "POST") {
           const bodyResult = SnapshotRequestSchema.safeParse(await request.json());
           if (!bodyResult.success) {

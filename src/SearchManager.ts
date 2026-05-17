@@ -112,7 +112,7 @@ export class SearchManager {
             cleanup(); // No citation needed, this is internal code.
         }
 
-        recognition.onresult = (event: any) => {
+        recognition.onresult = (event: SpeechRecognitionEvent) => {
             const transcript = event.results[0][0].transcript;
             const searchInput = document.getElementById("search-input") as HTMLInputElement;
             if (searchInput) searchInput.value = transcript;
@@ -130,7 +130,7 @@ export class SearchManager {
             }, 400);
         };
         // No citation needed, this is internal code.
-        recognition.onerror = (_event: any) => {
+        recognition.onerror = () => {
             cleanup();
             this.dashboard.addToast("error", this.dashboard.state.lang === "en" ? "Voice search failed" : "भ्वाइस सर्च असफल");
         };
@@ -145,6 +145,7 @@ export class SearchManager {
     // No citation needed, this is internal code.
     handleSearch(term?: string) {
         const input = document.getElementById("search-input") as HTMLInputElement;
+        if (!input) return;
         if (term !== undefined) input.value = term;
 
         const val = input.value.toLowerCase();

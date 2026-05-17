@@ -11,11 +11,49 @@ import {
  */
 
 declare global {
+  interface SpeechRecognitionAlternative {
+    readonly transcript: string;
+    readonly confidence: number;
+  }
+
+  interface SpeechRecognitionResult {
+    readonly length: number;
+    item(index: number): SpeechRecognitionAlternative;
+    [index: number]: SpeechRecognitionAlternative;
+    readonly isFinal: boolean;
+  }
+
+  interface SpeechRecognitionResultList {
+    readonly length: number;
+    item(index: number): SpeechRecognitionResult;
+    [index: number]: SpeechRecognitionResult;
+  }
+
+  interface SpeechRecognitionEvent extends Event {
+    readonly resultIndex: number;
+    readonly results: SpeechRecognitionResultList;
+  }
+
+  interface SpeechRecognition extends EventTarget {
+    lang: string;
+    interimResults: boolean;
+    maxAlternatives: number;
+    continuous: boolean;
+    start(): void;
+    stop(): void;
+    abort(): void;
+    onresult: (event: SpeechRecognitionEvent) => void;
+    onerror: (event: any) => void;
+    onspeechend: () => void;
+  }
+
   interface Window {
     /** Prefix for older WebKit browsers */
     webkitAudioContext: typeof AudioContext;
     /** Prefix for older WebKit browsers */
-    webkitSpeechRecognition: typeof SpeechRecognition;
+    webkitSpeechRecognition: {
+      new(): SpeechRecognition;
+    };
     PDFLib: any; // Assuming PDFLib is a global object from a library
     I18N: any; // If I18N is truly global, declare it here. Otherwise, it should be imported.
   }
