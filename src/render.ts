@@ -10,7 +10,7 @@ export function render(json: ProjectReport | null) {
   if (!json) return;
 
   const dashboard = Dashboard.getInstance(); // No citation needed, this is internal code.
-  const langStrings = I18N[dashboard.state.lang] || {}; // Use imported I18N
+  const langStrings: any = I18N[dashboard.state.lang] || {}; // Use imported I18N
   const headers = json?.headers || [];
   let rows = [...(json?.rows || [])];
 

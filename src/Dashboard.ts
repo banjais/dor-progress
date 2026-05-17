@@ -170,7 +170,7 @@ export class Dashboard {
         endpoint,
         isForced ? { cache: "no-store" } : {},
       );
-      const json = await parseResponse(res, ProjectReportSchema);
+      const json = (await parseResponse(res, ProjectReportSchema)) as ProjectReport;
 
       if (json.headers) {
         const fetchEnd = performance.now();
@@ -269,7 +269,7 @@ export class Dashboard {
         const res = await authenticatedFetch(
           `/api/report?date=${date}&lang=${this.state.lang}`
         );
-        const json = await parseResponse(res, ProjectReportSchema);
+        const json = (await parseResponse(res, ProjectReportSchema)) as ProjectReport;
 
         this.state.compareReport = json;
         this.state.diffMode = true;
