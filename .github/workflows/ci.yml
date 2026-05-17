@@ -81,7 +81,11 @@ jobs:
         run: npm run verify
 
       - name: Debug Build Output
-        run: ls -R .build || echo "Directory .build not found"
+        run: |
+          echo "Checking root directory:"
+          ls -la
+          echo "Checking build directory:"
+          ls -R .build || echo "Directory .build not found"
 
       - name: Upload Build Artifact
         uses: actions/upload-artifact@v4
