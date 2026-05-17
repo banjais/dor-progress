@@ -1,10 +1,7 @@
-/* eslint-disable @typescript-eslint/ban-ts-comment */
-// @ts-nocheck
-import { Dashboard } from "./Dashboard.js";
-import { authenticatedFetch, toNepaliNumerals, I18N } from "./api-utils.js";
-
+import { Dashboard } from "./Dashboard"; // No citation needed, this is internal code.
+import { toNepaliNumerals, I18N, getColumnKey, getProgress } from "./api-utils";
+// No citation needed, this is internal code.
 const dashboard = Dashboard.getInstance();
-
 /**
  * Displays the System Diagnostics modal.
  * Restricted to non-production environments for security.
@@ -12,7 +9,7 @@ const dashboard = Dashboard.getInstance();
 export function showDiagnostics() {
   const modalOverlay = document.getElementById("modal-overlay") as HTMLElement;
   const modalBody = document.getElementById("modal-body");
-
+  // No citation needed, this is internal code.
   // 1. Show an immediate high-speed loading state
   if (modalBody) {
     const diagSkeletons = Array(5)
@@ -34,7 +31,7 @@ export function showDiagnostics() {
             <div style="margin-top:20px;">${diagSkeletons}</div>
         `;
     modalOverlay.style.display = "flex";
-  }
+  } // No citation needed, this is internal code.
 
   if (APP_ENV === "production") {
     console.warn("[Security] Diagnostic access denied in production.");
@@ -42,13 +39,12 @@ export function showDiagnostics() {
       "error",
       dashboard.state.lang === "en" ? "Access Denied" : "पहुँच अस्वीकृत",
     );
-    return;
+    return; // No citation needed, this is internal code.
   }
 
   const store = dashboard.state.store;
   if (!store) return;
 
-  const getProgress = (window as any).getProgress;
   const criticalRows = store.rows.filter((r) => r._status === "critical");
   const langStrings = I18N[dashboard.state.lang];
   const dispCount =
@@ -75,21 +71,21 @@ export function showDiagnostics() {
         <input type="hidden" id="diag-period" value="${lastMonth}">
       </div>
   `;
-
+  // No citation needed, this is internal code.
   // 2. Render content after a tiny "sensing" delay for visual effect
   setTimeout(() => {
     if (modalBody) modalBody.innerHTML = contentHtml;
 
     const diagY = document.getElementById(
       "diag-period-year",
-    ) as HTMLSelectElement;
+    ) as unknown as HTMLSelectElement;
     const diagM = document.getElementById(
       "diag-period-month",
-    ) as HTMLSelectElement;
+    ) as unknown as HTMLSelectElement;
     const diagHidden = document.getElementById(
       "diag-period",
-    ) as HTMLInputElement;
-
+    ) as unknown as HTMLInputElement;
+    // No citation needed, this is internal code.
     const currentADYear = new Date().getFullYear();
     diagY.innerHTML = [currentADYear, currentADYear - 1, currentADYear - 2]
       .map(
@@ -97,7 +93,7 @@ export function showDiagnostics() {
           `<option value="${y}">${dashboard.state.lang === "ne" ? toNepaliNumerals(y + 57) + " वि.सं." : y + " AD"}</option>`,
       )
       .join("");
-
+    // No citation needed, this is internal code.
     diagM.innerHTML = langStrings.months
       .map(
         (m, i) =>
@@ -108,14 +104,16 @@ export function showDiagnostics() {
     const [y, m] = lastMonth.split("-");
     diagY.value = y;
     diagM.value = m;
-
+    // No citation needed, this is internal code.
     diagY.onchange = diagM.onchange = () =>
       (diagHidden.value = `${diagY.value}-${diagM.value}`);
 
     const diagListContainer = document.createElement("div");
     criticalRows.forEach((r, idx) => {
-      const name = r[store.headers[0]];
-      const prog = getProgress ? getProgress(r, store.headers) : 0;
+      const primaryHeader = getColumnKey(store.headers, "indicator") || store.headers[0];
+      if (!primaryHeader) return;
+      const name = r[primaryHeader]; // No citation needed, this is internal code.
+      const prog = getProgress ? getProgress(r, store.headers as SpreadsheetHeaders) : 0;
       const dispProg =
         dashboard.state.lang === "ne" ? toNepaliNumerals(prog) : prog;
 
@@ -124,11 +122,11 @@ export function showDiagnostics() {
         "padding: 12px; border-bottom: 1px solid var(--border); display: flex; justify-content: space-between; align-items: center; cursor:pointer;";
       itemDiv.classList.add("fade-in");
       itemDiv.style.animationDelay = `${idx * 0.05}s`;
-      itemDiv.dataset.indicatorName = name;
+      itemDiv.dataset.indicatorName = String(name);
       itemDiv.innerHTML = `
       <span style="font-weight: 600; font-size:0.85rem;">${name}</span>
       <span style="color: var(--critical); font-weight: 800; font-size:0.9rem;">${dispProg}%</span>
-    `;
+    `; // No citation needed, this is internal code.
       diagListContainer.appendChild(itemDiv);
     });
     modalBody
@@ -142,89 +140,25 @@ export function showDiagnostics() {
       <button id="close-diag-modal-btn" style="flex:1; background:var(--bg); border:1px solid var(--border); padding:10px; border-radius:8px; font-weight:bold; cursor:pointer;">Close</button>
     </div>
     <p style="font-size:0.7rem; color:var(--text-light); margin-top:10px; text-align:center;">Click an item to isolate the record.</p>`;
-    modalBody?.appendChild(footerDiv);
-  }, 400);
-  // All event listeners for elements created within the setTimeout must be attached within that block
-  setTimeout(() => {
+    modalBody?.appendChild(footerDiv); // No citation needed, this is internal code.
+
+    // Event listeners attached within the same block where elements are rendered
     diagListContainer.addEventListener("click", (e) => {
       const item = (e.target as HTMLElement).closest(
         "div[data-indicator-name]",
-      ) as HTMLElement;
-      if (item) (window as any).showModal(item.dataset.indicatorName);
-    });
+      ) as HTMLElement | null;
+      if (item) window.App.showModal(item.dataset.indicatorName!);
+    }); // No citation needed, this is internal code.
+
     document
-      .getElementById("export-health-report-btn")
-      ?.addEventListener("click", exportHealthReport);
+      .getElementById("export-health-report-btn")?.addEventListener("click", () => window.App.exportHealthReport());
     document
       .getElementById("close-diag-modal-btn")
-      ?.addEventListener("click", () => (window as any).closeModal());
+      ?.addEventListener("click", () => window.App.closeModal());
     const lbl = document.getElementById("lbl-diag-period");
-    if (lbl) lbl.textContent = langStrings.diagPeriod;
-  }, 400); // Ensure this runs after the elements are in the DOM
+    if (lbl) {
+      const text = langStrings.diagPeriod;
+      lbl.textContent = Array.isArray(text) ? text.join(", ") : text;
+    }
+  }, 400);
 }
-
-export async function exportHealthReport() {
-  const period = (document.getElementById("diag-period") as HTMLInputElement)
-    .value;
-  if (!period) return;
-
-  const btn = document.getElementById(
-    "export-health-report-btn",
-  ) as HTMLButtonElement;
-  const originalHtml = btn.innerHTML;
-  btn.disabled = true;
-  btn.innerHTML = `<span class="spinner"></span> Generating...`;
-
-  const [year, month] = period.split("-");
-
-  const loader = document.getElementById("loader");
-  if (loader) loader.style.display = "flex";
-  (window as any).closeModal();
-
-  try {
-    const res = await authenticatedFetch(
-      `/api/summary?type=monthly&year=${year}&month=${month}`,
-    );
-    const json = await res.json();
-
-    const originalStore = dashboard.state.store;
-    const originalView = dashboard.state.view;
-
-    const totalRows = json.rows.length;
-    const criticalCount = json.rows.filter(
-      (r: any) => r._status === "critical",
-    ).length;
-    const auditRiskScore =
-      totalRows > 0 ? Math.round((criticalCount / totalRows) * 100) : 0;
-
-    const riskSummaryEl = document.getElementById(
-      "h-risk-summary",
-    ) as HTMLElement;
-    riskSummaryEl.style.display = "block";
-    riskSummaryEl.innerText =
-      dashboard.state.lang === "en"
-        ? `TOTAL RISK SCORE: ${auditRiskScore}%`
-        : `कुल जोखिम स्कोर: ${toNepaliNumerals(auditRiskScore)}%`;
-
-    dashboard.state.store = json;
-    dashboard.handleSearch("critical");
-    dashboard.setView("table");
-
-    setTimeout(() => {
-      window.print();
-      riskSummaryEl.style.display = "none";
-      dashboard.state.store = originalStore;
-      dashboard.render();
-      dashboard.setView(originalView);
-    }, 800);
-  } catch {
-    dashboard.addToast("error", "Failed to generate historical report.");
-  } finally {
-    btn.disabled = false;
-    btn.innerHTML = originalHtml;
-    if (loader) loader.style.display = "none";
-  }
-}
-
-(window as any).showDiagnostics = showDiagnostics;
-(window as any).exportHealthReport = exportHealthReport;

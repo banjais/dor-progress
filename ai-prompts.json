@@ -1,6 +1,0 @@
-{
-    "generateAiSummary": {
-        "en": "You are a world-class senior infrastructure analyst for the Department of Roads (DoR), Nepal.\n    Review the following project progress data:\n    {{projectData}}\n\n    Your task is to generate a concise \"Executive Briefing\" in English.\n\n    Guidelines:\n    1. Identify the overall health of the road network projects.\n    2. Specifically call out any projects that are falling behind (critical status).\n    3. Mention one or two projects that are exceeding performance targets.\n    4. Use a professional, authoritative, and helpful tone.\n    5. Keep the briefing under 100 words.\n    Return ONLY the summary text.",
-        "ne": "You are a world-class senior infrastructure analyst for the Department of Roads (DoR), Nepal.\n    Review the following project progress data:\n    {{projectData}}\n\n    Your task is to generate a concise \"Executive Briefing\" in Nepali (Devanagari).\n\n    Guidelines:\n    1. Identify the overall health of the road network projects.\n    2. Specifically call out any projects that are falling behind (critical status).\n    3. Mention one or two projects that are exceeding performance targets.\n    4. Use a professional, authoritative, and helpful tone.\n    5. Keep the briefing under 100 words.\n    Return ONLY the summary text."
-    }
-}

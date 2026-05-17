@@ -1,87 +1,122 @@
-/// <reference types="@cloudflare/workers-types" />
+/**
+ * Shared type definitions for the Department of Roads (DoR) MIS Dashboard.
+ * These types are used by both the Frontend client and the Cloudflare Worker.
+ */
 
-export type ProjectRow = Record<string, string | number>;
+import { z } from "zod";
 
-export interface SnapshotMetadata {
-  date: string;
-  recordCount: number;
-  checksum: string;
-  createdAt: string;
-  bsDate?: string;
-}
+export const SpreadsheetHeadersSchema = z.array(z.string());
+export type SpreadsheetHeaders = z.infer<typeof SpreadsheetHeadersSchema>;
 
-export interface Jwk {
-  kty: string;
-  alg: string;
-  use: string;
-  kid: string;
-  n: string;
-  e: string;
-}
+export const ProjectRowSchema = z.object({
+  _status: z.enum(["good", "moderate", "critical", "stable"]).optional(),
+  _insight: z.string().optional(),
+}).catchall(z.any());
+export type ProjectRow = z.infer<typeof ProjectRowSchema>;
 
-export interface Jwks {
-  keys: Jwk[];
-}
-
-export interface ProjectData {
-  records: ProjectRow[];
-  meta: { lastUpdate?: string; total?: number };
-}
-
-export interface SummaryInput {
-  rows: ProjectRow[];
-  mainSheet?: Record<string, any>;
-  lang: "en" | "ne";
-}
-
-export interface AiSummary {
-  overallHealth?: "good" | "moderate" | "critical";
-  criticalProjects?: string[];
-  exceedingProjects?: string[];
-  discrepancies?: Array<{ text: string; severity: "low" | "medium" | "high" }>;
-  extractedData?: {
-    headers: string[];
-    rows: ProjectRow[];
+/**
+ * Robustly finds a column header based on known aliases.
+ */
+export function getColumnKey(
+  headers: SpreadsheetHeaders,
+  field: "indicator" | "annualTarget" | "annualProgress" | "totalTarget" | "totalProgress",
+): string | undefined {
+  const aliases: Record<string, string[]> = {
+    indicator: ["Indicator", "सूचक", "विवरण", "Indicator Name"],
+    annualTarget: ["Annual Target", "बार्षिक लक्ष्य", "Yearly Target", "Target (Annual)"],
+    annualProgress: ["Annual Progress", "हाल सम्म को बार्षिक प्रगति", "Yearly Progress", "Achievement"],
+    totalTarget: ["Total Target", "कुल लक्ष्य", "Overall Target"],
+    totalProgress: ["Total Progress", "कुल प्रगति", "Overall Progress"],
   };
-  brief: string;
+
+  const searchTerms = aliases[field] || [];
+  return headers.find((h) =>
+    searchTerms.some((term) => h.toLowerCase().includes(term.toLowerCase())),
+  );
 }
 
-export interface ProjectReport {
-  headers: string[];
-  rows: ProjectRow[];
-  lastUpdate: string;
-  aiSummary: AiSummary | null;
+/**
+ * Calculates progress percentage based on row data.
+ */
+export function getProgress(row: ProjectRow, headers: SpreadsheetHeaders): number {
+  const targetKey = getColumnKey(headers, "annualTarget");
+  const progKey = getColumnKey(headers, "annualProgress");
+
+  if (!targetKey || !progKey) return 0;
+
+  const t_val = parseFloat(String(row[targetKey] || "0").replace(/,/g, ""));
+  const p_val = parseFloat(String(row[progKey] || "0").replace(/,/g, ""));
+
+  return t_val > 0 ? Math.round((p_val / t_val) * 100) : 0;
 }
+
+export const AiSummarySchema = z.object({
+  brief: z.string().describe("A high-level executive summary for senior management (under 100 words)."),
+  overallHealth: z.enum(["good", "moderate", "critical"]).optional()
+    .describe("The general status of the road network based on cumulative progress."),
+  criticalProjects: z.array(z.string()).optional()
+    .describe("List names of projects where annual progress is significantly below target (e.g., < 40%)."),
+  exceedingProjects: z.array(z.string()).optional()
+    .describe("List names of projects that have surpassed their annual targets."),
+  discrepancies: z.array(z.object({
+    text: z.string().describe("Description of a data mismatch or logical error found in the report."),
+    severity: z.enum(["low", "medium", "high"]).describe("Impact of the discrepancy.")
+  })).optional().describe("List any logical inconsistencies found in the project data."),
+  extractedData: z.object({
+    headers: SpreadsheetHeadersSchema.describe("The exact column headers found in the PDF table."),
+    rows: z.array(ProjectRowSchema).describe("An array of objects representing every row in the project table."),
+    date: z.string().optional().describe("The report date found in the document header (ISO format if possible).")
+  }).optional().describe("The raw tabular data extracted from the document.")
+});
+export type AiSummary = z.infer<typeof AiSummarySchema>;
+
+export const ProjectReportSchema = z.object({
+  created: z.string().optional(),
+  headers: SpreadsheetHeadersSchema,
+  rows: z.array(ProjectRowSchema),
+  lastUpdate: z.string(),
+  aiSummary: AiSummarySchema.nullable(),
+  adminMessage: z.string().optional()
+}).transform((report) => {
+  const { headers, rows } = report;
+
+  // Automatically calculate status color/enum for each row during the parsing phase.
+  const updatedRows = rows.map((row) => {
+    // If the API already provided a status, preserve it
+    if (row._status) return row;
+
+    const progress = getProgress(row, headers);
+    let status: "good" | "stable" | "critical" = "critical";
+
+    if (progress >= 80) status = "good";
+    else if (progress >= 40) status = "stable";
+
+    return { ...row, _status: status };
+  });
+
+  return { ...report, rows: updatedRows };
+});
+export type ProjectReport = z.infer<typeof ProjectReportSchema>;
+
+/** Schema for snapshot creation requests from the dashboard */
+export const SnapshotRequestSchema = z.object({
+  headers: SpreadsheetHeadersSchema.optional(),
+  records: z.array(ProjectRowSchema),
+  meta: z.object({
+    lastUpdate: z.string(),
+    total: z.number()
+  })
+});
+export type SnapshotRequest = z.infer<typeof SnapshotRequestSchema>;
 
 export interface Env {
-  TRANSLATION_KV?: KVNamespace;
-  REPORTS_KV?: KVNamespace;
-  STAGING_TRANSLATION_KV?: KVNamespace;
-  STAGING_REPORTS_KV?: KVNamespace;
-  PUBLISHED_SHEET_ID: string;
-  UPSTASH_REDIS_REST_URL: string;
-  UPSTASH_REDIS_REST_TOKEN: string;
-  GOOGLE_GENAI_API_KEY: string;
-  GEMINI_API_KEY?: string; // Kept for backward compatibility if needed
+  APP_ENV?: string;
   FIREBASE_PROJECT_ID?: string;
   FIREBASE_PROJECT_NUMBER?: string;
-  FIREBASE_API_KEY?: string;
-  FIREBASE_AUTH_DOMAIN?: string;
   FIREBASE_APP_ID?: string;
-  FIREBASE_MESSAGING_SENDER_ID?: string;
-  FIREBASE_STORAGE_BUCKET?: string;
-  FIREBASE_MEASUREMENT_ID?: string;
-  RECAPTCHA_SITE_KEY?: string;
+  GOOGLE_GENAI_API_KEY?: string;
+  PUBLISHED_SHEET_ID?: string;
   SNAPSHOT_KEY?: string;
-  APP_ENV?: string;
-  DEBUG_MODE?: string;
-  BUILD_ID?: string;
-  COMMIT_SHA?: string;
-  DEPLOY_TIMESTAMP?: string;
-  // Missing Notification Secrets
-  SMTP_SERVER?: string;
-  SMTP_USERNAME?: string;
-  SMTP_PASSWORD?: string;
-  SLACK_WEBHOOK_URL?: string;
-  ALERT_RECIPIENT_EMAIL?: string;
+  REPORTS_KV?: any; // KVNamespace on Worker, any on Client
+  [key: string]: any;
 }

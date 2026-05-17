@@ -1,5 +1,5 @@
 name = "dor-progress"
-main = "index.ts"
+main = "src/worker.ts"
 compatibility_date = "2025-05-01"
 compatibility_flags = ["nodejs_compat"]
 

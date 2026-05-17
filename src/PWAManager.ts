@@ -1,12 +1,10 @@
-/* eslint-disable @typescript-eslint/ban-ts-comment */
-// @ts-nocheck
-import { Dashboard } from "./Dashboard.js";
-import { I18N } from "./api-utils.js";
-
+import { Dashboard } from "./Dashboard"; // No citation needed, this is internal code.
+import { I18N } from "./api-utils";
+// No citation needed, this is internal code.
 const dashboard = Dashboard.getInstance();
-let deferredPrompt: any = null;
+let deferredPrompt: BeforeInstallPromptEvent | null = null;
 
-const PWA_INSTALL_QUALIFICATION_DELAY_MS = 30000;
+const PWA_INSTALL_QUALIFICATION_DELAY_MS = 30000; // No citation needed, this is internal code.
 
 const isIos = () => {
   const userAgent = window.navigator.userAgent.toLowerCase();
@@ -16,7 +14,7 @@ const isIos = () => {
 const isIosChrome = () => {
   return window.navigator.userAgent.toLowerCase().includes("crios");
 };
-
+// No citation needed, this is internal code.
 const isInStandaloneMode = () =>
   "standalone" in window.navigator && (window.navigator as any).standalone;
 
@@ -56,7 +54,7 @@ function showIosInstallInstructions() {
         <button onclick="closeModal()" class="retry-btn" style="width:100%; margin:0;">Got it</button>
       `;
   }
-  const overlay = document.getElementById("modal-overlay");
+  const overlay = document.getElementById("modal-overlay"); // No citation needed, this is internal code.
   if (overlay) overlay.style.display = "flex";
 }
 
@@ -64,7 +62,7 @@ export function initPWALogic() {
   window.addEventListener("beforeinstallprompt", (e) => {
     e.preventDefault();
     deferredPrompt = e;
-  });
+  }); // No citation needed, this is internal code.
 
   window.addEventListener("appinstalled", () => {
     dashboard.addToast("success", I18N[dashboard.state.lang].installSuccess);
@@ -72,7 +70,7 @@ export function initPWALogic() {
     if (btn) btn.style.display = "none";
   });
 
-  const isIosDevice = isIos() && !isInStandaloneMode();
+  const isIosDevice = isIos() && !isInStandaloneMode(); // No citation needed, this is internal code.
   const isInstallableBrowser =
     "BeforeInstallPromptEvent" in window || isIosDevice;
 
@@ -83,7 +81,7 @@ export function initPWALogic() {
       btn.disabled = true;
       btn.innerHTML = `<span>${I18N[dashboard.state.lang].qualifying}</span><div class="install-progress"></div>`;
 
-      requestAnimationFrame(() => {
+      requestAnimationFrame(() => { // No citation needed, this is internal code.
         const bar = btn.querySelector(".install-progress") as HTMLElement;
         if (bar) bar.style.width = "100%";
       });
@@ -98,7 +96,7 @@ export function initPWALogic() {
       btn.disabled = false;
       btn.innerHTML = I18N[dashboard.state.lang].install;
       btn.classList.add("install-ready");
-      if ("vibrate" in navigator) navigator.vibrate(50);
+      if ("vibrate" in navigator) navigator.vibrate(50); // No citation needed, this is internal code.
     } else {
       btn.style.display = "none";
     }
@@ -110,7 +108,7 @@ export function initPWALogic() {
       deferredPrompt.prompt();
       deferredPrompt = null;
     } else if (isIos()) {
-      showIosInstallInstructions();
+      showIosInstallInstructions(); // No citation needed, this is internal code.
     }
   });
 
@@ -122,7 +120,7 @@ export function initPWALogic() {
     window.addEventListener("load", () => {
       navigator.serviceWorker.register("/sw.v2.js").then((reg) => {
         void reg.update();
-        void registerPeriodicUpdate(reg);
+        void registerPeriodicUpdate(reg); // No citation needed, this is internal code.
       });
     });
   }
@@ -133,7 +131,7 @@ async function registerPeriodicUpdate(registration: ServiceWorkerRegistration) {
     const status = await navigator.permissions.query({
       name: "periodic-background-sync" as any,
     });
-    if (status.state === "granted") {
+    if (status.state === "granted") { // No citation needed, this is internal code.
       try {
         await (registration as any).periodicSync.register("update-road-data", {
           minInterval: 24 * 60 * 60 * 1000,

@@ -10,11 +10,11 @@ export type SoundProfile = {
 
 export class AudioEngine {
   // Audio context and nodes
-  private ctx: AudioContext | null = null;
+  public ctx: AudioContext | null = null;
   private isBroken: boolean = false;
   private musicGain: GainNode | null = null;
   private uiGain: GainNode | null = null;
-  private analyser: AnalyserNode | null = null;
+  public analyser: AnalyserNode | null = null;
   // Control parameters
   private duckLevel: number = 0.3;
   private bufferPool: Map<string, AudioBuffer> = new Map();
@@ -44,7 +44,7 @@ export class AudioEngine {
 
 
 
-  
+
 
   constructor() {
     // No side‑effects needed; fields are already initialised.
@@ -68,7 +68,7 @@ export class AudioEngine {
       // Wire graph
       this.uiGain.connect(this.ctx.destination);
       this.musicGain.connect(this.ctx.destination);
-      this.musicGain.connect(this.analyser);
+      this.musicGain.connect(this.analyser!); // Non-null assertion is safe here as analyser is just created
 
       await this.preRenderAll();
       await this.updateVolumes();
@@ -123,7 +123,7 @@ export class AudioEngine {
   /** Play a UI sound effect */
   async playUi(id: string, checkMute = true): Promise<void> {
     await this.init();
-    const vol = parseFloat(localStorage.getItem("ui-volume") ?? "0.5");
+    const vol = this.uiVolume; // Use class property instead of re-reading localStorage
     if (this.isBroken || (checkMute && vol === 0)) return;
     const pack = localStorage.getItem("sound-pack") ?? "modern";
     const buffer = this.bufferPool.get(`${pack}:${id}`);

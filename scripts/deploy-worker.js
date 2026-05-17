@@ -13,7 +13,7 @@ console.log('REPORTS_KV_ID:', process.env.REPORTS_KV_ID ? 'SET' : 'NOT SET');
 async function deployWorker() {
   try {
     console.log('Deploying Worker...');
-    const { stdout, stderr } = await execFileAsync('./node_modules/.bin/wrangler', [ 'deploy', 'index.ts', '--env-file', '.dev.vars' ], { 
+    const { stdout, stderr } = await execFileAsync('./node_modules/.bin/wrangler', [ 'deploy', 'src/worker.ts', '--env-file', '.dev.vars' ], { 
       env: process.env,
       stdio: 'pipe'
     });

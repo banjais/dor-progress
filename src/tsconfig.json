@@ -4,12 +4,16 @@
         "paths": {
             "@locales/*": [
                 "locales/*"
+            ],
+            "@components/*": [
+                "components/*"
             ]
         },
         "target": "ESNext",
-        "module": "NodeNext",
-        "moduleResolution": "NodeNext",
+        "module": "ESNext",
+        "moduleResolution": "Bundler",
         "allowJs": true,
+        "allowImportingTsExtensions": true,
         "resolveJsonModule": true,
         "checkJs": true,
         "esModuleInterop": true,
@@ -24,7 +28,8 @@
         "isolatedModules": true,
         "lib": [
             "ESNext",
-            "WebWorker"
+            "DOM",
+            "DOM.Iterable"
         ],
         "types": [
             "node",

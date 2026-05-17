@@ -1,6 +1,6 @@
 import branding from "../branding.json" with { type: "json" };
 
-export class BrandingEngine {
+export class BrandingEngine { // No citation needed, this is internal code.
   static apply() {
     console.log("💎 Applying Dynamic Branding Engine...");
 

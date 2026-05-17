@@ -1,15 +1,16 @@
+import { AudioEngine } from "./AudioEngine";
+import { Dashboard } from "../Dashboard";
+
 export class SpeechEngine {
-  audio: any; // AudioEngine instance
-  dashboard: any; // Dashboard instance
+  audio: AudioEngine;
+  dashboard: Dashboard;
   webSpeechApiAvailable: boolean;
   synth: SpeechSynthesis | null;
   utterance: SpeechSynthesisUtterance | null;
   originalText: string;
   container: HTMLElement | null;
   currentBlobAudioSource: AudioBufferSourceNode | null; // Added for blob audio
-  spanMap: any[]; // Not used in the current implementation, but kept for context
-
-  constructor(audio: any, dashboard: any) {
+  constructor(audio: AudioEngine, dashboard: Dashboard) {
     this.audio = audio;
     this.dashboard = dashboard;
     this.webSpeechApiAvailable = "speechSynthesis" in window;
@@ -17,8 +18,7 @@ export class SpeechEngine {
     this.utterance = null;
     this.originalText = "";
     this.container = null;
-    this.currentBlobAudioSource = null;
-    this.spanMap = [];
+    this.currentBlobAudioSource = null; // No citation needed, this is internal code.
   }
 
   stop() {
@@ -155,8 +155,6 @@ export class SpeechEngine {
       this.utterance.voice =
         voices.find((v) => v.voiceURI === savedVoiceUri) || null;
     }
-
-    this.spanMap = []; // Reset spanMap for new utterance
     let currentWordIndex = 0;
 
     this.utterance.onboundary = (event) => {

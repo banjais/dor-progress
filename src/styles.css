@@ -1660,6 +1660,35 @@ tr {
   transition: width 1s ease-out;
 }
 
+.diff-banner {
+  background: var(--stable);
+  color: white;
+  padding: 12px 0;
+  margin-bottom: 20px;
+  border-radius: 12px;
+  display: none;
+  box-shadow: 0 0 0 0 rgba(59, 130, 246, 0.4);
+  animation: diff-banner-pulse 2s infinite cubic-bezier(0.4, 0, 0.6, 1);
+  transition: all 0.3s ease;
+}
+
+@keyframes diff-banner-pulse {
+  0% {
+    box-shadow: 0 0 0 0 rgba(59, 130, 246, 0.4);
+    transform: scale(1);
+  }
+
+  50% {
+    box-shadow: 0 0 0 10px rgba(59, 130, 246, 0);
+    transform: scale(1.005);
+  }
+
+  100% {
+    box-shadow: 0 0 0 0 rgba(59, 130, 246, 0);
+    transform: scale(1);
+  }
+}
+
 @media print {
   @page {
     size: A4;
@@ -1845,4 +1874,139 @@ tr {
     padding: 4px 8px !important;
     border: 0.5pt solid #ccc !important;
   }
+}
+
+/* Toast Progress Loop Animation (Moved from main.ts) */
+@keyframes toast-progress-loop {
+  0% {
+    transform: scaleX(0);
+    transform-origin: left;
+  }
+
+  50% {
+    transform: scaleX(1);
+    transform-origin: left;
+  }
+
+  50.1% {
+    transform: scaleX(1);
+    transform-origin: right;
+  }
+
+  100% {
+    transform: scaleX(0);
+    transform-origin: right;
+  }
+}
+
+/* SVG Progress Circle Animation */
+.mini-chart-fill {
+  animation: progress-load 1.2s cubic-bezier(0.4, 0, 0.2, 1) forwards;
+}
+
+@keyframes progress-load {
+  from {
+    stroke-dashoffset: 50.26;
+  }
+
+  /* Circumference for r=8 (2 * PI * 8) */
+  /* To value is handled by the inline stroke-dashoffset attribute */
+}
+
+/* Register custom property for numerical animation */
+@property --num {
+  syntax: '<integer>';
+  initial-value: 0;
+  inherits: false;
+}
+
+/* Sparkline Growth Animation */
+.sparkline-container {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin: 10px 0;
+}
+
+.sparkline-track {
+  flex: 1;
+  height: 8px;
+  background: var(--border);
+  border-radius: 4px;
+  overflow: hidden;
+  opacity: 0.6;
+  border: 1px solid var(--border);
+}
+
+.sparkline-fill {
+  height: 100%;
+  border-radius: 4px;
+  transform-origin: left;
+  animation: sparkline-load 1.2s cubic-bezier(0.4, 0, 0.2, 1) forwards;
+}
+
+.sparkline-label {
+  font-size: 0.75rem;
+  font-weight: 800;
+  min-width: 40px;
+  text-align: right;
+  font-family: monospace;
+  color: var(--status-color);
+  counter-reset: num var(--num);
+  animation: counter-load 1.2s cubic-bezier(0.4, 0, 0.2, 1) forwards;
+}
+
+.sparkline-label::after {
+  content: counter(num) "%";
+}
+
+@keyframes sparkline-load {
+  from {
+    transform: scaleX(0);
+  }
+
+  to {
+    transform: scaleX(1);
+  }
+}
+
+@keyframes counter-load {
+  from {
+    --num: 0;
+  }
+
+  to {
+    --num: var(--target-perc);
+  }
+}
+
+/* KPI Card Count-up Animations */
+.kpi-counter,
+.kpi-counter-perc {
+  counter-reset: num var(--num);
+  animation: counter-load 1.2s cubic-bezier(0.4, 0, 0.2, 1) forwards;
+}
+
+.kpi-counter::after {
+  content: counter(num);
+}
+
+.kpi-counter-perc::after {
+  content: counter(num) "%";
+}
+
+/* Connection Badge Sparkline */
+.conn-sparkline {
+  margin-left: 8px;
+  overflow: visible;
+  flex-shrink: 0;
+}
+
+.conn-sparkline polyline {
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  transition: all 0.3s ease;
 }

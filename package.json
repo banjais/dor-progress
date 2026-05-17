@@ -1,6 +1,6 @@
 {
   "name": "dor-progress",
-  "version": "1.0.241",
+  "version": "1.0.261",
   "type": "module",
   "scripts": {
     "dev": "node --no-deprecation ./node_modules/vite/bin/vite.js",
@@ -12,7 +12,7 @@
     "test": "echo \"No tests specified\" && exit 0",
     "update-version": "node --no-deprecation scripts/update-version.js",
     "clean": "rimraf .build",
-    "deploy:worker": "node --no-deprecation ./node_modules/wrangler/bin/wrangler.js deploy index.ts",
+    "deploy:worker": "node --no-deprecation ./node_modules/wrangler/bin/wrangler.js deploy src/worker.ts",
     "deploy:hosting": "firebase deploy --only hosting",
     "deploy:firebase": "firebase deploy --only hosting",
     "deploy:git": "git add -A && git reset .dev.vars.backup .env.simple .env.test deploy-worker.bat scripts/build/ scripts/deploy/ scripts/system/ scripts/update-version.js && git add . && git commit --no-verify --allow-empty -m \"chore(release): v$npm_package_version\" && git push",
@@ -31,6 +31,7 @@
     "env-cmd": "^11.0.0",
     "eslint": "^10.3.0",
     "eslint-config-prettier": "^10.1.8",
+    "eslint-plugin-unused-imports": "^4.4.1",
     "firebase": "^12.13.0",
     "globals": "^17.6.0",
     "prettier": "^3.8.3",

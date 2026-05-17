@@ -16,4 +16,3 @@ declare const BUILD_ID: string;
 declare const COMMIT_SHA: string;
 declare const APP_ENV: "development" | "production" | "test";
 declare const APP_VERSION: string;
-declare const APP_CHECK_DEBUG_TOKEN: string | boolean | undefined;

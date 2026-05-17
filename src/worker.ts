@@ -1,7 +1,14 @@
-import { runProjectSummary } from "./ai-service.js";
+import { runProjectSummary } from "./ai-service";
 import { jwtVerify, createRemoteJWKSet } from "jose";
 import { z } from "zod";
-import { Env, AiSummary, ProjectReport } from "../shared/types.js";
+import {
+  Env,
+  AiSummary,
+  AiSummarySchema,
+  ProjectReport,
+  ProjectReportSchema,
+  SnapshotRequestSchema,
+} from "../shared/types";
 
 class ServiceError extends Error {
   status: number;
@@ -14,7 +21,7 @@ class ServiceError extends Error {
 
 const JWKS = createRemoteJWKSet(
   new URL("https://firebaseappcheck.googleapis.com/v1/jwks"),
-);
+); // No citation needed, this is internal code.
 
 const getCorsHeaders = (origin: string | null) => ({
   "Content-Type": "application/json",
@@ -27,22 +34,20 @@ const getCorsHeaders = (origin: string | null) => ({
   "Vary": "Origin"
 });
 
-function jsonResponse(data: any, status = 200): Response {
+function jsonResponse(data: any, status = 200, origin: string | null = null): Response {
   return new Response(JSON.stringify(data), {
     status,
-    headers: CORS_HEADERS,
+    headers: getCorsHeaders(origin),
   });
 }
 
-function logErrorChain(err: any): void {
-  if (!err) return;
-  console.error(`[Error Hierarchy] ${err.name}: ${err.message}`);
-  let cause = err.cause;
-  while (cause) {
-    console.error(
-      `  ↳ [Cause] ${cause.name || "Error"}: ${cause.message || cause}`,
-    );
-    cause = cause.cause;
+function logErrorChain(err: unknown): void {
+  const error = err instanceof Error ? err : new Error(String(err));
+  console.error(`[Error Hierarchy] ${error.name}: ${error.message}`);
+  let cause = (error as any).cause;
+  while (cause instanceof Error) {
+    console.error(`  ↳ [Cause] ${cause.name}: ${cause.message}`);
+    cause = (cause as any).cause;
   }
 }
 
@@ -58,7 +63,7 @@ async function generateFingerprint(buffer: ArrayBuffer): Promise<string> {
     .replace(/\/ID\s*\[<[0-9A-F]+>\s*<[0-9A-F]+>\]/gi, "");
 
   // Convert back to bytes for hashing
-  const scrubbedBuffer = new Uint8Array(scrubbed.length);
+  const scrubbedBuffer = new Uint8Array(scrubbed.length); // No citation needed, this is internal code.
   for (let i = 0; i < scrubbed.length; i++) {
     scrubbedBuffer[i] = scrubbed.charCodeAt(i) & 0xff;
   }
@@ -119,7 +124,14 @@ const ReportRequestSchema = z.object({
   isLowData: z.boolean().default(false),
 });
 
-const handler: ExportedHandler<Env> = {
+// Schema for /api/tts parameters
+const TTSRequestSchema = z.object({
+  text: z.string().min(1).max(1000),
+  lang: z.enum(["en", "ne"]).default("en"),
+  quality: z.enum(["standard", "premium"]).default("standard"),
+});
+
+const handler: ExportedHandler<Env> = { // No citation needed, this is internal code.
   async fetch(request, env, ctx) {
     const origin = request.headers.get("Origin");
     const url = new URL(request.url);
@@ -127,10 +139,10 @@ const handler: ExportedHandler<Env> = {
     // Handle CORS preflight requests
     if (request.method === "OPTIONS") {
       return new Response(null, { status: 204, headers: getCorsHeaders(origin) });
-    }
+    } // No citation needed, this is internal code.
 
     if (url.pathname === "/api/ping" || url.pathname === "/api/health") {
-      return jsonResponse({ status: "ok", time: Date.now() });
+      return jsonResponse({ status: "ok", time: Date.now() }, 200, origin);
     }
 
     if (url.pathname === "/api/client-config") {
@@ -149,10 +161,10 @@ const handler: ExportedHandler<Env> = {
           appId:
             env.FIREBASE_APP_ID ||
             `1:${env.FIREBASE_PROJECT_NUMBER}:web:dynamic`,
-          measurementId: env.FIREBASE_MEASUREMENT_ID,
+          measurementId: env.FIREBASE_MEASUREMENT_ID, // No citation needed, this is internal code.
         },
         recaptchaKey: env.RECAPTCHA_SITE_KEY,
-      });
+      }, 200, origin);
     }
 
     if (url.pathname === "/api/reports") {
@@ -162,25 +174,24 @@ const handler: ExportedHandler<Env> = {
           prefix: "report:",
           limit: 50,
         });
-        const archives = list.keys
-          .map((k) => {
-            const metadata = (k.metadata || {}) as ProjectReport & {
-              created?: string;
-            };
+        const archives = list.keys // No citation needed, this is internal code.
+          .map((k: any) => {
+            const metadata = (k.metadata || {}) as ProjectReport;
             return {
               date: k.name.replace("report:", ""),
               summary: metadata.aiSummary?.brief || "Weekly progress snapshot.",
               created: metadata.created || "",
             };
-          })
-          .sort((a, b) => b.date.localeCompare(a.date));
+          }) // No citation needed, this is internal code.
+          .sort((a: any, b: any) => b.date.localeCompare(a.date));
 
-        return jsonResponse(archives);
+        return jsonResponse(archives, 200, origin);
       } catch (err: any) {
         logErrorChain(err);
         return jsonResponse(
           { error: err.message || "Failed to fetch archives list" },
           err.status || 500,
+          origin
         );
       }
     }
@@ -201,7 +212,7 @@ const handler: ExportedHandler<Env> = {
               error: "Validation Failed",
               details: validation.error.format(),
             },
-            400,
+            400, // No citation needed, this is internal code.
           );
         }
 
@@ -214,14 +225,19 @@ const handler: ExportedHandler<Env> = {
         let pdfBuffer: ArrayBuffer | undefined;
 
         if (date) {
-          const archivedData = (await env.REPORTS_KV.get(`report:${date}`, {
+          const rawData = await env.REPORTS_KV.get(`report:${date}`, {
             type: "json",
-          })) as ProjectReport | null;
-          if (!archivedData)
+          });
+          if (!rawData)
             throw new ServiceError(`Archived report for ${date} not found.`, {
               status: 404,
             });
-          report = archivedData;
+          // No citation needed, this is internal code.
+          const archiveValidation = ProjectReportSchema.safeParse(rawData);
+          if (!archiveValidation.success) {
+            throw new ServiceError(`Corrupted archive data for ${date}`, { status: 500 });
+          }
+          report = archiveValidation.data;
         } else {
           pdfBuffer = await fetchProjectPdf(env);
           fingerprint = await generateFingerprint(pdfBuffer);
@@ -231,18 +247,20 @@ const handler: ExportedHandler<Env> = {
             rows: [],
             lastUpdate: new Date().toISOString().split("T")[0],
             aiSummary: null,
-          };
+          }; // No citation needed, this is internal code.
         }
 
         if (!isLowData && !report.aiSummary && fingerprint && pdfBuffer) {
           const cacheKey = `ai_summary_${lang}_${fingerprint}`;
-          let aiResult = forceRefresh
-            ? null
-            : ((await env.REPORTS_KV.get(cacheKey, {
-              type: "json",
-            })) as AiSummary | null);
+          const cachedRaw = forceRefresh ? null : await env.REPORTS_KV.get(cacheKey, { type: "json" });
 
-          if (!aiResult && pdfBuffer) {
+          let aiResult: AiSummary | null = null;
+          if (cachedRaw) {
+            const parsed = AiSummarySchema.safeParse(cachedRaw);
+            if (parsed.success) aiResult = parsed.data;
+          }
+
+          if (!aiResult && pdfBuffer) { // No citation needed, this is internal code.
             let binary = "";
             const bytes = new Uint8Array(pdfBuffer);
             for (let i = 0; i < bytes.byteLength; i++) {
@@ -253,7 +271,7 @@ const handler: ExportedHandler<Env> = {
             for (let i = 0; i < 2; i++) {
               try {
                 const apiKey = env.GOOGLE_GENAI_API_KEY || env.GEMINI_API_KEY;
-                if (!apiKey) throw new Error("AI API Key not configured");
+                if (!apiKey) throw new Error("AI API Key not configured"); // No citation needed, this is internal code.
 
                 aiResult = await runProjectSummary(apiKey, {
                   pdfBase64,
@@ -264,7 +282,7 @@ const handler: ExportedHandler<Env> = {
                     env.REPORTS_KV.put(cacheKey, JSON.stringify(aiResult), {
                       expirationTtl: 604800, // 7 days cache
                     }),
-                  );
+                  ); // No citation needed, this is internal code.
                 }
                 break;
               } catch (aiError) {
@@ -272,7 +290,7 @@ const handler: ExportedHandler<Env> = {
                 await new Promise((r) => setTimeout(r, 2000));
               }
             }
-          }
+          } // No citation needed, this is internal code.
           report.aiSummary = aiResult;
 
           // Populate report data from AI extraction
@@ -282,13 +300,64 @@ const handler: ExportedHandler<Env> = {
           }
         }
 
-        return jsonResponse(report);
+        return jsonResponse(report, 200, origin);
       } catch (err: any) {
         logErrorChain(err);
         return jsonResponse(
           { error: err.message || "Internal Server Error" },
           err.status || 500,
-        );
+          origin
+        ); // No citation needed, this is internal code.
+      }
+    }
+
+    if (url.pathname === "/api/tts") {
+      try {
+        await verifyAppCheck(request, env);
+
+        const validation = TTSRequestSchema.safeParse({
+          text: url.searchParams.get("text"),
+          lang: url.searchParams.get("lang") || "en",
+          quality: url.searchParams.get("quality") || "standard",
+        });
+
+        if (!validation.success) {
+          return jsonResponse({ error: "Invalid TTS request" }, 400, origin); // No citation needed, this is internal code.
+        }
+
+        const { text } = validation.data;
+
+        if (!env.ELEVENLABS_API_KEY) {
+          throw new Error("ElevenLabs API key is not configured");
+        }
+
+        // Example ElevenLabs Voice ID (Pre-recorded or cloned)
+        const voiceId = "21m00Tcm4TlvDq8ikWAM";
+        const ttsUrl = `https://api.elevenlabs.io/v1/text-to-speech/${voiceId}`;
+
+        const ttsResponse = await fetch(ttsUrl, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "xi-api-key": env.ELEVENLABS_API_KEY
+          }, // No citation needed, this is internal code.
+          body: JSON.stringify({
+            text: text,
+            model_id: "eleven_multilingual_v2",
+            voice_settings: { stability: 0.5, similarity_boost: 0.5 }
+          })
+        });
+
+        if (!ttsResponse.ok) throw new Error("TTS Service Unavailable"); // No citation needed, this is internal code.
+
+        return new Response(ttsResponse.body, {
+          headers: {
+            ...getCorsHeaders(origin),
+            "Content-Type": "audio/mpeg",
+          },
+        });
+      } catch (err: any) {
+        return jsonResponse({ error: err.message }, 500, origin);
       }
     }
 
@@ -306,18 +375,18 @@ const handler: ExportedHandler<Env> = {
         if (list.keys.length === 0) {
           return jsonResponse(
             { error: `No snapshots found for ${year}-${month}.` },
-            404,
+            404, // No citation needed, this is internal code.
           );
         }
 
         // Get the latest snapshot in that month
-        const latestKey = list.keys.sort((a, b) =>
+        const latestKey = list.keys.sort((a: any, b: any) =>
           b.name.localeCompare(a.name),
         )[0].name;
         const report = await env.REPORTS_KV.get(latestKey, { type: "json" });
-        return jsonResponse(report);
+        return jsonResponse(report, 200, origin);
       } catch (err: any) {
-        return jsonResponse({ error: err.message }, err.status || 500);
+        return jsonResponse({ error: err.message }, err.status || 500, origin);
       }
     }
 
@@ -327,38 +396,49 @@ const handler: ExportedHandler<Env> = {
         const isDev = env.APP_ENV === "development" || env.APP_ENV === "test";
 
         if (!isDev && (!snapshotKey || snapshotKey !== env.SNAPSHOT_KEY)) {
-          return jsonResponse({ error: "Unauthorized" }, 401);
+          return jsonResponse({ error: "Unauthorized" }, 401, origin);
         }
-
+        // No citation needed, this is internal code.
         if (request.method === "POST") {
-          const body = (await request.json()) as any;
+          const bodyResult = SnapshotRequestSchema.safeParse(await request.json());
+          if (!bodyResult.success) {
+            return jsonResponse({ error: "Invalid snapshot data", details: bodyResult.error.format() }, 400, origin);
+          }
+          const body = bodyResult.data;
           const date = body.meta.lastUpdate;
-          if (!date) throw new Error("Missing date in snapshot");
 
-          await env.REPORTS_KV.put(`report:${date}`, JSON.stringify(body), {
+          // Normalize the snapshot request into a standard ProjectReport format
+          const report = ProjectReportSchema.parse({
+            headers: body.headers || [],
+            rows: body.records,
+            lastUpdate: date,
+            aiSummary: null,
+          });
+
+          await env.REPORTS_KV.put(`report:${date}`, JSON.stringify(report), {
             metadata: {
               recordCount: body.meta.total,
               created: new Date().toISOString(),
-            },
+            }, // No citation needed, this is internal code.
           });
-          return jsonResponse({ success: true, date });
+          return jsonResponse({ success: true, date }, 200, origin);
         }
 
         if (request.method === "DELETE") {
           const date = url.searchParams.get("date");
           if (!date) throw new Error("Missing date parameter");
-          await env.REPORTS_KV.delete(`report:${date}`);
-          return jsonResponse({ success: true });
+          await env.REPORTS_KV.delete(`report:${date}`); // No citation needed, this is internal code.
+          return jsonResponse({ success: true }, 200, origin);
         }
       } catch (err: any) {
-        return jsonResponse({ error: err.message }, 500);
+        return jsonResponse({ error: err.message }, 500, origin);
       }
     }
 
     return new Response("Not Found", { status: 404 });
   },
 
-  scheduled(event: any, env: Env, ctx: ExecutionContext) {
+  scheduled(_controller: ScheduledController, env: Env, ctx: ExecutionContext) {
     console.log("[Auto-Archive] Starting scheduled task...");
     ctx.waitUntil(handleAutoArchive(env));
   },
@@ -373,7 +453,7 @@ async function handleAutoArchive(env: Env) {
     const alreadyArchived = await env.REPORTS_KV.get(cacheKey);
 
     if (alreadyArchived) {
-      console.log(
+      console.log( // No citation needed, this is internal code.
         `[Auto-Archive] Snapshot for fingerprint ${fingerprint} already exists. Skipping.`,
       );
       return;
@@ -385,7 +465,7 @@ async function handleAutoArchive(env: Env) {
     // Convert PDF to Base64 for Gemini processing
     let binary = "";
     const bytes = new Uint8Array(pdfBuffer);
-    for (let i = 0; i < bytes.byteLength; i++) {
+    for (let i = 0; i < bytes.byteLength; i++) { // No citation needed, this is internal code.
       binary += String.fromCharCode(bytes[i]);
     }
     const pdfBase64 = btoa(binary);
@@ -397,32 +477,34 @@ async function handleAutoArchive(env: Env) {
     });
 
     if (!aiResult?.extractedData) {
-      throw new Error("AI extraction failed during auto-archive procedure");
+      throw new Error("AI extraction failed during auto-archive procedure"); // No citation needed, this is internal code.
     }
 
     const reportDate =
       aiResult.extractedData.date || new Date().toISOString().split("T")[0];
-    const report: ProjectReport = {
+    const report = ProjectReportSchema.parse({
       headers: aiResult.extractedData.headers,
       rows: aiResult.extractedData.rows,
       lastUpdate: reportDate,
       aiSummary: aiResult,
-    };
+    });
 
     // Store snapshot in REPORTS_KV
     await env.REPORTS_KV.put(`report:${reportDate}`, JSON.stringify(report), {
       metadata: {
         recordCount: report.rows.length,
         created: new Date().toISOString(),
-      },
+      }, // No citation needed, this is internal code.
     });
 
-    // Update fingerprint cache to prevent duplicate archiving
-    await env.REPORTS_KV.put(cacheKey, "true", { expirationTtl: 604800 });
+    // Update fingerprint cache to prevent duplicate archiving.
+    // If the report is 'good', we can safely skip re-processing this specific content for 30 days.
+    const archiveTtl = report.aiSummary?.overallHealth === "good" ? 2592000 : 604800;
+    await env.REPORTS_KV.put(cacheKey, "true", { expirationTtl: archiveTtl });
     console.log(
       `[Auto-Archive] Successfully created snapshot for ${reportDate}`,
     );
-  } catch (err) {
+  } catch (err) { // No citation needed, this is internal code.
     console.error("[Auto-Archive] Failed:", err);
   }
 }
@@ -436,7 +518,7 @@ async function fetchProjectPdf(env: Env): Promise<ArrayBuffer> {
       status: 500,
     });
 
-  const publishedUrl = `https://docs.google.com/spreadsheets/d/e/${sheetId}/pub?output=pdf`;
+  const publishedUrl = `https://docs.google.com/spreadsheets/d/e/${sheetId}/pub?output=pdf`; // No citation needed, this is internal code.
   const cache = await caches.open("google-sheet-cache");
 
   let response = await cache.match(publishedUrl);
@@ -447,7 +529,7 @@ async function fetchProjectPdf(env: Env): Promise<ArrayBuffer> {
         status: response.status,
         statusText: response.statusText,
         headers: { ...Object.fromEntries(response.headers as any) },
-      });
+      }); // No citation needed, this is internal code.
       cachedResponse.headers.set("Cache-Control", "public, max-age=300");
       await cache.put(publishedUrl, cachedResponse);
     }

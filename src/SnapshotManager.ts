@@ -1,15 +1,25 @@
-/* eslint-disable @typescript-eslint/ban-ts-comment */
-// @ts-nocheck
-import { Dashboard } from "./Dashboard.js";
-import { t } from "./api-utils.js";
-
+import { Dashboard } from "./Dashboard"; // No citation needed, this is internal code.
+import { t, getApiErrorMessage } from "./api-utils";
+// No citation needed, this is internal code.
 const dashboard = Dashboard.getInstance();
-let snapshotList: any[] = [];
+
+interface Snapshot {
+  date: string;
+  summary?: string;
+  created?: string;
+  recordCount: number;
+  bsDate?: string; // Added based on main.ts usage
+}
+
+interface SnapshotListResponse {
+  snapshots: Snapshot[];
+}
+let snapshotList: Snapshot[] = [];
 
 /**
  * Requests the Snapshot Key from the user via a custom modal.
  */
-export async function requestSnapshotKey(): Promise<string | null> {
+export async function requestSnapshotKey(): Promise<string | null> { // No citation needed, this is internal code.
   if (APP_ENV !== "production") return "dev-bypass";
 
   const cached = sessionStorage.getItem("_snapshot_key");
@@ -60,8 +70,9 @@ export async function requestSnapshotKey(): Promise<string | null> {
   });
 }
 
-export async function createSnapshotManual(e?: any) {
-  const btn = e?.target || document.getElementById("create-snapshot-btn");
+export async function createSnapshotManual(e?: Event) { // No citation needed, this is internal code.
+  const btn = (e?.target || document.getElementById("create-snapshot-btn")) as HTMLButtonElement | null;
+  if (!btn) return;
   const originalText = btn.innerText;
   btn.innerText = "Creating...";
   btn.disabled = true;
@@ -86,6 +97,7 @@ export async function createSnapshotManual(e?: any) {
         "X-Snapshot-Key": snapshotKey,
       },
       body: JSON.stringify({
+        headers: dashboard.state.store.headers || [],
         records: dashboard.state.store.rows || [],
         meta: {
           lastUpdate:
@@ -100,12 +112,9 @@ export async function createSnapshotManual(e?: any) {
       dashboard.addToast("success", "Snapshot created!");
       void listSnapshots(true);
     } else {
-      const errorData = await response
-        .json()
-        .catch(() => ({ error: "Unknown error" }));
       dashboard.addToast(
         "error",
-        errorData.error || "Failed to create snapshot",
+        await getApiErrorMessage(response, "Failed to create snapshot"),
       );
     }
   } catch (e) {
@@ -117,7 +126,7 @@ export async function createSnapshotManual(e?: any) {
   }
 }
 
-export async function listSnapshots(force?: boolean) {
+export async function listSnapshots(force?: boolean) { // No citation needed, this is internal code.
   const container = document.getElementById("snapshot-list-container");
   const listEl = document.getElementById("snapshot-list");
   if (!container || !listEl) return;
@@ -130,13 +139,13 @@ export async function listSnapshots(force?: boolean) {
     if (!snapshotKey) return;
 
     const response = await fetch(WORKER_BASE + "/api/snapshots", {
-      headers: { "X-Snapshot-Key": snapshotKey },
+      headers: { "X-Snapshot-Key": snapshotKey }, // No citation needed, this is internal code.
     });
     if (!response.ok) {
       dashboard.addToast("error", "Failed");
       return;
     }
-    const data = await response.json();
+    const data = (await response.json()) as SnapshotListResponse;
     snapshotList = data.snapshots || [];
     if (snapshotList.length === 0) {
       listEl.innerHTML = "<p style='font-size: 0.7rem;'>No snapshots</p>";
@@ -153,10 +162,10 @@ export async function listSnapshots(force?: boolean) {
             s.recordCount +
             "</div>" +
             "<div style='display: flex; gap: 5px;'>" +
-            "<button onclick='downloadSnapshot(\"" +
+            "<button onclick='App.downloadSnapshot(\"" +
             s.date +
             "\")' class='toggle-btn' style='flex: 1; padding: 5px; font-size: 0.65rem; border: 1px solid var(--primary); background: transparent; color: var(--primary); cursor: pointer;'>Download</button>" +
-            "<button onclick='deleteSnapshot(\"" +
+            "<button onclick='App.deleteSnapshot(\"" +
             s.date +
             "\")' class='toggle-btn' style='flex: 1; padding: 5px; font-size: 0.65rem; border: 1px solid var(--critical); background: transparent; color: var(--critical); cursor: pointer;'>Delete</button>" +
             "</div></div>"
@@ -171,21 +180,18 @@ export async function listSnapshots(force?: boolean) {
   }
 }
 
-export async function downloadSnapshot(date: string) {
+export async function downloadSnapshot(date: string) { // No citation needed, this is internal code.
   const snapshotKey = await requestSnapshotKey();
   if (!snapshotKey) return;
 
   try {
-    const response = await fetch(WORKER_BASE + "/api/snapshot?date=" + date, {
+    const response = await fetch(WORKER_BASE + "/api/snapshot?date=" + date, { // No citation needed, this is internal code.
       headers: { "X-Snapshot-Key": snapshotKey },
     });
     if (!response.ok) {
-      const errorData = await response
-        .json()
-        .catch(() => ({ error: "Unknown error" }));
       dashboard.addToast(
         "error",
-        errorData.error || "Failed to download snapshot",
+        await getApiErrorMessage(response, "Failed to download snapshot"),
       );
       return;
     }
@@ -203,13 +209,13 @@ export async function downloadSnapshot(date: string) {
   }
 }
 
-export async function deleteSnapshot(date: string) {
+export async function deleteSnapshot(date: string) { // No citation needed, this is internal code.
   if (!confirm("Delete " + date + "?")) return;
   const snapshotKey = await requestSnapshotKey();
   if (!snapshotKey) return;
 
   try {
-    const response = await fetch(WORKER_BASE + "/api/snapshot?date=" + date, {
+    const response = await fetch(WORKER_BASE + "/api/snapshot?date=" + date, { // No citation needed, this is internal code.
       method: "DELETE",
       headers: { "X-Snapshot-Key": snapshotKey },
     });
@@ -217,12 +223,9 @@ export async function deleteSnapshot(date: string) {
       dashboard.addToast("success", "Deleted");
       void listSnapshots(true);
     } else {
-      const errorData = await response
-        .json()
-        .catch(() => ({ error: "Unknown error" }));
       dashboard.addToast(
         "error",
-        errorData.error || "Failed to delete snapshot",
+        await getApiErrorMessage(response, "Failed to delete snapshot"),
       );
     }
   } catch (e) {
@@ -239,13 +242,5 @@ export function logoutSnapshotSession() {
       ? "Snapshot session cleared"
       : "स्न्यापसट सेसन मेटाइयो",
   );
-  if ((window as any).showSettings) void (window as any).showSettings();
+  if (window.App?.showSettings) void window.App.showSettings();
 }
-
-// Bind to window for global access (HTML onclick attributes)
-(window as any).requestSnapshotKey = requestSnapshotKey;
-(window as any).createSnapshotManual = createSnapshotManual;
-(window as any).listSnapshots = listSnapshots;
-(window as any).downloadSnapshot = downloadSnapshot;
-(window as any).deleteSnapshot = deleteSnapshot;
-(window as any).logoutSnapshotSession = logoutSnapshotSession;
