@@ -2,10 +2,6 @@ import { defineConfig } from "vite";
 import fs from "fs";
 
 export default defineConfig({
-  build: {
-    outDir: ".build",
-    emptyOutDir: true,
-  },
   server: {
     port: 3000,
     open: true,
@@ -25,6 +21,5 @@ export default defineConfig({
   ],
   define: {
     APP_VERSION: JSON.stringify("1.0.178"),
-    "import.meta.env.VITE_API_BASE_URL": JSON.stringify("https://dor-progress.banjays.workers.dev"),
   },
 });

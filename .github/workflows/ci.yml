@@ -83,7 +83,10 @@ jobs:
       - name: Debug Build Output
         run: |
           echo "Checking for build output..."
-          ls -R dist || ls -R .build || echo "No build output found in dist or .build"
+          ls -R dist
+          echo "Verifying environment variable injection..."
+          # This checks if the production API URL exists anywhere in the compiled JS assets
+          grep -r "https://dor-progress.web.app" dist/assets/*.js || (echo "::error::VITE_API_BASE_URL not found in build!" && exit 1)
 
       - name: Upload Build Artifact
         uses: actions/upload-artifact@v4
@@ -98,7 +101,8 @@ jobs:
     needs: [ci, validate-env]
     if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
-    environment: staging
+    environment:
+      name: staging
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -121,7 +125,8 @@ jobs:
     needs: [build-frontend, validate-env]
     if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
-    environment: staging
+    environment:
+      name: staging
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -129,7 +134,7 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           name: frontend-build
-          path: .build
+          path: dist
       - name: Authenticate to Google Cloud
         uses: google-github-actions/auth@v2
         with:
@@ -192,7 +197,7 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           name: frontend-build
-          path: .build
+          path: dist
 
       - name: Authenticate to Google Cloud
         uses: google-github-actions/auth@v2
