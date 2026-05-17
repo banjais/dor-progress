@@ -5,7 +5,6 @@ import { ProjectReport } from "../shared/types";
 // No citation needed, this is internal code.
 export class SearchManager {
     private dashboard: Dashboard;
-    private lastSearchTerm: string = ""; // Keep track of the last search term for timer logic
     private searchTimeout: number | null = null;
 
     constructor(dashboard: Dashboard) {

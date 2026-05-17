@@ -1,5 +1,5 @@
 import { Dashboard } from "./Dashboard";
-import { I18N, toNepaliNumerals, getProgress } from "./api-utils";
+import { t, toNepaliNumerals, getProgress } from "./api-utils";
 
 /**
  * Generates a Progress Report PDF directly in the browser using pdf-lib.
@@ -95,7 +95,7 @@ export async function generateClientPDF(): Promise<void> {
         }
 
         // Center Title 
-        const title = I18N[lang].reportTitle;
+        const title = t("reportTitle");
         const titleWidth = mainFont.widthOfTextAtSize(title, 14);
         page.drawText(title, {
             x: width / 2 - titleWidth / 2,
@@ -116,7 +116,7 @@ export async function generateClientPDF(): Promise<void> {
             height: 40,
             color: rgb(0.95, 0.95, 0.95),
         });
-        const kpiText = `${I18N[lang].total}: ${lang === "ne" ? toNepaliNumerals(totalRows) : totalRows} | ${I18N[lang].attention}: ${lang === "ne" ? toNepaliNumerals(critical) : critical}`;
+        const kpiText = `${t("total")}: ${lang === "ne" ? toNepaliNumerals(totalRows) : totalRows} | ${t("attention")}: ${lang === "ne" ? toNepaliNumerals(critical) : critical}`;
         page.drawText(kpiText, {
             x: 60,
             y: yOffset,

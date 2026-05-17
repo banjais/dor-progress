@@ -1,5 +1,5 @@
 import { Dashboard } from "./Dashboard";
-import { getProgress, t, toNepaliNumerals, toArabicNumerals, I18N } from "./api-utils";
+import { getProgress, t, toNepaliNumerals, toArabicNumerals } from "./api-utils";
 import { renderMiniChart, renderSparkline } from "./utils"; // Import I18N directly
 import { ProjectReport } from "../shared/types";
 
@@ -10,7 +10,6 @@ export function render(json: ProjectReport | null) {
   if (!json) return;
 
   const dashboard = Dashboard.getInstance(); // No citation needed, this is internal code.
-  const langStrings: any = I18N[dashboard.state.lang] || {}; // Use imported I18N
   const headers = json?.headers || [];
   let rows = [...(json?.rows || [])];
 
@@ -41,7 +40,7 @@ export function render(json: ProjectReport | null) {
   const resCounter = document.getElementById("results-count") as HTMLElement;
   if (dashboard.state.search && rows.length > 0 && resCounter) {
     const dispNum = dashboard.state.lang === "ne" ? toNepaliNumerals(rows.length) : rows.length;
-    resCounter.innerText = `${dispNum} ${langStrings.results || "results"}`;
+    resCounter.innerText = `${dispNum} ${t("results")}`;
     resCounter.style.display = "block";
   } else if (resCounter) {
     resCounter.style.display = "none";

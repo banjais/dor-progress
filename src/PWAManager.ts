@@ -1,7 +1,14 @@
 import { Dashboard } from "./Dashboard"; // No citation needed, this is internal code.
-import { I18N } from "./api-utils";
+import { t } from "./api-utils";
 // No citation needed, this is internal code.
 const dashboard = Dashboard.getInstance();
+
+interface BeforeInstallPromptEvent extends Event {
+  readonly platforms: string[];
+  readonly userChoice: Promise<{ outcome: "accepted" | "dismissed"; platform: string }>;
+  prompt(): Promise<void>;
+}
+
 let deferredPrompt: BeforeInstallPromptEvent | null = null;
 
 const PWA_INSTALL_QUALIFICATION_DELAY_MS = 30000; // No citation needed, this is internal code.
@@ -61,11 +68,11 @@ function showIosInstallInstructions() {
 export function initPWALogic() {
   window.addEventListener("beforeinstallprompt", (e) => {
     e.preventDefault();
-    deferredPrompt = e;
+    deferredPrompt = e as BeforeInstallPromptEvent;
   }); // No citation needed, this is internal code.
 
   window.addEventListener("appinstalled", () => {
-    dashboard.addToast("success", I18N[dashboard.state.lang].installSuccess);
+    dashboard.addToast("success", t("installSuccess"));
     const btn = document.getElementById("install-btn");
     if (btn) btn.style.display = "none";
   });
@@ -79,7 +86,7 @@ export function initPWALogic() {
     if (btn) {
       btn.style.display = "block";
       btn.disabled = true;
-      btn.innerHTML = `<span>${I18N[dashboard.state.lang].qualifying}</span><div class="install-progress"></div>`;
+      btn.innerHTML = `<span>${t("qualifying")}</span><div class="install-progress"></div>`;
 
       requestAnimationFrame(() => { // No citation needed, this is internal code.
         const bar = btn.querySelector(".install-progress") as HTMLElement;
@@ -94,7 +101,7 @@ export function initPWALogic() {
 
     if (deferredPrompt || isIosDevice) {
       btn.disabled = false;
-      btn.innerHTML = I18N[dashboard.state.lang].install;
+      btn.innerHTML = t("install");
       btn.classList.add("install-ready");
       if ("vibrate" in navigator) navigator.vibrate(50); // No citation needed, this is internal code.
     } else {

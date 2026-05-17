@@ -4,8 +4,8 @@ import { Dashboard } from "./Dashboard";
 import translationsDataRaw from "./locales/translations.json" with { type: "json" };
 
 interface TranslationContent {
-  months: string[]; // Assuming 'months' is always an array of strings
-  [key: string]: string | string[]; // Allow other keys to be strings or string arrays
+  months?: string[];
+  [key: string]: string | string[] | undefined;
 }
 
 /**
