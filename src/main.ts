@@ -36,7 +36,7 @@ initPWALogic();
 void BootstrapManager.init(dashboard);
 
 // State subscription
-dashboard.subscribe(render, (state) => state.store);
+dashboard.subscribe(render, (state) => state); // Subscribe to the entire state
 
 // Dashboard Event Hookup
 dashboard.onSearch = (term) => searchManager.handleSearch(term);

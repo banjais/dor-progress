@@ -90,7 +90,7 @@ jobs:
         env:
           VITE_COMMIT_SHA: ${{ github.sha }}
           VITE_API_BASE_URL: https://dor-progress.web.app
-          # Ensure these match what your build script expects
+          WORKER_BASE: https://dor-progress.web.app
           VITE_APP_ENV: production
 
       - name: Debug Build Output

@@ -6,6 +6,7 @@
   --text: #111827;
   --text-light: #4b5563;
   --good: #10b981;
+  --good-rgb: 16, 185, 129;
   --stable: #3b82f6;
   --critical: #ef4444;
   --border: #e5e7eb;
@@ -14,6 +15,7 @@
   --font-multiplier: 1;
   --aura-bg: var(--surface);
   --aura-text-color: var(--primary);
+  --critical-rgb: 239, 68, 68;
   /* Light blue for selection */
 }
 
@@ -26,6 +28,8 @@
   --primary: #38bdf8;
   --primary-dark: #0ea5e9;
   --hover: rgba(255, 255, 255, 0.06);
+  --good-rgb: 16, 185, 129;
+  /* Keep consistent for dark mode */
   --selected-bg: rgba(56, 189, 248, 0.2);
   --aura-bg: var(--primary);
   --aura-text-color: var(--bg);
@@ -95,6 +99,20 @@ body[data-theme="dark"]::after {
   animation: scanline-flicker 0.1s infinite;
 }
 
+@keyframes scanline-flicker {
+  0% {
+    opacity: 0.15;
+  }
+
+  50% {
+    opacity: 0.18;
+  }
+
+  100% {
+    opacity: 0.15;
+  }
+}
+
 /* Static Noise Overlay for High Risk */
 #static-noise {
   position: fixed;
@@ -110,7 +128,9 @@ body[data-theme="dark"]::after {
 #splash-screen {
   position: fixed;
   inset: 0 !important;
-  background: #000 !important;
+  /* Deep, professional radial gradient for depth */
+  background: radial-gradient(circle at 50% 50%, #1e293b 0%, #020617 100%) !important;
+  overflow: hidden;
   display: flex !important;
   flex-direction: column;
   align-items: center;
@@ -118,6 +138,32 @@ body[data-theme="dark"]::after {
   z-index: 100000 !important;
   color: white;
   transition: opacity 0.8s ease;
+}
+
+/* Background Particle Canvas */
+.splash-particles {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  z-index: -1;
+}
+
+/* Styling for an optional background video */
+.splash-video {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  opacity: 0.25;
+  /* Keep it subtle so text remains readable */
+  z-index: -2;
+  animation: video-zoom-in 20s ease-out forwards;
+  /* Subtle, slow zoom */
 }
 
 .splash-center {
@@ -133,21 +179,104 @@ body[data-theme="dark"]::after {
   object-fit: contain;
   filter: drop-shadow(0 0 15px rgba(255, 255, 255, 0.2));
   animation: pulse-glow 2s infinite ease-in-out;
+  /* Existing pulse animation */
+  will-change: transform;
+  /* Optimize for animation performance */
+  transform: scale(var(--logo-scale, 1)) translate(var(--logo-translate-x, 0), var(--logo-translate-y, 0));
+}
+
+/* Logo Glitch Animation */
+@keyframes logo-glitch-jitter {
+  0% {
+    transform: scale(var(--logo-scale, 1)) translate(var(--logo-translate-x, 0), var(--logo-translate-y, 0));
+  }
+
+  25% {
+    transform: scale(var(--logo-scale, 1)) translate(calc(var(--logo-translate-x, 0) - 4px), calc(var(--logo-translate-y, 0) + 2px));
+    filter: drop-shadow(2px 0 var(--critical));
+  }
+
+  50% {
+    transform: scale(var(--logo-scale, 1)) translate(calc(var(--logo-translate-x, 0) + 4px), calc(var(--logo-translate-y, 0) - 2px));
+    filter: drop-shadow(-2px 0 var(--primary));
+  }
+
+  75% {
+    transform: scale(var(--logo-scale, 1)) translate(calc(var(--logo-translate-x, 0) - 2px), calc(var(--logo-translate-y, 0) - 2px));
+    opacity: 0.8;
+  }
+
+  100% {
+    transform: scale(var(--logo-scale, 1)) translate(var(--logo-translate-x, 0), var(--logo-translate-y, 0));
+  }
+}
+
+.splash-logo-mini.glitch {
+  animation: logo-glitch-jitter 0.1s infinite !important;
+}
+
+/* Skip Button for Splash Screen */
+.splash-skip-btn {
+  position: absolute;
+  bottom: 40px;
+  /* Align with splash-bottom */
+  left: 5%;
+  background: rgba(255, 255, 255, 0.1);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  color: white;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  padding: 10px 20px;
+  border-radius: 12px;
+  font-size: 0.8rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  z-index: 100001;
+  /* Above other splash elements */
+}
+
+.splash-skip-btn:hover {
+  background: rgba(255, 255, 255, 0.2);
+  border-color: rgba(255, 255, 255, 0.4);
+}
+
+.splash-skip-btn:active {
+  transform: translateY(1px);
 }
 
 .splash-bottom {
-  padding-bottom: 60px;
+  position: absolute;
+  bottom: 40px;
+  right: 5%;
   display: flex;
-  flex-direction: column;
+  flex-direction: row;
   align-items: center;
-  gap: 12px;
+  gap: 20px;
+  /* Glassmorphism Styles */
+  background: rgba(15, 23, 42, 0.4);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  padding: 15px 25px;
+  border-radius: 16px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.3);
+  opacity: 0;
+  transform: translateY(20px);
+  transition: opacity 1s cubic-bezier(0.4, 0, 0.2, 1), transform 1s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.splash-bottom.visible {
+  opacity: 1;
+  transform: translateY(0);
 }
 
 .splash-brand {
   display: flex;
   flex-direction: column;
-  align-items: center;
+  align-items: flex-end;
   gap: 2px;
+  text-align: right;
 }
 
 .gov-text {
@@ -166,28 +295,28 @@ body[data-theme="dark"]::after {
 }
 
 .modern-loader {
-  width: 120px;
-  height: 2px;
+  width: 2px;
+  height: 40px;
   background: rgba(255, 255, 255, 0.1);
   position: relative;
   border-radius: 1px;
-  overflow: hidden;
 }
 
 #loader-bar-fill {
   position: absolute;
   left: 0;
-  top: 0;
-  height: 100%;
+  bottom: 0;
+  width: 100%;
   width: 0%;
+  height: 0%;
   background: white;
-  transition: width 0.3s ease;
+  transition: height 0.3s ease;
 }
 
 #loader-percentage {
   position: absolute;
-  right: -35px;
-  top: -6px;
+  left: 10px;
+  bottom: 0;
   font-size: 0.6rem;
   font-weight: 700;
   font-family: monospace;
@@ -206,12 +335,14 @@ body[data-theme="dark"]::after {
   0%,
   100% {
     opacity: 1;
-    transform: scale(1);
+    --logo-scale: 1;
+    /* Animate CSS variable for scale */
   }
 
   50% {
     opacity: 0.8;
-    transform: scale(0.98);
+    --logo-scale: 0.98;
+    /* Animate CSS variable for scale */
   }
 }
 
@@ -271,6 +402,73 @@ body {
   color: var(--primary-dark);
   border-radius: 4px;
   transition: background-color 0.1s;
+}
+
+/* Terminal Typing Effect Enhancement */
+.shimmer-text {
+  color: var(--primary);
+  text-shadow: 0 0 8px rgba(0, 153, 218, 0.4);
+  position: relative;
+}
+
+.shimmer-text::after {
+  content: "█";
+  /* Terminal block cursor */
+  margin-left: 4px;
+  font-size: 0.9em;
+  animation: terminal-cursor-blink 0.8s step-end infinite;
+  vertical-align: middle;
+}
+
+@keyframes terminal-cursor-blink {
+
+  from,
+  to {
+    opacity: 1;
+  }
+
+  50% {
+    opacity: 0;
+  }
+}
+
+/* Terminal Glitch State */
+.shimmer-text.glitch {
+  color: var(--critical) !important;
+  animation: terminal-glitch-jitter 0.1s infinite !important;
+  text-shadow: 2px 0 var(--primary), -2px 0 var(--critical) !important;
+}
+
+.shimmer-text.glitch::after {
+  content: "⚠" !important;
+  color: var(--critical) !important;
+  animation: terminal-cursor-blink 0.2s step-end infinite !important;
+}
+
+@keyframes terminal-glitch-jitter {
+  0% {
+    transform: translate(0);
+  }
+
+  20% {
+    transform: translate(-2px, 1px);
+  }
+
+  40% {
+    transform: translate(-1px, -1px);
+  }
+
+  60% {
+    transform: translate(2px, 1px);
+  }
+
+  80% {
+    transform: translate(-1px, 2px);
+  }
+
+  100% {
+    transform: translate(0);
+  }
 }
 
 body[data-font="system"] {
@@ -913,10 +1111,52 @@ tr {
   flex-direction: column;
 }
 
-.fade-in {
-  opacity: 0;
-  animation: fadeIn 0.4s ease-out forwards;
+/* Apply the card-in animation for staggered appearance */
+.skeleton-card {
+  animation: card-in 0.4s ease-out forwards;
 }
+
+/* Stagger the appearance of skeleton cards */
+.skeleton-card:nth-child(1) {
+  animation-delay: 0.0s;
+}
+
+.skeleton-card:nth-child(2) {
+  animation-delay: 0.05s;
+}
+
+.skeleton-card:nth-child(3) {
+  animation-delay: 0.1s;
+}
+
+.skeleton-card:nth-child(4) {
+  animation-delay: 0.15s;
+}
+
+.skeleton-card:nth-child(5) {
+  animation-delay: 0.2s;
+}
+
+.skeleton-card:nth-child(6) {
+  animation-delay: 0.25s;
+}
+
+.skeleton-card:nth-child(7) {
+  animation-delay: 0.3s;
+}
+
+.skeleton-card:nth-child(8) {
+  animation-delay: 0.35s;
+}
+
+.skeleton-card:nth-child(9) {
+  animation-delay: 0.4s;
+}
+
+.skeleton-card:nth-child(10) {
+  animation-delay: 0.45s;
+}
+
 
 @keyframes fadeIn {
   from {
@@ -925,6 +1165,7 @@ tr {
   }
 
   to {
+    /* No citation needed, this is internal code. */
     opacity: 1;
     transform: translateY(0);
   }
@@ -997,7 +1238,7 @@ tr {
   cursor: pointer;
   overflow: hidden;
   transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-  animation: card-in 0.4s ease-out backwards;
+  /* For hover effects */
 }
 
 .data-card:hover {
@@ -1555,6 +1796,7 @@ tr {
   animation: toast-in 0.3s ease-out;
   display: flex;
   align-items: center;
+  will-change: transform, opacity;
   gap: 10px;
   cursor: pointer;
   position: relative;
@@ -1607,6 +1849,7 @@ tr {
   width: 100%;
   background: var(--primary);
   transform-origin: left;
+  will-change: transform;
   animation: toast-progress-shrink 4s linear forwards;
 }
 

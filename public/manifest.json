@@ -2,10 +2,23 @@
   "name": "DOR Progress Dashboard",
   "short_name": "DOR Progress",
   "description": "Department of Roads Progress Monitoring Dashboard",
+  "id": "/?source=pwa",
   "start_url": "/",
+  "scope": "/",
   "display": "standalone",
-  "background_color": "#ffffff",
+  "display_override": [
+    "window-controls-overlay",
+    "standalone"
+  ],
+  "background_color": "#0b0f1a",
   "theme_color": "#1a5c3a",
+  "orientation": "portrait",
+  "lang": "en",
+  "categories": [
+    "productivity",
+    "utilities",
+    "government"
+  ],
   "icons": [
     {
       "src": "/icons/logo.png",
@@ -16,7 +29,8 @@
     {
       "src": "/icons/logo.png",
       "sizes": "512x512",
-      "type": "image/png"
+      "type": "image/png",
+      "purpose": "any maskable"
     }
   ]
 }

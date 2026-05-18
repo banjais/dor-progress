@@ -18,75 +18,104 @@ export const I18N = translationsDataRaw as unknown as Record<string, Translation
 /** Cache for PluralRules to boost performance */
 const pluralRulesCache = new Map<string, Intl.PluralRules>();
 
+const AR_TO_NE = ["०", "१", "२", "३", "४", "५", "६", "७", "८", "९"];
+const NE_TO_AR: Record<string, string> = {
+  "०": "0", "१": "1", "२": "2", "३": "3", "४": "4",
+  "५": "5", "६": "6", "७": "7", "८": "8", "९": "9",
+};
+
 /**
  * Converts Arabic numerals to Nepali numerals.
  */
 export function toNepaliNumerals(num: number | string): string {
-  const n = ["०", "१", "२", "३", "४", "५", "६", "७", "८", "९"];
-  return String(num).replace(/[0-9]/g, (d) => n[Number(d)]);
+  return String(num).replace(/[0-9]/g, (d) => AR_TO_NE[Number(d)]);
 }
 
 /**
  * Converts Nepali numerals to Arabic numerals.
  */
 export function toArabicNumerals(str: string): string {
-  const n: Record<string, string> = {
-    "०": "0",
-    "१": "1",
-    "२": "2",
-    "३": "3",
-    "४": "4",
-    "५": "5",
-    "६": "6",
-    "७": "7",
-    "८": "8",
-    "९": "9",
-  };
-  return String(str || "").replace(/[०-९]/g, (d) => n[d] ?? d);
+  return String(str || "").replace(/[०-९]/g, (d) => NE_TO_AR[d] ?? d);
 }
 
 /**
- * Core Translation Helper
+ * Internal translation logic without memoization.
  */
-export const t = (key: string, count?: number): string => {
+function translate(key: string, count?: number): string {
   if (!key) return "";
   const dashboard = Dashboard.getInstance();
-  let currentLang = (dashboard.state.lang || "en") as string;
-  if (currentLang === "_metadata") currentLang = "en"; // No citation needed, this is internal code.
+  const state = dashboard.state;
+  const currentLang = (state.lang === "_metadata" ? "en" : state.lang || "en") as string;
+
+  const langData = I18N[currentLang as keyof typeof I18N] as TranslationContent | undefined;
+  const dynamicCache = state.dynamicCache;
 
   let finalKey = key;
-  const langData = I18N[currentLang as keyof typeof I18N] as TranslationContent | undefined;
 
   if (count !== undefined) {
-    if (!pluralRulesCache.has(currentLang)) {
-      pluralRulesCache.set(currentLang, new Intl.PluralRules(currentLang));
+    let pluralRules = pluralRulesCache.get(currentLang);
+    if (!pluralRules) {
+      pluralRules = new Intl.PluralRules(currentLang);
+      pluralRulesCache.set(currentLang, pluralRules);
     }
-    const rule = pluralRulesCache.get(currentLang)!.select(count);
+    const rule = pluralRules.select(count);
     const pKey = `${key}_${rule}`;
 
     // If plural key exists in either cache or static, use it
-    const hasPlural =
-      dashboard.state.dynamicCache[pKey] !== undefined ||
-      (langData && langData[pKey] !== undefined);
-
-    finalKey = hasPlural ? pKey : key;
+    if (dynamicCache[pKey] !== undefined || (langData && langData[pKey] !== undefined)) {
+      finalKey = pKey;
+    }
   }
 
-  const rawText =
-    dashboard.state.dynamicCache[finalKey] ||
-    (langData ? langData[finalKey] : null);
+  const rawText = dynamicCache[finalKey] || (langData ? langData[finalKey] : null);
 
-  // Convert array translations to strings if necessary
-  let text = Array.isArray(rawText) ? rawText.join(", ") : (rawText as string | null);
+  let text: string | null = null;
+  if (rawText !== null && rawText !== undefined) {
+    text = Array.isArray(rawText) ? rawText.join(", ") : (rawText as string);
+  } else if (currentLang !== "en") {
+    // Fallback to English if translation is missing in the current language
+    const enData = I18N["en"] as TranslationContent | undefined;
+    const enRaw = enData ? enData[finalKey] : null;
+    if (enRaw) text = Array.isArray(enRaw) ? enRaw.join(", ") : (enRaw as string);
+  }
 
-  text = text || key;
+  const result = text || key;
 
   if (count !== undefined) {
     const displayCount = currentLang === "ne" ? toNepaliNumerals(count) : String(count);
-    return text.split("{{count}}").join(displayCount);
+    return result.replace(/{{count}}/g, displayCount);
   }
-  return text;
+  return result;
+}
+
+/** Cache for static translations to prevent redundant lookups */
+const tCache = new Map<string, string>();
+
+/**
+ * Core Translation Helper with memoization for static keys.
+ */
+export const t = (key: string, count?: number): string => {
+  if (!key) return "";
+
+  // Pluralized translations or those with counts are dynamic; bypass memoization
+  if (count !== undefined) return translate(key, count);
+
+  const dashboard = Dashboard.getInstance();
+  const currentLang = (dashboard.state.lang === "_metadata" ? "en" : dashboard.state.lang || "en") as string;
+  const cacheKey = `${currentLang}:${key}`;
+
+  const cached = tCache.get(cacheKey);
+  if (cached !== undefined) return cached;
+
+  const result = translate(key);
+  tCache.set(cacheKey, result);
+  return result;
 };
+
+/**
+ * Clears the translation memoization cache.
+ */
+export const clearTranslationCache = () => tCache.clear();
 
 /**
  * Centralized fetch helper to handle base URLs and Firebase App Check tokens.
@@ -98,9 +127,21 @@ export async function authenticatedFetch(
 ): Promise<Response> {
   const dashboard = Dashboard.getInstance();
 
+  // Safely access global injected at build time
+  const safeWorkerBase = typeof WORKER_BASE !== "undefined" ? WORKER_BASE : "";
+
   // Normalize URL joining
-  const baseUrl = WORKER_BASE.endsWith("/") ? WORKER_BASE.slice(0, -1) : WORKER_BASE;
-  const url = path.startsWith("http") ? path : `${baseUrl}/${path.replace(/^\//, "")}`;
+  let baseUrl = safeWorkerBase.endsWith("/") ? safeWorkerBase.slice(0, -1) : safeWorkerBase;
+
+  // If WORKER_BASE is just "/", normalize it to empty so we don't get double slashes
+  if (baseUrl === "/") baseUrl = "";
+
+  // If baseUrl is empty, ensure we don't create protocol-relative // URLs
+  const url = path.startsWith("http")
+    ? path
+    : baseUrl
+      ? `${baseUrl}/${path.replace(/^\//, "")}`
+      : `/${path.replace(/^\//, "")}`;
 
   // Use native Headers API for robust merging
   const headers = new Headers(options.headers);
@@ -115,6 +156,7 @@ export async function authenticatedFetch(
     try {
       if (dashboard.appCheck) {
         try {
+          // Force refresh the token on subsequent attempts
           const tokenResult = await getToken(dashboard.appCheck, attempt > 0);
           if (tokenResult?.token) {
             headers.set("X-Firebase-AppCheck", tokenResult.token);
@@ -125,18 +167,41 @@ export async function authenticatedFetch(
       }
 
       const response = await fetch(url, { ...options, headers });
+
       if (response.ok) return response;
 
-      // If it's a 401 on the last attempt, trigger logout
-      if (response.status === 401 && attempt === maxRetries - 1) {
-        dashboard.logout();
+      const errorMsg = await getApiErrorMessage(response, `HTTP ${response.status}: ${url}`);
+      const isLastAttempt = attempt === maxRetries - 1;
+
+      // Handle terminal 401
+      if (response.status === 401) {
+        if (isLastAttempt) dashboard.logout();
+        // If it's a 401, we only want to retry once with a fresh token
+        if (attempt > 0) throw new Error(errorMsg);
       }
-      throw new Error(await getApiErrorMessage(response, `HTTP ${response.status}: ${url}`)); // Re-throw to be caught by calling function
+
+      // Only retry on network errors (caught below) or specific status codes
+      const retriableStatuses = [401, 429, 500, 502, 503, 504];
+      if (!retriableStatuses.includes(response.status) || isLastAttempt) {
+        throw new Error(errorMsg);
+      }
+
+      // If we are here, we are going to retry. Fall through to catch block logic.
+      throw new Error("Retriable status received");
     } catch (err) {
-      if (attempt === maxRetries - 1) throw err;
+      if (attempt === maxRetries - 1 || (err instanceof Error && err.message !== "Retriable status received" && !err.message.includes("fetch"))) throw err;
+
       // Exponential backoff with jitter
       const delay = Math.pow(2, attempt) * 1000 + Math.random() * 1000;
-      await new Promise((resolve) => setTimeout(resolve, delay));
+
+      // Respect AbortSignal during delay
+      await new Promise((resolve, reject) => {
+        const timeout = setTimeout(resolve, delay);
+        options.signal?.addEventListener("abort", () => {
+          clearTimeout(timeout);
+          reject(options.signal?.reason);
+        }, { once: true });
+      });
     }
   }
   throw new Error("Max retries exceeded");
@@ -148,6 +213,23 @@ export async function authenticatedFetch(
  */
 export async function parseResponse<T>(response: Response, schema: z.ZodSchema<T>): Promise<T> {
   try {
+    const contentType = (response.headers.get("content-type") || "").toLowerCase();
+    if (!contentType.includes("application/json") && response.status !== 204) {
+      const text = await response.text();
+      const isHtml = text.trim().startsWith("<");
+
+      let hint = "Received non-JSON response.";
+      if (isHtml) {
+        hint = "Routing Error: Received HTML instead of JSON. Firebase Hosting is returning index.html because it can't find the resource.";
+        if (response.url.includes(window.location.hostname)) {
+          hint += " If this is an API call, ensure WORKER_BASE is set to your absolute Cloudflare URL, or that Cloudflare is configured as a reverse proxy.";
+        }
+      }
+
+      console.error(`[API Error] Expected JSON but got ${isHtml ? 'HTML' : 'Text'}. URL: ${response.url}`);
+      throw new Error(`${hint} (Status: ${response.status})`);
+    }
+
     const json = await response.json();
     const result = schema.safeParse(json);
 
@@ -231,25 +313,45 @@ interface TextElement extends HTMLElement {
   _timer?: number;
 }
 
-export function typeText(element: TextElement, text: string, playSound?: () => void) {
+export function typeText(element: TextElement, text: string, playSound?: (pitch?: number) => void, isError = false) {
   if (element.getAttribute("data-current") === text) return;
   element.setAttribute("data-current", text);
 
   // Clear existing element-specific timer to prevent overlapping
-  if (element._timer) window.clearInterval(element._timer);
+  if (element._timer) window.clearTimeout(element._timer);
   element.innerText = "";
   element.classList.add("shimmer-text");
+  if (isError) element.classList.add("glitch");
+
   let i = 0;
-  element._timer = window.setInterval(() => {
+  const process = () => {
     if (i < text.length) {
-      element.innerText += text.charAt(i);
-      if (playSound) playSound();
+      const char = text.charAt(i);
+      element.innerText += char;
+
+      // Realistic variation: slight pitch shift, or chaotic pitch for errors
+      if (playSound) {
+        const pitch = isError ? (0.5 + Math.random() * 1.5) : (0.92 + Math.random() * 0.16);
+        playSound(pitch);
+      }
+
       i++;
+
+      // Human-like timing: base speed + jitter + punctuation pauses (Frantic timing for errors)
+      let delay = isError ? 20 : 35;
+      delay += (Math.random() * 30 - 15); // Random jitter +/- 15ms
+
+      if (/[.!?,:;]/.test(char)) delay += 220; // Natural pause at punctuation
+      else if (char === " ") delay += 50; // Slight pause for word separation
+
+      element._timer = window.setTimeout(process, Math.max(10, delay));
     } else {
-      window.clearInterval(element._timer);
       element.classList.remove("shimmer-text");
+      element.classList.remove("glitch");
+      element._timer = undefined;
     }
-  }, 40); // 40ms per character for a smooth terminal feel
+  };
+  process();
 }
 
 // Re-export moved logic from shared types to avoid duplication

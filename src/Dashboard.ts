@@ -7,7 +7,7 @@ import { ToastManager } from "./ToastManager";
 import { TimerManager } from "./TimerManager";
 import { TelemetryManager } from "./TelemetryManager";
 import { AppCheck } from "firebase/app-check";
-import { t, authenticatedFetch, typeText, parseResponse } from "./api-utils";
+import { t, authenticatedFetch, typeText, parseResponse, clearTranslationCache } from "./api-utils";
 
 export interface DashboardState {
   lang: string;
@@ -22,6 +22,7 @@ export interface DashboardState {
   lastFetchTime: number | null;
   history: { value: number }[];
   dynamicCache: Record<string, string>;
+  cumulativeReport: ProjectReport | null; // New property for cumulative reports
 }
 
 export type StateListener<T = any> = (val: T) => void;
@@ -77,6 +78,7 @@ export class Dashboard {
       lastFetchTime: null,
       history: [],
       dynamicCache: JSON.parse(localStorage.getItem("dynamicTranslations") || "{}"),
+      cumulativeReport: null, // Initialize cumulative report state
     };
     this.state = this.makeReactive(initialState);
     this.timer = new TimerManager(this);
@@ -117,6 +119,12 @@ export class Dashboard {
   // Facade methods for encapsulated managers
   playUi(sound: string) { this.audio.playUi(sound); }
   toggleSpeech(container: HTMLElement) { this.speech.toggle(container); }
+
+  // Hum synth controls
+  startHum() { void this.audio.startHum(); }
+  updateHum(risk: number) { this.audio.updateHum(risk); }
+  stopHum() { this.audio.stopHum(); }
+  updateMusicFilter(risk: number) { this.audio.updateMusicFilter(risk); }
 
   applyTheme(theme: string, persist = true) { return this.theme.applyTheme(theme, persist); }
   revertTheme() { return this.theme.revertTheme(); }
@@ -160,9 +168,8 @@ export class Dashboard {
     const fetchStart = performance.now();
     this.showLoading();
 
-    if (isForced) {
-      this.state.store = null;
-    }
+    // Reset store to null to trigger skeleton screens
+    this.state.store = null;
 
     try {
       const endpoint = `/api/report?lang=${this.state.lang}${isForced ? "&force=true" : ""}`;
@@ -243,15 +250,19 @@ export class Dashboard {
     const prevLang = this.state.lang;
     this.state.lang = l;
     localStorage.setItem("pref-lang", l);
+    clearTranslationCache();
     this.onApplyTranslations?.();
-    if (prevLang !== l) {
+
+    // Only trigger a fresh load if the language actually changed
+    // and data isn't already being loaded by the BootstrapManager.
+    if (prevLang !== l && this.state.store) {
       void this.loadData();
     }
   }
 
   setView(v: string) {
     this.state.view = v;
-    ["table", "cards", "charts"].forEach((mode) => {
+    ["table", "cards", "charts", "cumulative", "history"].forEach((mode) => {
       const btn = document.getElementById("btn-" + mode);
       if (btn) btn.classList.toggle("active", v === mode);
     });
@@ -315,8 +326,8 @@ export class Dashboard {
     this.onSearch?.(term);
   }
 
-  typeText(element: HTMLElement, text: string, useSound = false) {
-    typeText(element, text, useSound ? () => this.audio.playUi("type") : undefined);
+  typeText(element: HTMLElement, text: string, useSound = false, isError = false) {
+    typeText(element, text, useSound ? (p?: number) => this.audio.playUi("type", true, p) : undefined, isError);
   }
 
   /**

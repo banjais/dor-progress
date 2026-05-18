@@ -129,6 +129,11 @@ export class BriefManager {
             }
         } catch {
             this.dashboard.addToast("error", this.dashboard.state.lang === "en" ? "Failed" : "असफल");
+            const briefText = this.dashboard.state.lang === "en"
+                ? "CRITICAL ERROR: DATA STREAM CORRUPTED..."
+                : "गंभीर त्रुटि: डाटा स्ट्रिममा समस्या आयो...";
+            const container = document.getElementById("ai-brief-text");
+            if (container) this.dashboard.typeText(container, briefText, true, true);
         } finally {
             if (btn) btn.classList.remove("spinning");
         }

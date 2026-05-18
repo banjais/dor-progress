@@ -14,6 +14,10 @@ export class AudioEngine {
   private isBroken: boolean = false;
   private musicGain: GainNode | null = null;
   private uiGain: GainNode | null = null;
+  private humOsc: OscillatorNode | null = null;
+  private humGain: GainNode | null = null;
+  private humFilter: BiquadFilterNode | null = null;
+  private musicFilter: BiquadFilterNode | null = null;
   public analyser: AnalyserNode | null = null;
   // Control parameters
   private duckLevel: number = 0.3;
@@ -62,13 +66,22 @@ export class AudioEngine {
       // Create nodes
       this.uiGain = this.ctx.createGain();
       this.musicGain = this.ctx.createGain();
-      this.analyser = this.ctx.createAnalyser();
+      const analyserNode = this.ctx.createAnalyser(); // Create local constant
+      this.analyser = analyserNode; // Assign to class property
       this.analyser.fftSize = 256;
+      this.humFilter = this.ctx.createBiquadFilter();
+      this.humFilter.type = "lowpass";
+      this.humGain = this.ctx.createGain();
+      this.humGain.gain.value = 0;
+      this.musicFilter = this.ctx.createBiquadFilter();
+      this.musicFilter.type = "highpass";
+      this.musicFilter.frequency.value = 0; // Bypass by default
 
       // Wire graph
       this.uiGain.connect(this.ctx.destination);
-      this.musicGain.connect(this.ctx.destination);
-      this.musicGain.connect(this.analyser!); // Non-null assertion is safe here as analyser is just created
+      this.musicGain.connect(this.musicFilter).connect(this.ctx.destination);
+      this.musicFilter.connect(analyserNode); // Use the non-nullable local constant
+      this.humFilter.connect(this.humGain).connect(this.ctx.destination);
 
       await this.preRenderAll();
       await this.updateVolumes();
@@ -120,8 +133,48 @@ export class AudioEngine {
     this.musicGain?.gain.setTargetAtTime(this.uiVolume * this.duckLevel, this.ctx.currentTime, 0.05);
   }
 
+  /** Starts a continuous low-frequency hum for the splash screen */
+  async startHum(): Promise<void> {
+    await this.init();
+    if (!this.ctx || !this.humFilter || !this.humGain || this.humOsc) return;
+
+    this.humOsc = this.ctx.createOscillator();
+    this.humOsc.type = "sawtooth"; // Richer harmonics for "distortion"
+    this.humOsc.frequency.value = 60;
+
+    this.humOsc.connect(this.humFilter);
+    this.humOsc.start();
+    this.humGain.gain.setTargetAtTime(0.15 * this.uiVolume, this.ctx.currentTime, 0.5);
+  }
+
+  /** Dynamically updates the hum's pitch and distortion based on risk */
+  updateHum(risk: number): void {
+    if (!this.ctx || !this.humOsc || !this.humFilter || !this.humGain) return;
+
+    // Lower frequency (deeper) as risk increases: 60Hz -> 35Hz
+    const freq = 60 - (risk * 25);
+    // Open filter (more distorted/buzzy) as risk increases: 200Hz -> 1500Hz
+    const cutoff = 200 + (risk * 1300);
+    // Slightly increase volume for intensity
+    const gain = (0.15 + (risk * 0.2)) * this.uiVolume;
+
+    this.humOsc.frequency.setTargetAtTime(freq, this.ctx.currentTime, 0.1);
+    this.humFilter.frequency.setTargetAtTime(cutoff, this.ctx.currentTime, 0.1);
+    this.humGain.gain.setTargetAtTime(gain, this.ctx.currentTime, 0.1);
+  }
+
+  /** Fades out and stops the hum */
+  stopHum(): void {
+    if (!this.humGain || !this.humOsc) return;
+    this.humGain.gain.setTargetAtTime(0, this.ctx.currentTime, 0.5);
+    setTimeout(() => {
+      this.humOsc?.stop();
+      this.humOsc = null;
+    }, 600);
+  }
+
   /** Play a UI sound effect */
-  async playUi(id: string, checkMute = true): Promise<void> {
+  async playUi(id: string, checkMute = true, pitchOverride?: number): Promise<void> {
     await this.init();
     const vol = this.uiVolume; // Use class property instead of re-reading localStorage
     if (this.isBroken || (checkMute && vol === 0)) return;
@@ -130,7 +183,7 @@ export class AudioEngine {
     if (!buffer) return;
     const source = this.ctx!.createBufferSource();
     source.buffer = buffer;
-    source.playbackRate.value = parseFloat(localStorage.getItem("ui-pitch") ?? "1.0");
+    source.playbackRate.value = pitchOverride ?? parseFloat(localStorage.getItem("ui-pitch") ?? "1.0");
     source.connect(this.uiGain!);
     source.start();
   }
@@ -145,6 +198,17 @@ export class AudioEngine {
   unduckMusic(fadeTime = 0.5): void {
     if (!this.ctx || !this.musicGain) return;
     this.musicGain.gain.setTargetAtTime(this.uiVolume, this.ctx.currentTime, fadeTime);
+  }
+
+  /**
+   * Applies a high-pass filter to music when risk is low (good state).
+   * This creates a "thin/airy" sound when stable, and a "heavy/full" sound when risky.
+   */
+  updateMusicFilter(risk: number): void {
+    if (!this.ctx || !this.musicFilter) return;
+    // If risk < 0.3 (good), increase high-pass frequency (up to 800Hz)
+    const cutoff = risk < 0.3 ? (1 - risk / 0.3) * 800 : 0;
+    this.musicFilter.frequency.setTargetAtTime(cutoff, this.ctx.currentTime, 0.4);
   }
 
   /** Set UI volume (clamped 0‑1) and persist */
@@ -170,14 +234,15 @@ export class AudioEngine {
 
   /** Start a canvas visualizer using the analyser */
   startVisualizer(canvas: HTMLCanvasElement): void {
-    if (!this.ctx || !this.analyser) return;
+    const analyser = this.analyser;
+    if (!this.ctx || !analyser) return;
     const ctx2d = canvas.getContext("2d");
     if (!ctx2d) return;
-    const bufferLength = this.analyser.frequencyBinCount;
+    const bufferLength = analyser.frequencyBinCount;
     const dataArray = new Uint8Array(bufferLength);
     const draw = () => {
       this.animationFrameId = requestAnimationFrame(draw);
-      this.analyser!.getByteFrequencyData(dataArray);
+      analyser.getByteFrequencyData(dataArray);
       ctx2d.clearRect(0, 0, canvas.width, canvas.height);
       const barWidth = (canvas.width / bufferLength) * 2.5;
       let x = 0;

@@ -1,5 +1,5 @@
 import { Dashboard } from "./Dashboard"; // No citation needed, this is internal code.
-import { t, getApiErrorMessage } from "./api-utils";
+import { t, authenticatedFetch } from "./api-utils";
 // No citation needed, this is internal code.
 const dashboard = Dashboard.getInstance();
 
@@ -11,9 +11,6 @@ interface Snapshot {
   bsDate?: string; // Added based on main.ts usage
 }
 
-interface SnapshotListResponse {
-  snapshots: Snapshot[];
-}
 let snapshotList: Snapshot[] = [];
 
 /**
@@ -39,8 +36,9 @@ export async function requestSnapshotKey(): Promise<string | null> { // No citat
         <input type="password" id="snapshot-key-input" placeholder="••••••••" 
           style="width: 100%; padding: 14px; border-radius: 12px; border: 1px solid var(--border); background: var(--bg); color: var(--text); outline: none; font-size: 1.1rem; text-align: center; letter-spacing: 0.2em;">
       </div>
-      <div style="display:flex; gap:10px;">
-        <button id="snapshot-key-submit" class="retry-btn" style="flex:1; margin:0;">${t("authorize") || "Authorize"}</button>
+      <div style="display:flex; gap:10px; margin-top: 10px;">
+        <button id="snapshot-key-submit" class="retry-btn" style="flex:1; margin:0;">${t("authorize") || "Authorize"
+      }</button>
         <button id="snapshot-key-cancel" class="toggle-btn" style="flex:1; border:1px solid var(--border);">${t("cancel")}</button>
       </div>
     `;
@@ -90,11 +88,11 @@ export async function createSnapshotManual(e?: Event) { // No citation needed, t
       btn.disabled = false;
       return;
     }
-    const response = await fetch(WORKER_BASE + "/api/snapshot", {
+
+    const response = await authenticatedFetch("/api/snapshot", {
       method: "POST",
       headers: {
-        "Content-Type": "application/json",
-        "X-Snapshot-Key": snapshotKey,
+        "X-Snapshot-Key": snapshotKey
       },
       body: JSON.stringify({
         headers: dashboard.state.store.headers || [],
@@ -107,19 +105,13 @@ export async function createSnapshotManual(e?: Event) { // No citation needed, t
         },
       }),
     });
-    if (response.ok) {
-      await response.json();
-      dashboard.addToast("success", "Snapshot created!");
-      void listSnapshots(true);
-    } else {
-      dashboard.addToast(
-        "error",
-        await getApiErrorMessage(response, "Failed to create snapshot"),
-      );
-    }
+
+    await response.json();
+    dashboard.addToast("success", "Snapshot created!");
+    void listSnapshots(true);
   } catch (e) {
     console.error("Error creating snapshot:", e);
-    dashboard.addToast("error", "An unexpected error occurred.");
+    dashboard.addToast("error", e instanceof Error ? e.message : "An unexpected error occurred.");
   } finally {
     btn.innerText = originalText;
     btn.disabled = false;
@@ -138,14 +130,11 @@ export async function listSnapshots(force?: boolean) { // No citation needed, th
     const snapshotKey = await requestSnapshotKey();
     if (!snapshotKey) return;
 
-    const response = await fetch(WORKER_BASE + "/api/snapshots", {
+    const response = await authenticatedFetch("/api/snapshots", {
       headers: { "X-Snapshot-Key": snapshotKey }, // No citation needed, this is internal code.
     });
-    if (!response.ok) {
-      dashboard.addToast("error", "Failed");
-      return;
-    }
-    const data = (await response.json()) as SnapshotListResponse;
+
+    const data = await response.json() as any;
     snapshotList = data.snapshots || [];
     if (snapshotList.length === 0) {
       listEl.innerHTML = "<p style='font-size: 0.7rem;'>No snapshots</p>";
@@ -176,7 +165,7 @@ export async function listSnapshots(force?: boolean) { // No citation needed, th
     container.style.display = "block";
   } catch (e) {
     console.error("Error listing snapshots:", e);
-    dashboard.addToast("error", "An unexpected error occurred.");
+    dashboard.addToast("error", e instanceof Error ? e.message : "An unexpected error occurred.");
   }
 }
 
@@ -185,16 +174,10 @@ export async function downloadSnapshot(date: string) { // No citation needed, th
   if (!snapshotKey) return;
 
   try {
-    const response = await fetch(WORKER_BASE + "/api/snapshot?date=" + date, { // No citation needed, this is internal code.
+    const response = await authenticatedFetch(`/api/snapshot?date=${date}`, {
       headers: { "X-Snapshot-Key": snapshotKey },
     });
-    if (!response.ok) {
-      dashboard.addToast(
-        "error",
-        await getApiErrorMessage(response, "Failed to download snapshot"),
-      );
-      return;
-    }
+
     const blob = await response.blob();
     const url = window.URL.createObjectURL(blob);
     const a = document.createElement("a");
@@ -215,22 +198,16 @@ export async function deleteSnapshot(date: string) { // No citation needed, this
   if (!snapshotKey) return;
 
   try {
-    const response = await fetch(WORKER_BASE + "/api/snapshot?date=" + date, { // No citation needed, this is internal code.
+    await authenticatedFetch(`/api/snapshot?date=${date}`, {
       method: "DELETE",
       headers: { "X-Snapshot-Key": snapshotKey },
     });
-    if (response.ok) {
-      dashboard.addToast("success", "Deleted");
-      void listSnapshots(true);
-    } else {
-      dashboard.addToast(
-        "error",
-        await getApiErrorMessage(response, "Failed to delete snapshot"),
-      );
-    }
+
+    dashboard.addToast("success", "Deleted");
+    void listSnapshots(true);
   } catch (e) {
     console.error("Error deleting snapshot:", e);
-    dashboard.addToast("error", "An unexpected error occurred.");
+    dashboard.addToast("error", e instanceof Error ? e.message : "An unexpected error occurred.");
   }
 }
 

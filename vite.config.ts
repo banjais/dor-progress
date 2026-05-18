@@ -1,56 +1,33 @@
-import { defineConfig, loadEnv } from "vite";
-import legacy from "@vitejs/plugin-legacy";
-import fs from "fs";
+import { defineConfig } from "vite";
 import path from "path";
 
-const pkg = JSON.parse(fs.readFileSync("./package.json", "utf-8"));
+export default defineConfig({
+  base: "/",
 
-export default defineConfig(({ mode }) => {
-  const env = loadEnv(mode, process.cwd(), "");
+  publicDir: "public",
 
-  return {
-    server: {
-      port: 3000,
-      open: true,
+  resolve: {
+    alias: {
+      "@": path.resolve(__dirname, "src"),
     },
-    build: {
-      reportCompressedSize: false, // Speeds up build time
-      rollupOptions: {
-        output: {
-          manualChunks: {
-            vendor: ["firebase/app", "firebase/app-check", "zod", "jose"],
-          },
-        },
-      },
+  },
+
+  define: {
+    WORKER_BASE: JSON.stringify(process.env.WORKER_BASE || "https://dor-progress.web.app"),
+  },
+
+  build: {
+    outDir: "dist",
+    sourcemap: false,
+    target: "es2018",
+    chunkSizeWarningLimit: 1500,
+  },
+
+  assetsInclude: ["**/*.png", "**/*.jpg", "**/*.pdf"],
+
+  server: {
+    fs: {
+      strict: false,
     },
-    plugins: [
-      legacy({
-        targets: ["defaults", "not IE 11"],
-      }),
-      {
-        name: "branding-injection",
-        transformIndexHtml(html) {
-          try {
-            const brandingPath = path.resolve(__dirname, "./config/branding.json");
-            if (fs.existsSync(brandingPath)) {
-              const branding = JSON.parse(fs.readFileSync(brandingPath, "utf-8"));
-              return html
-                .replace(/<title>.*?<\/title>/, `<title>${branding.app.title}</title>`)
-                .replace("<!-- APP_VERSION -->", `v${pkg.version}`);
-          }
-          return html;
-          } catch {
-            return html;
-          }
-        },
-      },
-    ],
-    define: {
-      APP_VERSION: JSON.stringify(pkg.version),
-      WORKER_BASE: JSON.stringify(env.VITE_API_BASE_URL || ""),
-      BUILD_ID: JSON.stringify(env.VITE_BUILD_ID || ""),
-      COMMIT_SHA: JSON.stringify(env.VITE_COMMIT_SHA || ""),
-      APP_ENV: JSON.stringify(env.VITE_APP_ENV || "production"),
-    },
-  };
+  },
 });

@@ -110,8 +110,8 @@ export class HistoryManager { // No citation needed, this is internal code.
                 this.dashboard.addToast("info", json.error || t("noDataForPeriod"));
                 return;
             }
-            this.dashboard.state.store = json;
-            this.dashboard.setView("table");
+            this.dashboard.state.cumulativeReport = json; // Store in dedicated state
+            this.dashboard.setView("cumulative"); // Set a specific view for cumulative reports
 
             const successMsg = t("cumulativeReportSuccess");
             const msg = successMsg === "cumulativeReportSuccess"

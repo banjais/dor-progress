@@ -60,7 +60,7 @@ async function updateVersion() {
 
     // 3. Auto-commit and tag versioning changes
     await new Promise((resolve) => {
-      const gitCmd = `git add package.json config/branding.json && git commit -m "chore(release): v${newVersion} [skip ci]" && git tag -a v${newVersion} -m "Release v${newVersion}"`;
+      const gitCmd = `git add package.json config/branding.json && git commit -m "chore(release): v${newVersion} [skip ci]" && git tag -a v${newVersion} -m "Release v${newVersion}" && git push origin main --tags`;
       exec(gitCmd, (error, _stdout) => {
         if (error) {
           console.warn('Warning: Automatic commit or tagging failed (likely no changes found or tag already exists).');

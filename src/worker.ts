@@ -23,16 +23,32 @@ const JWKS = createRemoteJWKSet(
   new URL("https://firebaseappcheck.googleapis.com/v1/jwks"),
 ); // No citation needed, this is internal code.
 
-const getCorsHeaders = (origin: string | null) => ({
-  "Content-Type": "application/json",
-  "Access-Control-Allow-Origin": origin && (origin.endsWith(".web.app") || origin.endsWith(".firebaseapp.com") || origin.includes("localhost"))
-    ? origin
-    : "https://dor-progress.web.app",
-  "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
-  "Access-Control-Allow-Headers": "Content-Type, X-Firebase-AppCheck, X-Low-Data, X-Snapshot-Key",
-  "Access-Control-Max-Age": "86400",
-  "Vary": "Origin"
-});
+const getCorsHeaders = (origin: string | null) => {
+  const isAllowedOrigin = origin && (
+    origin.endsWith(".web.app") ||
+    origin.endsWith(".firebaseapp.com") ||
+    origin.includes("localhost") ||
+    origin.includes("dor-progress") // General check to cover custom domains/subdomains
+  );
+
+  return {
+    "Content-Type": "application/json",
+    "Access-Control-Allow-Origin": isAllowedOrigin ? origin : "https://dor-progress.web.app",
+    "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
+    "Access-Control-Allow-Headers": "Content-Type, X-Firebase-AppCheck, X-Low-Data, X-Snapshot-Key",
+    "Access-Control-Max-Age": "86400",
+    "X-Content-Type-Options": "nosniff",
+    "Content-Security-Policy": [
+      "default-src 'self';",
+      "connect-src 'self' https://fonts.googleapis.com https://*.googleapis.com https://*.gstatic.com https://unpkg.com https://api.qrserver.com https://api.elevenlabs.io https://*.firebaseapp.com https://*.web.app http://localhost:*;",
+      "font-src 'self' data: https://fonts.gstatic.com https://fonts.googleapis.com;",
+      "img-src 'self' data: https://api.qrserver.com https://*.googleusercontent.com;",
+      "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://unpkg.com;",
+      "script-src 'self' 'unsafe-inline' 'unsafe-eval' https://unpkg.com https://www.gstatic.com;",
+      "worker-src 'self' blob:;"
+    ].join(" ")
+  };
+};
 
 function jsonResponse(data: any, status = 200, origin: string | null = null): Response {
   return new Response(JSON.stringify(data), {
