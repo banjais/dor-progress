@@ -1,4 +1,5 @@
 import { spawn } from 'child_process';
+import { execSync } from 'child_process';
 
 const colors = {
   green: '\x1b[32m',
@@ -11,13 +12,14 @@ const colors = {
 
 const JOBS = [
   { name: 'Update Version', command: 'npm run update-version' },
-  { name: 'NPM Install',    command: 'npm install' },
-  { name: 'Lint Code',      command: 'npm run lint' },
-  { name: 'Clean Dist',     command: 'npm run clean' },
-  { name: 'Build App',      command: 'npm run build' },
-  { name: 'Deploy Worker',  command: 'npm run deploy:worker' },
+  { name: 'NPM Install', command: 'npm ci' },
+  { name: 'Lint Code', command: 'npm run lint' },
+  { name: 'Typecheck', command: 'npm run typecheck' },
+  { name: 'Clean Dist', command: 'npm run clean' },
+  { name: 'Build App', command: 'npm run build' },
+  { name: 'Deploy Worker', command: 'npm run deploy:worker' },
   { name: 'Deploy Hosting', command: 'npm run deploy:hosting' },
-  { name: 'Deploy Git',     command: 'npm run deploy:git' }
+  { name: 'Sync Git', command: 'GIT_SYNC' } // Custom logic below
 ];
 
 function runJob(job) {
@@ -25,6 +27,11 @@ function runJob(job) {
     console.log(`\n${colors.bold}${colors.cyan}======================================================================${colors.reset}`);
     console.log(`🚀 ${colors.bold}RUNNING: ${job.name}${colors.reset} (${colors.yellow}${job.command}${colors.reset})`);
     console.log(`${colors.bold}${colors.cyan}======================================================================${colors.reset}\n`);
+
+    if (job.command === 'GIT_SYNC') {
+      const result = handleGitSync();
+      return resolve(result);
+    }
 
     const parts = job.command.split(' ');
     const cmd = parts[0];
@@ -53,6 +60,31 @@ function runJob(job) {
       });
     });
   });
+}
+
+/**
+ * Checks for local changes and pushes to origin
+ */
+function handleGitSync() {
+  try {
+    const status = execSync('git status --porcelain').toString().trim();
+    if (!status) {
+      console.log(`${colors.yellow}No local changes to commit.${colors.reset}`);
+      return { success: true };
+    }
+
+    const version = JSON.parse(execSync('cat package.json').toString()).version;
+    console.log(`${colors.cyan}Syncing version v${version} to Git...${colors.reset}`);
+
+    execSync('git add .');
+    execSync(`git commit -m "chore(deploy): release v${version} [skip ci]"`);
+    execSync(`git tag -a v${version} -m "Release v${version}"`);
+    execSync('git push origin main --tags');
+
+    return { success: true };
+  } catch (err) {
+    return { success: false, error: err.message };
+  }
 }
 
 async function runDeploy() {
@@ -99,7 +131,7 @@ async function runDeploy() {
   });
 
   console.log(`${colors.bold}${colors.cyan}----------------------------------------------------------------------${colors.reset}`);
-  
+
   if (failCount === 0) {
     console.log(`🎉 ${colors.bold}${colors.green}ALL DEPLOYMENT JOBS COMPLETED SUCCESSFULLY! (${successCount}/${JOBS.length} passed)${colors.reset}`);
     console.log(`${colors.bold}${colors.cyan}======================================================================${colors.reset}\n`);

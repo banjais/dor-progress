@@ -58,18 +58,7 @@ async function updateVersion() {
     await fs.writeFile(brandingPath, JSON.stringify(branding, null, 2) + '\n');
     console.log(`Branding updated with date: ${branding.app.lastUpdate} and commit hash: ${branding.app.lastCommitHash}`);
 
-    // 3. Auto-commit and tag versioning changes
-    await new Promise((resolve) => {
-      const gitCmd = `git add package.json config/branding.json && git commit -m "chore(release): v${newVersion} [skip ci]" && git tag -a v${newVersion} -m "Release v${newVersion}" && git push origin main --tags`;
-      exec(gitCmd, (error, _stdout) => {
-        if (error) {
-          console.warn('Warning: Automatic commit or tagging failed (likely no changes found or tag already exists).');
-        } else {
-          console.log(`Git commit and tag v${newVersion} created successfully.`);
-        }
-        resolve();
-      });
-    });
+    // Git logic moved to final deployment step in deploy.js
   } catch {
     console.error('Warning: Could not update branding.json. Ensure it exists at config/branding.json');
   }

@@ -68,7 +68,7 @@ export class AudioEngine {
       this.musicGain = this.ctx.createGain();
       const analyserNode = this.ctx.createAnalyser(); // Create local constant
       this.analyser = analyserNode; // Assign to class property
-      this.analyser.fftSize = 256;
+      analyserNode.fftSize = 256; // Use the local constant to satisfy TS null-check
       this.humFilter = this.ctx.createBiquadFilter();
       this.humFilter.type = "lowpass";
       this.humGain = this.ctx.createGain();
@@ -163,15 +163,15 @@ export class AudioEngine {
     this.humGain.gain.setTargetAtTime(gain, this.ctx.currentTime, 0.1);
   }
 
-  /** Fades out and stops the hum */
-  stopHum(): void {
-    if (!this.humGain || !this.humOsc) return;
-    this.humGain.gain.setTargetAtTime(0, this.ctx.currentTime, 0.5);
-    setTimeout(() => {
-      this.humOsc?.stop();
-      this.humOsc = null;
-    }, 600);
-  }
+   /** Fades out and stops the hum */
+   stopHum(): void {
+     if (!this.ctx || !this.humGain || !this.humOsc) return;
+     this.humGain.gain.setTargetAtTime(0, this.ctx.currentTime, 0.5);
+     setTimeout(() => {
+       this.humOsc?.stop();
+       this.humOsc = null;
+     }, 600);
+   }
 
   /** Play a UI sound effect */
   async playUi(id: string, checkMute = true, pitchOverride?: number): Promise<void> {
