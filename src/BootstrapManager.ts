@@ -66,11 +66,18 @@ export class BootstrapManager {
             await dashboard.loadData();
         } catch (e) {
             console.error("Critical Bootstrap Failure:", e);
-            const msg = e instanceof Error ? e.message : String(e);
+            let msg = e instanceof Error ? e.message : String(e);
+
+            // Enhance error message for common configuration issues
+            if (msg.includes("Routing Error: Received HTML instead of JSON") || msg.includes("not found (404)")) {
+                msg += " Please ensure WORKER_BASE is correctly configured to your Cloudflare Worker URL and that the worker is deployed and routing requests properly.";
+                console.error("ACTION REQUIRED: Check WORKER_BASE configuration and Cloudflare Worker deployment.");
+            }
+
             this.hideSplash(); // Ensure splash is hidden so user can see the error toast
             dashboard.addToast(
                 "error",
-                `${dashboard.t("bootError") || "System failed to initialize"}: ${msg}`,
+                `${dashboard.t("bootError") || "System failed to initialize"}: ${msg.split(" (Status:")[0]}`, // Trim status for toast
                 0
             );
         } finally {

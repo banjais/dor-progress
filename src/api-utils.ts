@@ -130,6 +130,11 @@ export async function authenticatedFetch(
   // Safely access global injected at build time
   const safeWorkerBase = typeof WORKER_BASE !== "undefined" ? WORKER_BASE : "";
 
+  if (!safeWorkerBase && !path.startsWith("http")) {
+    console.warn(`[Network] WORKER_BASE is empty. Requesting relative path: ${path}. ` +
+      `This will likely fail with a 404 on Firebase Hosting.`);
+  }
+
   // Normalize URL joining
   let baseUrl = safeWorkerBase.endsWith("/") ? safeWorkerBase.slice(0, -1) : safeWorkerBase;
 
