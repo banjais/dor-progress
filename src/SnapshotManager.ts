@@ -1,5 +1,5 @@
-import { Dashboard } from "./Dashboard"; // No citation needed, this is internal code.
-import { t, authenticatedFetch } from "./api-utils";
+import { Dashboard } from "./Dashboard.js"; // No citation needed, this is internal code.
+import { t, authenticatedFetch, toError } from "./api-utils.js";
 // No citation needed, this is internal code.
 const dashboard = Dashboard.getInstance();
 
@@ -134,8 +134,8 @@ export async function listSnapshots(force?: boolean) { // No citation needed, th
       headers: { "X-Snapshot-Key": snapshotKey }, // No citation needed, this is internal code.
     });
 
-    const data = await response.json() as any;
-    snapshotList = data.snapshots || [];
+    const data = await response.json() as { snapshots?: Snapshot[] };
+    snapshotList = data.snapshots ?? [];
     if (snapshotList.length === 0) {
       listEl.innerHTML = "<p style='font-size: 0.7rem;'>No snapshots</p>";
     } else {
@@ -186,9 +186,10 @@ export async function downloadSnapshot(date: string) { // No citation needed, th
     a.click();
     window.URL.revokeObjectURL(url);
     dashboard.addToast("success", "Downloaded");
-  } catch (e: any) {
-    console.error("Error downloading snapshot:", e);
-    dashboard.addToast("error", e.message || "An unexpected error occurred.");
+  } catch (err) {
+    const error = toError(err);
+    console.error("Error downloading snapshot:", error);
+    dashboard.addToast("error", error.message || "An unexpected error occurred.");
   }
 }
 

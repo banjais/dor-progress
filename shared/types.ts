@@ -1,6 +1,7 @@
 /**
  * Shared type definitions for the Department of Roads (DoR) MIS Dashboard.
  * These types are used by both the Frontend client and the Cloudflare Worker.
+ * @cloudflare/workers-types is implicitly available in worker.ts, but explicit import is good for type checking.
  */
 
 import { z } from "zod";
@@ -54,19 +55,19 @@ export const AiSummarySchema = z.object({
   brief: z.string().describe("A high-level executive summary for senior management (under 100 words)."),
   overallHealth: z.enum(["good", "moderate", "critical"]).optional()
     .describe("The general status of the road network based on cumulative progress."),
-  criticalProjects: z.array(z.string()).optional()
+  criticalProjects: z.array(z.string()).optional().nullable() // Could be null if no critical projects
     .describe("List names of projects where annual progress is significantly below target (e.g., < 40%)."),
-  exceedingProjects: z.array(z.string()).optional()
+  exceedingProjects: z.array(z.string()).optional().nullable() // Could be null if no exceeding projects
     .describe("List names of projects that have surpassed their annual targets."),
   discrepancies: z.array(z.object({
-    text: z.string().describe("Description of a data mismatch or logical error found in the report."),
-    severity: z.enum(["low", "medium", "high"]).describe("Impact of the discrepancy.")
-  })).optional().describe("List any logical inconsistencies found in the project data."),
+    text: z.string().min(1).describe("Description of a data mismatch or logical error found in the report."),
+    severity: z.enum(["low", "medium", "high"]).describe("Impact of the discrepancy.").default("medium")
+  })).optional().nullable().describe("List any logical inconsistencies found in the project data."), // Could be null if no discrepancies
   extractedData: z.object({
     headers: SpreadsheetHeadersSchema.describe("The exact column headers found in the PDF table."),
     rows: z.array(ProjectRowSchema).describe("An array of objects representing every row in the project table."),
     date: z.string().optional().describe("The report date found in the document header (ISO format if possible).")
-  }).optional().describe("The raw tabular data extracted from the document.")
+  }).optional().nullable().describe("The raw tabular data extracted from the document.") // Could be null if extraction failed
 });
 export type AiSummary = z.infer<typeof AiSummarySchema>;
 
@@ -77,26 +78,39 @@ export const ProjectReportSchema = z.object({
   lastUpdate: z.string(),
   aiSummary: AiSummarySchema.nullable(),
   adminMessage: z.string().optional()
-}).transform((report) => {
-  const { headers, rows } = report;
+  }).transform((report) => {
+    const { headers, created = new Date().toISOString(), lastUpdate = new Date().toISOString(), aiSummary, adminMessage } = report;
 
-  // Automatically calculate status color/enum for each row during the parsing phase.
-  const updatedRows = rows.map((row) => {
-    // If the API already provided a status, preserve it
-    if (row._status) return row;
+    // Use report.rows as-is with fallback
+    const rows = (report as any).rows ?? [];
 
-    const progress = getProgress(row, headers);
-    let status: "good" | "stable" | "critical" = "critical";
+    // Automatically calculate status color/enum for each row during the parsing phase.
+    const updatedRows = (rows as ProjectRow[]).map((row) => {
+      // If the API already provided a status, preserve it
+      if (row._status) return row;
 
-    if (progress >= 80) status = "good";
-    else if (progress >= 40) status = "stable";
+      const progress = getProgress(row, headers ?? []);
+      let status: "good" | "stable" | "critical" = "critical";
 
-    return { ...row, _status: status };
+      if (progress >= 80) status = "good";
+      else if (progress >= 40) status = "stable";
+
+      return { ...row, _status: status };
+    });
+
+    return { headers: headers ?? [], rows: updatedRows, created, lastUpdate, aiSummary, adminMessage };
   });
-
-  return { ...report, rows: updatedRows };
-});
 export type ProjectReport = z.infer<typeof ProjectReportSchema>;
+
+/** Schema for metadata stored in KV alongside archived reports */
+export const ArchiveMetadataSchema = z.object({
+  date: z.string(),
+  summary: z.string().optional(),
+  created: z.string(),
+  bsDate: z.string().optional(),
+  recordCount: z.number(),
+});
+export type ArchiveMetadata = z.infer<typeof ArchiveMetadataSchema>;
 
 /** Schema for snapshot creation requests from the dashboard */
 export const SnapshotRequestSchema = z.object({
@@ -109,14 +123,36 @@ export const SnapshotRequestSchema = z.object({
 });
 export type SnapshotRequest = z.infer<typeof SnapshotRequestSchema>;
 
+export const ClientConfigSchema = z.object({
+  firebase: z.object({
+    apiKey: z.string(),
+    authDomain: z.string(),
+    projectId: z.string(),
+    storageBucket: z.string(),
+    messagingSenderId: z.string(),
+    appId: z.string(),
+    measurementId: z.string().optional(),
+  }),
+  recaptchaKey: z.string().optional(),
+  digitalSignatureEnabled: z.boolean().optional(),
+});
+export type ClientConfig = z.infer<typeof ClientConfigSchema>;
+
 export interface Env {
   APP_ENV?: string;
   FIREBASE_PROJECT_ID?: string;
   FIREBASE_PROJECT_NUMBER?: string;
   FIREBASE_APP_ID?: string;
+  FIREBASE_API_KEY?: string;
+  FIREBASE_AUTH_DOMAIN?: string;
+  FIREBASE_STORAGE_BUCKET?: string;
+  FIREBASE_MESSAGING_SENDER_ID?: string;
   GOOGLE_GENAI_API_KEY?: string;
+  GEMINI_API_KEY?: string; // Used as a fallback for GOOGLE_GENAI_API_KEY
   PUBLISHED_SHEET_ID?: string;
   SNAPSHOT_KEY?: string;
-  REPORTS_KV?: any; // KVNamespace on Worker, any on Client
+  DIGITAL_SIGNATURE?: string; // "true" or "false" from .env, GitHub Secrets, Cloudflare Secrets
+  REPORTS_KV: KVNamespace;
+  RECAPTCHA_SITE_KEY?: string; // Used in client-config
   [key: string]: any;
 }

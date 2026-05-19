@@ -1,5 +1,5 @@
-import { Dashboard, DashboardState } from "./Dashboard";
-import { t } from "./api-utils";
+import { Dashboard, DashboardState } from "./Dashboard.js";
+import { t } from "./api-utils.js";
 
 export class TelemetryManager {
     private dashboard: Dashboard;
@@ -17,7 +17,7 @@ export class TelemetryManager {
 
     private initReactivity() {
         this.dashboard.subscribe(
-            ({ history, lang: _lang }) => { // Destructure 'lang' and rename to '_lang'
+            ({ history, lang: _lang }: { history: { value: number }[], lang: string }) => { // Destructure 'lang' and rename to '_lang'
                 this.updateConnectionStatus(history);
             },
             (state: DashboardState) => ({

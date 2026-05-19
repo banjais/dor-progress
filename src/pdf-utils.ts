@@ -1,5 +1,5 @@
-import { Dashboard } from "./Dashboard";
-import { t, toNepaliNumerals, getProgress } from "./api-utils";
+import { Dashboard } from "./Dashboard.js";
+import { t, toNepaliNumerals, getProgress } from "./api-utils.js";
 
 /**
  * Generates a Progress Report PDF directly in the browser using pdf-lib.
@@ -55,7 +55,7 @@ export async function generateClientPDF(): Promise<void> {
         const colWidth = (width - 100) / store.headers.length;
 
         const drawTableHeader = (currentPage: any) => {
-            store.headers.forEach((h, i) => {
+            store.headers.forEach((h: string, i: number) => {
                 currentPage.drawText(h, {
                     x: 50 + i * colWidth,
                     y: yOffset,

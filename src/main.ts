@@ -1,23 +1,21 @@
 /** 
  * Interfaces for Project Data and State
  */
-import { Dashboard } from "./Dashboard";
-import { initApp } from "./App";
-import { render } from "./render";
-import { initPWALogic } from "./PWAManager";
-import {
-  t,
-} from "./api-utils";
-import { SearchManager } from "./SearchManager";
-import { AuraManager } from "./AuraManager";
-import { BriefManager } from "./BriefManager";
-import { HistoryManager } from "./HistoryManager";
-import { showModal, closeModal } from "./modal";
-import { showSettings } from "./settings";
-import { triggerDatabaseBackup, triggerDatabaseRestore, downloadAllOfflineData, clearDataCache, executeFactoryReset } from "./database";
-import { requestSnapshotKey, createSnapshotManual, listSnapshots, downloadSnapshot, deleteSnapshot, logoutSnapshotSession } from "./SnapshotManager";
-import { showDiagnostics } from "./DiagnosticManager";
-import { BootstrapManager } from "./BootstrapManager";
+import { Dashboard } from "./Dashboard.js";
+import { initApp } from "./App.js";
+import { render } from "./render.js";
+import { initPWALogic } from "./PWAManager.js";
+import { t } from "./api-utils.js";
+import { SearchManager } from "./SearchManager.js";
+import { AuraManager } from "./AuraManager.js";
+import { BriefManager } from "./BriefManager.js";
+import { HistoryManager } from "./HistoryManager.js";
+import { showModal, closeModal } from "./modal.js";
+import { showSettings } from "./settings.js";
+import { triggerDatabaseBackup, triggerDatabaseRestore, downloadAllOfflineData, clearDataCache, executeFactoryReset } from "./database.js";
+import { requestSnapshotKey, createSnapshotManual, listSnapshots, downloadSnapshot, deleteSnapshot, logoutSnapshotSession } from "./SnapshotManager.js";
+import { showDiagnostics } from "./DiagnosticManager.js";
+import { BootstrapManager } from "./BootstrapManager.js";
 
 // Core instance
 const dashboard = Dashboard.getInstance();
@@ -53,7 +51,8 @@ Object.assign(App, {
   handleSearch: (term?: string) => searchManager.handleSearch(term),
 
   // AI Briefs
-  printAiBrief: () => briefManager.print(),
+  printAiBrief: () => briefManager.printAiBrief(),
+  copyAiBrief: () => briefManager.copyAiBrief(),
   shareAiBrief: () => briefManager.share(),
   translateAiBrief: () => briefManager.translate(),
   downloadAiBriefAudio: () => briefManager.downloadAudio(),

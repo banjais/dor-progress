@@ -1,4 +1,4 @@
-import { Dashboard } from "./Dashboard";
+import { Dashboard } from "./Dashboard.js";
 
 export function showModal(indicatorName: string, _dashboard: Dashboard) {
   console.log("Showing modal for:", indicatorName);

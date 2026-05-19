@@ -1,26 +1,9 @@
 import { initializeApp } from "firebase/app";
 import { initializeAppCheck, ReCaptchaEnterpriseProvider } from "firebase/app-check";
-import { z } from "zod";
-import { Dashboard } from "./Dashboard";
-import { parseResponse, authenticatedFetch } from "./api-utils";
-import { BrandingEngine } from "./components/BrandingEngine";
-
-// Global declaration for TypeScript
-declare const WORKER_BASE: string;
-
-const ClientConfigSchema = z.object({
-    firebase: z.object({
-        apiKey: z.string(),
-        authDomain: z.string(),
-        projectId: z.string(),
-        storageBucket: z.string(),
-        messagingSenderId: z.string(),
-        appId: z.string(),
-        measurementId: z.string().optional(),
-    }),
-    recaptchaKey: z.string().optional(),
-    RECAPTCHA_SITE_KEY: z.string().optional(),
-});
+import { Dashboard } from "./Dashboard.js";
+import { parseResponse, authenticatedFetch } from "./api-utils.js";
+import { BrandingEngine } from "./components/BrandingEngine.js";
+import { ClientConfig, ClientConfigSchema } from "../shared/types.js";
 
 export class BootstrapManager {
     static async init(dashboard: Dashboard) {
@@ -55,14 +38,15 @@ export class BootstrapManager {
             }
 
             // 2. Validate Configuration with Zod
-            const config = await parseResponse(res, ClientConfigSchema);
+            const config: ClientConfig = await parseResponse(res, ClientConfigSchema);
+            dashboard.state.clientConfig = config;
 
             // 3. Initialize Firebase
             const app = initializeApp(config.firebase);
             this.updateSplashProgress(70);
             dashboard.appCheck = initializeAppCheck(app, {
                 provider: new ReCaptchaEnterpriseProvider(
-                    config.recaptchaKey || config.RECAPTCHA_SITE_KEY || ""
+                    config.recaptchaKey || ""
                 ),
                 isTokenAutoRefreshEnabled: true,
             });
@@ -248,6 +232,9 @@ export class BootstrapManager {
 
         // Particle explosion on click
         splashScreen.addEventListener("click", (e: MouseEvent) => {
+            // Start/Resume audio on first interaction to satisfy autoplay policies
+            dashboard.startHum();
+
             particles.forEach(p => {
                 const dx = p.x - e.clientX;
                 const dy = p.y - e.clientY;

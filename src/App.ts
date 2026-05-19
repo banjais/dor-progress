@@ -1,6 +1,6 @@
-import type { Dashboard } from "./Dashboard";
-import type { HistoryManager } from "./HistoryManager";
-import { t, getProgress } from "./api-utils";
+import type { Dashboard } from "./Dashboard.js";
+import type { HistoryManager } from "./HistoryManager.js";
+import { t, getProgress } from "./api-utils.js";
 import {
   showInChartView,
   showInCardView,
@@ -9,8 +9,8 @@ import {
   shareApp,
   renderMiniChart,
   renderSparkline,
-} from "./utils";
-import { generateClientPDF } from "./pdf-utils";
+} from "./utils.js";
+import { generateClientPDF } from "./pdf-utils.js";
 
 export function initApp(dashboard: Dashboard, historyManager: HistoryManager): Partial<AppGlobalFunctions> {
   const App: Partial<AppGlobalFunctions> = {

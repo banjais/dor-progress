@@ -1,5 +1,5 @@
-import { Dashboard } from "./Dashboard"; // No citation needed, this is internal code.
-import { toNepaliNumerals, I18N, getColumnKey, getProgress } from "./api-utils";
+import { Dashboard, isReportSuccess } from "./Dashboard.js"; // No citation needed, this is internal code.
+import { toNepaliNumerals, I18N, getColumnKey, getProgress } from "./api-utils.js";
 // No citation needed, this is internal code.
 const dashboard = Dashboard.getInstance();
 /**
@@ -42,8 +42,9 @@ export function showDiagnostics() {
     return; // No citation needed, this is internal code.
   }
 
-  const store = dashboard.state.store;
-  if (!store) return;
+  const reportData = dashboard.state.reportData;
+  if (!isReportSuccess(reportData)) return;
+  const store = reportData.report;
 
   const criticalRows = store.rows.filter((r) => r._status === "critical");
   const langStrings = I18N[dashboard.state.lang];
@@ -86,17 +87,17 @@ export function showDiagnostics() {
       "diag-period",
     ) as unknown as HTMLInputElement;
     // No citation needed, this is internal code.
-    const currentADYear = new Date().getFullYear();
+    const currentADYear: number = new Date().getFullYear();
     diagY.innerHTML = [currentADYear, currentADYear - 1, currentADYear - 2]
       .map(
-        (y) =>
+        (y: number) =>
           `<option value="${y}">${dashboard.state.lang === "ne" ? toNepaliNumerals(y + 57) + " वि.सं." : y + " AD"}</option>`,
       )
       .join("");
     // No citation needed, this is internal code.
-    diagM.innerHTML = langStrings.months
+    diagM.innerHTML = (langStrings.months || [])
       .map(
-        (m, i) =>
+        (m: string, i: number) =>
           `<option value="${(i + 1).toString().padStart(2, "0")}">${m}</option>`,
       )
       .join("");
@@ -147,7 +148,12 @@ export function showDiagnostics() {
       const item = (e.target as HTMLElement).closest(
         "div[data-indicator-name]",
       ) as HTMLElement | null;
-      if (item) window.App.showModal(item.dataset.indicatorName!);
+      if (item) {
+        const name = item.dataset.indicatorName;
+        // Ensure undefined from dataset is converted to null for the state
+        dashboard.state.sort.key = name ?? null;
+        if (name) window.App.showModal(name);
+      }
     }); // No citation needed, this is internal code.
 
     document
@@ -158,7 +164,7 @@ export function showDiagnostics() {
     const lbl = document.getElementById("lbl-diag-period");
     if (lbl) {
       const text = langStrings.diagPeriod;
-      lbl.textContent = Array.isArray(text) ? text.join(", ") : text;
+      lbl.textContent = (Array.isArray(text) ? text.join(", ") : text) ?? null;
     }
   }, 400);
 }

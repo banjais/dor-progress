@@ -1,6 +1,6 @@
-import { GoogleGenerativeAI, HarmCategory, HarmBlockThreshold, SchemaType } from "@google/generative-ai";
+import { GoogleGenerativeAI, HarmCategory, HarmBlockThreshold, SchemaType, GenerationConfig, Part } from "@google/generative-ai";
 import { z } from "zod";
-import { AiSummary, AiSummarySchema } from "../shared/types";
+import { AiSummary, AiSummarySchema } from "../shared/types.js";
 import aiPromptsData from "./ai-prompts.json" with { type: "json" };
 
 let aiInstance: GoogleGenerativeAI | null = null;
@@ -27,16 +27,19 @@ export function getAi(apiKey: string) {
   return aiInstance;
 }
 
-async function generateWithFallback(ai: GoogleGenerativeAI, options: any) {
+async function generateWithFallback(ai: GoogleGenerativeAI, options: { parts?: (string | Part)[], prompt?: string, generationConfig?: GenerationConfig }) {
+  const content = options.parts || options.prompt;
+  if (!content) throw new Error("No content provided for AI generation");
+
   let lastError = null;
   for (const modelId of FALLBACK_MODELS) {
     try {
       const model = ai.getGenerativeModel({
         model: modelId,
         generationConfig: options.generationConfig,
-        safetySettings: STRICT_SAFETY_SETTINGS.safetySettings,
+        safetySettings: STRICT_SAFETY_SETTINGS.safetySettings as any,
       });
-      const result = await model.generateContent(options.parts || options.prompt);
+      const result = await model.generateContent(content);
       const text = result.response.text();
       if (!text) throw new Error("Empty response");
       return { text };
@@ -112,7 +115,7 @@ function generateSchemaInstructions(schema: any, path = ""): string {
 const summaryResponseSchema = zodToGeminiSchema(AiSummarySchema);
 summaryResponseSchema.description = "Structure for project progress summary and data extraction";
 
-export async function runProjectSummary(apiKey: string, input: any): Promise<AiSummary> {
+export async function runProjectSummary(apiKey: string, input: { rows?: any[], lang?: string, mainSheet?: any, pdfBase64?: string }): Promise<AiSummary> {
   const ai = getAi(apiKey);
   if (!ai) throw new Error("AI not initialized");
 

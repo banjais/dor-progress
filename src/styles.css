@@ -1943,12 +1943,37 @@ tr {
     display: none !important;
   }
 
+  body.print-memo-only #print-header {
+    display: flex !important;
+    border-bottom: 2pt solid var(--primary);
+  }
+
   body.print-memo-only #ai-brief-card {
     display: block !important;
     border: none !important;
     box-shadow: none !important;
     padding: 0 !important;
     margin: 0 !important;
+  }
+
+  body.print-memo-only #ai-brief-card::before {
+    content: "Verified by AI";
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%) rotate(-45deg);
+    font-size: 3em;
+    /* Adjust size as needed */
+    color: rgba(0, 0, 0, 0.08);
+    /* Very light gray, almost transparent */
+    z-index: -1;
+    /* Place it behind the text */
+    white-space: nowrap;
+    pointer-events: none;
+    /* Ensure it doesn't interfere with text selection */
+    font-weight: 900;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
   }
 
   body {
@@ -1988,6 +2013,28 @@ tr {
     text-align: center;
   }
 
+  /* Styles for the Copy AI Brief button */
+  .copy-brief-btn {
+    background: var(--primary);
+    color: white;
+    border: none;
+    padding: 8px 12px;
+    border-radius: 8px;
+    cursor: pointer;
+    font-size: 0.8rem;
+  }
+
+  #print-header::before {
+    content: "";
+    width: 60px;
+    height: 60px;
+    background-image: url("/icons/logo.png");
+    background-size: contain;
+    background-repeat: no-repeat;
+    background-position: center;
+    margin-right: 20px;
+  }
+
   #print-header .header-text {
     flex-grow: 1;
     display: flex;
@@ -2024,11 +2071,53 @@ tr {
     padding-top: 8px;
   }
 
-  #print-sig-container {
+  /* Digital Signature & Timestamp */
+  #print-signature-container {
     display: none;
-    /* Controlled via JS during Audit Export */
+    margin-top: 20mm;
+    page-break-inside: avoid;
+  }
+
+  body.show-digital-signature #print-signature-container {
+    display: block !important;
+  }
+
+  .signature-block {
+    margin-left: auto;
+    width: 200px;
+    text-align: center;
+  }
+
+  .signature-line {
+    border-bottom: 1px solid #000;
+    margin-bottom: 5px;
+    height: 12mm;
+  }
+
+  .signature-seal {
+    width: 70px;
+    /* Adjust size as needed */
+    height: 70px;
+    /* Adjust size as needed */
+    margin: 0 auto 10px auto;
+    /* Center it and add some space below */
+    display: block;
+    /* Ensure it takes its own line */
+  }
+
+  .signature-qr {
+    width: 50px;
+    height: 50px;
+    margin: 10px auto;
+    display: block;
+  }
+
+  .signature-timestamp {
+    font-size: 7pt;
+    font-style: italic;
+    opacity: 0.7;
+    margin-top: 10px;
     text-align: right;
-    margin-bottom: 5mm;
   }
 
   #print-footer a {

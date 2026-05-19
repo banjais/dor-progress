@@ -1,6 +1,7 @@
-import { runProjectSummary } from "./ai-service";
+import { runProjectSummary } from "./ai-service.js";
 import { jwtVerify, createRemoteJWKSet } from "jose";
 import { z } from "zod";
+import type { KVNamespaceListKey } from "@cloudflare/workers-types"; // Explicitly import for type safety
 import {
   Env,
   AiSummary,
@@ -8,7 +9,8 @@ import {
   ProjectReport,
   ProjectReportSchema,
   SnapshotRequestSchema,
-} from "../shared/types";
+  ArchiveMetadata,
+} from "../shared/types.js";
 
 class ServiceError extends Error {
   status: number;
@@ -40,7 +42,7 @@ const getCorsHeaders = (origin: string | null) => {
     "X-Content-Type-Options": "nosniff",
     "Content-Security-Policy": [
       "default-src 'self';",
-      "connect-src 'self' https://fonts.googleapis.com https://*.googleapis.com https://*.gstatic.com https://unpkg.com https://api.qrserver.com https://api.elevenlabs.io https://*.firebaseapp.com https://*.web.app http://localhost:*;",
+      "connect-src 'self' https://fonts.googleapis.com https://*.googleapis.com https://*.gstatic.com https://unpkg.com https://api.qrserver.com https://*.firebaseapp.com https://*.web.app http://localhost:*;",
       "font-src 'self' data: https://fonts.gstatic.com https://fonts.googleapis.com;",
       "img-src 'self' data: https://api.qrserver.com https://*.googleusercontent.com;",
       "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://unpkg.com;",
@@ -50,7 +52,7 @@ const getCorsHeaders = (origin: string | null) => {
   };
 };
 
-function jsonResponse(data: any, status = 200, origin: string | null = null): Response {
+function jsonResponse(data: unknown, status = 200, origin: string | null = null): Response {
   return new Response(JSON.stringify(data), {
     status,
     headers: getCorsHeaders(origin),
@@ -60,10 +62,10 @@ function jsonResponse(data: any, status = 200, origin: string | null = null): Re
 function logErrorChain(err: unknown): void {
   const error = err instanceof Error ? err : new Error(String(err));
   console.error(`[Error Hierarchy] ${error.name}: ${error.message}`);
-  let cause = (error as any).cause;
+  let cause = (error as Error & { cause?: unknown }).cause;
   while (cause instanceof Error) {
     console.error(`  ↳ [Cause] ${cause.name}: ${cause.message}`);
-    cause = (cause as any).cause;
+    cause = (cause as Error & { cause?: unknown }).cause;
   }
 }
 
@@ -140,13 +142,6 @@ const ReportRequestSchema = z.object({
   isLowData: z.boolean().default(false),
 });
 
-// Schema for /api/tts parameters
-const TTSRequestSchema = z.object({
-  text: z.string().min(1).max(1000),
-  lang: z.enum(["en", "ne"]).default("en"),
-  quality: z.enum(["standard", "premium"]).default("standard"),
-});
-
 const handler: ExportedHandler<Env> = { // No citation needed, this is internal code.
   async fetch(request, env, ctx) {
     const origin = request.headers.get("Origin");
@@ -177,36 +172,39 @@ const handler: ExportedHandler<Env> = { // No citation needed, this is internal 
           appId:
             env.FIREBASE_APP_ID ||
             `1:${env.FIREBASE_PROJECT_NUMBER}:web:dynamic`,
-          measurementId: env.FIREBASE_MEASUREMENT_ID, // No citation needed, this is internal code.
+          measurementId: env.FIREBASE_MEASUREMENT_ID,
         },
         recaptchaKey: env.RECAPTCHA_SITE_KEY,
+        digitalSignatureEnabled: env.DIGITAL_SIGNATURE === "true",
       }, 200, origin);
     }
 
     if (url.pathname === "/api/reports") {
       try {
         await verifyAppCheck(request, env);
-        const list = await env.REPORTS_KV.list({
+        const list = await env.REPORTS_KV.list<ArchiveMetadata>({
           prefix: "report:",
           limit: 50,
         });
-        const archives = list.keys // No citation needed, this is internal code.
-          .map((k: any) => {
-            const metadata = (k.metadata || {}) as ProjectReport;
+        const archives: ArchiveMetadata[] = list.keys.map(
+          (k: KVNamespaceListKey<ArchiveMetadata>) => {
+            const metadata = k.metadata;
             return {
               date: k.name.replace("report:", ""),
-              summary: metadata.aiSummary?.brief || "Weekly progress snapshot.",
-              created: metadata.created || "",
+              summary: metadata?.summary || "Weekly progress snapshot.",
+              created: metadata?.created || "",
+              bsDate: metadata?.bsDate,
+              recordCount: metadata?.recordCount ?? 0
             };
-          }) // No citation needed, this is internal code.
-          .sort((a: any, b: any) => b.date.localeCompare(a.date));
+          },
+        ).sort((a: ArchiveMetadata, b: ArchiveMetadata) => b.date.localeCompare(a.date));
 
         return jsonResponse(archives, 200, origin);
-      } catch (err: any) {
+      } catch (err) {
         logErrorChain(err);
         return jsonResponse(
-          { error: err.message || "Failed to fetch archives list" },
-          err.status || 500,
+          { error: (err as Error).message || "Failed to fetch archives list" },
+          (err as ServiceError).status || 500,
           origin
         );
       }
@@ -263,6 +261,8 @@ const handler: ExportedHandler<Env> = { // No citation needed, this is internal 
             rows: [],
             lastUpdate: new Date().toISOString().split("T")[0],
             aiSummary: null,
+            created: new Date().toISOString(),
+            adminMessage: undefined,
           }; // No citation needed, this is internal code.
         }
 
@@ -317,63 +317,13 @@ const handler: ExportedHandler<Env> = { // No citation needed, this is internal 
         }
 
         return jsonResponse(report, 200, origin);
-      } catch (err: any) {
+      } catch (err) {
         logErrorChain(err);
         return jsonResponse(
-          { error: err.message || "Internal Server Error" },
-          err.status || 500,
+          { error: (err as Error).message || "Internal Server Error" },
+          (err as ServiceError).status || 500,
           origin
         ); // No citation needed, this is internal code.
-      }
-    }
-
-    if (url.pathname === "/api/tts") {
-      try {
-        await verifyAppCheck(request, env);
-
-        const validation = TTSRequestSchema.safeParse({
-          text: url.searchParams.get("text"),
-          lang: url.searchParams.get("lang") || "en",
-          quality: url.searchParams.get("quality") || "standard",
-        });
-
-        if (!validation.success) {
-          return jsonResponse({ error: "Invalid TTS request" }, 400, origin); // No citation needed, this is internal code.
-        }
-
-        const { text } = validation.data;
-
-        if (!env.ELEVENLABS_API_KEY) {
-          throw new Error("ElevenLabs API key is not configured");
-        }
-
-        // Example ElevenLabs Voice ID (Pre-recorded or cloned)
-        const voiceId = "21m00Tcm4TlvDq8ikWAM";
-        const ttsUrl = `https://api.elevenlabs.io/v1/text-to-speech/${voiceId}`;
-
-        const ttsResponse = await fetch(ttsUrl, {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            "xi-api-key": env.ELEVENLABS_API_KEY
-          }, // No citation needed, this is internal code.
-          body: JSON.stringify({
-            text: text,
-            model_id: "eleven_multilingual_v2",
-            voice_settings: { stability: 0.5, similarity_boost: 0.5 }
-          })
-        });
-
-        if (!ttsResponse.ok) throw new Error("TTS Service Unavailable"); // No citation needed, this is internal code.
-
-        return new Response(ttsResponse.body, {
-          headers: {
-            ...getCorsHeaders(origin),
-            "Content-Type": "audio/mpeg",
-          },
-        });
-      } catch (err: any) {
-        return jsonResponse({ error: err.message }, 500, origin);
       }
     }
 
@@ -386,8 +336,10 @@ const handler: ExportedHandler<Env> = { // No citation needed, this is internal 
         if (!year || !month) throw new Error("Year and month are required");
 
         const prefix = `report:${year}-${month}`;
-        const list = await env.REPORTS_KV.list({ prefix, limit: 10 });
-
+        const list = await env.REPORTS_KV.list<ArchiveMetadata>({
+          prefix,
+          limit: 10,
+        });
         if (list.keys.length === 0) {
           return jsonResponse(
             { error: `No snapshots found for ${year}-${month}.` },
@@ -396,13 +348,14 @@ const handler: ExportedHandler<Env> = { // No citation needed, this is internal 
         }
 
         // Get the latest snapshot in that month
-        const latestKey = list.keys.sort((a: any, b: any) =>
-          b.name.localeCompare(a.name),
+        const latestKey = list.keys.sort(
+          (a: KVNamespaceListKey<ArchiveMetadata>, b: KVNamespaceListKey<ArchiveMetadata>) =>
+            b.name.localeCompare(a.name),
         )[0].name;
         const report = await env.REPORTS_KV.get(latestKey, { type: "json" });
         return jsonResponse(report, 200, origin);
-      } catch (err: any) {
-        return jsonResponse({ error: err.message }, err.status || 500, origin);
+      } catch (err) {
+        return jsonResponse({ error: (err as Error).message }, (err as ServiceError).status || 500, origin);
       }
     }
 
@@ -445,7 +398,11 @@ const handler: ExportedHandler<Env> = { // No citation needed, this is internal 
 
           await env.REPORTS_KV.put(`report:${date}`, JSON.stringify(report), {
             metadata: {
+              date,
               recordCount: body.meta.total,
+              // Truncate the AI summary brief to ensure it fits within KV metadata limits (1024 bytes)
+              // The full brief is available when the report is fetched.
+              summary: report.aiSummary?.brief ? report.aiSummary.brief.substring(0, 200) : undefined,
               created: new Date().toISOString(),
             }, // No citation needed, this is internal code.
           });
@@ -458,8 +415,72 @@ const handler: ExportedHandler<Env> = { // No citation needed, this is internal 
           await env.REPORTS_KV.delete(`report:${date}`); // No citation needed, this is internal code.
           return jsonResponse({ success: true }, 200, origin);
         }
-      } catch (err: any) {
-        return jsonResponse({ error: err.message }, 500, origin);
+      } catch (err) {
+        return jsonResponse({ error: (err as Error).message }, 500, origin);
+      }
+    }
+
+    if (url.pathname === "/api/admin/migrate-metadata") {
+      try {
+        const snapshotKey = request.headers.get("X-Snapshot-Key");
+        if (!snapshotKey || snapshotKey !== env.SNAPSHOT_KEY) {
+          return jsonResponse({ error: "Unauthorized" }, 401, origin);
+        }
+
+        const dryRun = url.searchParams.get("dryRun") === "true";
+        const list = await env.REPORTS_KV.list<ArchiveMetadata>({ prefix: "report:", limit: 1000 }); // Increased limit for comprehensive dry-run
+        const results = { total: list.keys.length, migrated: 0, skipped: 0, dryRun, migratedKeys: [] as string[], errors: [] as string[] };
+
+        for (const key of list.keys) {
+          try {
+            const currentMetadata = key.metadata;
+            const dateFromKey = key.name.replace("report:", "");
+
+            // Check if it already matches the new required schema
+            if (currentMetadata?.date && typeof currentMetadata?.recordCount === "number") {
+              results.skipped++;
+              continue;
+            }
+
+            // If recordCount is missing, we may need to fetch the value once to get the count
+            let recordCount = currentMetadata?.recordCount ?? 0;
+            if (recordCount === 0) {
+              const val = await env.REPORTS_KV.get<ProjectReport>(key.name, { type: "json" });
+              recordCount = val?.rows?.length ?? 0;
+            }
+
+            const updatedMetadata: ArchiveMetadata = {
+              date: currentMetadata?.date || dateFromKey,
+              recordCount: recordCount,
+              summary: currentMetadata?.summary || "Weekly progress snapshot.",
+              created: currentMetadata?.created || new Date().toISOString(),
+              bsDate: currentMetadata?.bsDate,
+            };
+
+            // Use the 'put' method without changing the value to update metadata
+            // We fetch the value to ensure we aren't overwriting with null
+            const value = await env.REPORTS_KV.get(key.name);
+            if (value) {
+              if (!dryRun) {
+                await env.REPORTS_KV.put(key.name, value, {
+                  metadata: updatedMetadata
+                });
+              }
+              results.migrated++;
+              results.migratedKeys.push(key.name);
+            }
+          } catch (itemErr) {
+            results.errors.push(`Key ${key.name}: ${(itemErr as Error).message}`);
+          }
+        }
+
+        return jsonResponse({ message: "Migration Complete", results }, 200, origin);
+      } catch (err) {
+        return jsonResponse(
+          { error: (err as Error).message || "Migration Failed" },
+          500,
+          origin
+        );
       }
     }
 
@@ -520,7 +541,11 @@ async function handleAutoArchive(env: Env) {
     // Store snapshot in REPORTS_KV
     await env.REPORTS_KV.put(`report:${reportDate}`, JSON.stringify(report), {
       metadata: {
+        date: reportDate,
         recordCount: report.rows.length,
+        // Truncate the AI summary brief to ensure it fits within KV metadata limits (1024 bytes)
+        // The full brief is available when the report is fetched.
+        summary: report.aiSummary?.brief ? report.aiSummary.brief.substring(0, 200) : undefined,
         created: new Date().toISOString(),
       }, // No citation needed, this is internal code.
     });

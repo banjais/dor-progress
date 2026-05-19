@@ -1,7 +1,7 @@
-import { Dashboard, DashboardState } from "./Dashboard";
-import { getProgress, t, toNepaliNumerals, toArabicNumerals, getColumnKey } from "./api-utils";
-import { renderMiniChart, renderSparkline } from "./utils"; // Import I18N directly
-import { ProjectReport } from "../shared/types";
+import { Dashboard, DashboardState } from "./Dashboard.js";
+import { getProgress, t, toNepaliNumerals, toArabicNumerals, getColumnKey } from "./api-utils.js";
+import { renderMiniChart, renderSparkline } from "./utils.js"; // Import I18N directly
+import { ProjectReport, ProjectRow } from "../shared/types.js";
 
 /**
  * Core render function that updates the UI based on the project state.
@@ -25,7 +25,7 @@ export function render(state: DashboardState) {
   const banner = document.getElementById("admin-banner") as HTMLElement;
   if (currentReport?.adminMessage) {
     const adminTxt = document.getElementById("admin-message-text");
-    if (adminTxt) adminTxt.textContent = currentReport.adminMessage;
+    if (adminTxt) adminTxt.textContent = currentReport.adminMessage ?? null;
     if (banner) banner.style.display = "block";
   } else if (banner) {
     banner.style.display = "none";
@@ -33,7 +33,7 @@ export function render(state: DashboardState) {
 
   // 1. Filter Logic
   if (dashboard.state.search && dashboard.state.search !== "verify") {
-    rows = rows.filter((r: any) =>
+    rows = rows.filter((r: ProjectRow) =>
       Object.values(r).some(
         (v) =>
           (typeof v === "string" || typeof v === "number" || typeof v === "boolean") &&
@@ -76,7 +76,7 @@ export function render(state: DashboardState) {
   else if (state.view === "cumulative") renderCumulativeView(headers, rows, highlightRegex);
 }
 
-function renderSystemStats(json: ProjectReport, rows: any[]) {
+function renderSystemStats(json: ProjectReport, rows: ProjectRow[]) {
   const dashboard = Dashboard.getInstance();
   const total = rows.length;
   const good = rows.filter((r) => r._status === "good").length;
@@ -107,7 +107,7 @@ function renderSystemStats(json: ProjectReport, rows: any[]) {
     if (updateEl) updateEl.innerText = `${t("update")} ${isNe ? toNepaliNumerals(json.lastUpdate) : `${json.lastUpdate} BS`}`;
   }
 }
-function renderTableView(headers: string[], rows: any[], highlightRegex: RegExp | null) {
+function renderTableView(headers: string[], rows: ProjectRow[], highlightRegex: RegExp | null) {
   const dashboard = Dashboard.getInstance();
   let thead = `<tr><th></th>`;
   headers.forEach((h) => {
@@ -118,7 +118,7 @@ function renderTableView(headers: string[], rows: any[], highlightRegex: RegExp 
   if (theadEl) theadEl.innerHTML = thead;
 
   let tbody = "";
-  rows.forEach((r: any) => {
+  rows.forEach((r: ProjectRow) => {
     const name = r[headers[0]] || "";
     const annualPerc = getProgress(r, headers);
     tbody += `<tr data-indicator-name="${name.replace(/"/g, "&quot;")}" class="fade-in">`;
@@ -141,7 +141,7 @@ function renderTableView(headers: string[], rows: any[], highlightRegex: RegExp 
  * Renders the dedicated Cumulative Report section.
  * This provides a formal, branded presentation distinct from the interactive table.
  */
-function renderCumulativeView(headers: string[], rows: any[], highlightRegex: RegExp | null) {
+function renderCumulativeView(headers: string[], rows: ProjectRow[], highlightRegex: RegExp | null) {
   const container = document.getElementById("view-cumulative");
   if (!container) return;
 
@@ -169,7 +169,7 @@ function renderCumulativeView(headers: string[], rows: any[], highlightRegex: Re
             </tr>
           </thead>
           <tbody>
-            ${rows.map(r => {
+            ${rows.map((r: ProjectRow) => {
     const annualPerc = getProgress(r, headers);
     return `
                 <tr class="cumulative-row" style="background:var(--surface); border-radius:12px; transition:transform 0.2s;">
@@ -194,11 +194,11 @@ function renderCumulativeView(headers: string[], rows: any[], highlightRegex: Re
   `;
 }
 
-function renderCardView(headers: string[], rows: any[]) {
+function renderCardView(headers: string[], rows: ProjectRow[]) {
   const indicatorKey = getColumnKey(headers, "indicator");
 
   let cardHtml = "";
-  rows.forEach((r: any) => {
+  rows.forEach((r: ProjectRow) => {
     const name = indicatorKey ? r[indicatorKey] || "" : "";
     const annPerc = getProgress(r, headers);
     cardHtml += `<div class="data-card" data-indicator="${name.replace(/"/g, "&quot;")}">
@@ -212,12 +212,12 @@ function renderCardView(headers: string[], rows: any[]) {
   if (cardContainer) cardContainer.innerHTML = cardHtml;
 }
 
-function renderChartView(headers: string[], rows: any[]) {
+function renderChartView(headers: string[], rows: ProjectRow[]) {
   const indicatorKey = getColumnKey(headers, "indicator");
 
   let chartHtml = "";
-  rows.forEach((r: any) => {
-    const prog = getProgress(r, headers);
+  rows.forEach((r: ProjectRow) => {
+    const prog = getProgress(r, headers as any);
     const name = indicatorKey ? r[indicatorKey] || "" : "";
 
     chartHtml += `<div class="chart-card" data-indicator="${name.replace(/"/g, "&quot;")}">
@@ -229,13 +229,13 @@ function renderChartView(headers: string[], rows: any[]) {
   if (chartContainer) chartContainer.innerHTML = chartHtml;
 }
 
-function runDataAudit(_json: ProjectReport, rows: any[], headers: string[]) {
+function runDataAudit(_json: ProjectReport, rows: ProjectRow[], headers: string[]) {
   const indicatorKey = getColumnKey(headers, "indicator");
 
   console.group("Data Integrity Audit");
-  const audit = rows.map((r) => ({
+  const audit = rows.map((r: ProjectRow) => ({
     Indicator: indicatorKey ? r[indicatorKey] : "N/A",
-    "Annual %": getProgress(r, headers) + "%",
+    "Annual %": getProgress(r, headers as any) + "%",
   }));
   console.table(audit);
   console.groupEnd();

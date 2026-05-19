@@ -1,4 +1,4 @@
-import { Dashboard } from "./Dashboard";
+import { Dashboard } from "./Dashboard.js";
 
 export class ThemeManager {
     private dashboard: Dashboard;

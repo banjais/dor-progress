@@ -1,7 +1,7 @@
 /// <reference lib="dom" />
 
-import { AudioEngine } from "./components/AudioEngine";
-import { Dashboard } from "./Dashboard"; // For accessing dashboard.state.lang and t()
+import { AudioEngine } from "./components/AudioEngine.js";
+import { Dashboard } from "./Dashboard.js"; // For accessing dashboard.state.lang and t()
 
 export class ToastManager {
     private audio: AudioEngine;

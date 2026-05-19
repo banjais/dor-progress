@@ -1,5 +1,5 @@
-import { Dashboard } from "./Dashboard";
-import { typeText, t } from "./api-utils";
+import { Dashboard } from "./Dashboard.js";
+import { t } from "./api-utils.js";
 // No citation needed, this is internal code.
 /**
  * Manages the AI Intent Sensing (Mind-Reading Effect) UI.
@@ -33,7 +33,7 @@ export class AuraManager {
         if (kpi) {
             const title = kpi.innerText.toLowerCase();
             if (title.includes("attention") || title.includes("ध्यान")) {
-                typeText(auraText, t("auraAnalyzing"));
+                this.dashboard.typeText(auraText, t("auraAnalyzing"), true);
                 if (!auraHalo.classList.contains("critical"))
                     this.dashboard.playUi("alert");
                 auraGlow.classList.add("pulsing");
@@ -54,10 +54,10 @@ export class AuraManager {
                 if (!this.intentTimer)
                     this.intentTimer = window.setTimeout(() => {
                         this.dashboard.handleSearch("critical");
-                        typeText(auraText, t("auraIsolated"));
+                        this.dashboard.typeText(auraText, t("auraIsolated"), true);
                     }, 1000);
             } else if (title.includes("met") || title.includes("पूरा")) {
-                typeText(auraText, t("auraTracing"));
+                this.dashboard.typeText(auraText, t("auraTracing"), true);
                 auraGlow.classList.remove("pulsing");
                 auraHalo.classList.remove("critical");
                 if (auraText) auraText.classList.remove("glitch");
@@ -65,14 +65,14 @@ export class AuraManager {
                 if (!this.intentTimer)
                     this.intentTimer = window.setTimeout(() => {
                         this.dashboard.handleSearch("good");
-                        typeText(auraText, t("auraFiltered"));
+                        this.dashboard.typeText(auraText, t("auraFiltered"), true);
                     }, 1000);
             }
         } else {
             if (auraGlow) auraGlow.classList.remove("pulsing");
             if (auraHalo) auraHalo.classList.remove("critical");
             if (auraText) {
-                typeText(auraText, t("auraText"));
+                this.dashboard.typeText(auraText, t("auraText"), true);
                 auraText.classList.remove("glitch");
             }
             if (auraHalo) (auraHalo as HTMLElement).style.setProperty("--halo-scale", "1");

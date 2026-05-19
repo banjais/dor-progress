@@ -1,20 +1,30 @@
-import { AudioEngine } from "./components/AudioEngine";
-import { ProjectReport, ProjectReportSchema } from "../shared/types";
-import { SpeechEngine } from "./components/SpeechEngine";
-import { ThemeManager } from "./ThemeManager";
-import { LoadingIndicatorManager } from "./LoadingIndicatorManager";
-import { ToastManager } from "./ToastManager";
-import { TimerManager } from "./TimerManager";
-import { TelemetryManager } from "./TelemetryManager";
+import { AudioEngine } from "./components/AudioEngine.js";
+import { ProjectReport, ProjectReportSchema, ClientConfig } from "../shared/types.js";
+import { ThemeManager } from "./ThemeManager.js";
+import { LoadingIndicatorManager } from "./LoadingIndicatorManager.js";
+import { ToastManager } from "./ToastManager.js";
+import { TimerManager } from "./TimerManager.js";
+import { TelemetryManager } from "./TelemetryManager.js";
 import { AppCheck } from "firebase/app-check";
-import { t, authenticatedFetch, typeText, parseResponse, clearTranslationCache } from "./api-utils";
+import { t, authenticatedFetch, typeText, parseResponse, clearTranslationCache } from "./api-utils.js";
+
+export type ReportState =
+  | { type: 'idle' }
+  | { type: 'loading' }
+  | { type: 'success'; report: ProjectReport }
+  | { type: 'error'; message: string };
+
+export const isReportSuccess = (s: ReportState): s is { type: 'success'; report: ProjectReport } => s.type === 'success';
+export const isReportLoading = (s: ReportState): s is { type: 'loading' } => s.type === 'loading';
+export const isReportError = (s: ReportState): s is { type: 'error'; message: string } => s.type === 'error';
+export const isReportIdle = (s: ReportState): s is { type: 'idle' } => s.type === 'idle';
 
 export interface DashboardState {
   lang: string;
   view: string;
   search: string;
   sort: { key: string | null; dir: number };
-  store: ProjectReport | null;
+  reportData: ReportState;
   riskLevel: number;
   uiVolume: number;
   diffMode: boolean;
@@ -23,6 +33,8 @@ export interface DashboardState {
   history: { value: number }[];
   dynamicCache: Record<string, string>;
   cumulativeReport: ProjectReport | null; // New property for cumulative reports
+  store: ProjectReport | null; // Holds the currently active report data
+  clientConfig: ClientConfig | null; // Stores system-wide feature flags
 }
 
 export type StateListener<T = any> = (val: T) => void;
@@ -30,7 +42,6 @@ export type StateListener<T = any> = (val: T) => void;
 export class Dashboard {
   private static _instance: Dashboard | null = null;
   private audio!: AudioEngine;
-  private speech!: SpeechEngine;
   private theme!: ThemeManager;
   private loading!: LoadingIndicatorManager;
   private toast!: ToastManager;
@@ -59,7 +70,6 @@ export class Dashboard {
     Dashboard._instance = this;
 
     this.audio = new AudioEngine();
-    this.speech = new SpeechEngine(this.audio, this);
     this.theme = new ThemeManager(this);
     this.loading = new LoadingIndicatorManager();
     this.toast = new ToastManager(this.audio, this);
@@ -70,7 +80,7 @@ export class Dashboard {
       view: "cards",
       search: "",
       sort: { key: null, dir: 1 },
-      store: null,
+      reportData: { type: 'idle' } as ReportState,
       riskLevel: 0,
       uiVolume: parseFloat(localStorage.getItem("ui-volume") || "0.5"),
       diffMode: false,
@@ -79,6 +89,8 @@ export class Dashboard {
       history: [],
       dynamicCache: JSON.parse(localStorage.getItem("dynamicTranslations") || "{}"),
       cumulativeReport: null, // Initialize cumulative report state
+      store: null, // Initialize store
+      clientConfig: null,
     };
     this.state = this.makeReactive(initialState);
     this.timer = new TimerManager(this);
@@ -117,8 +129,13 @@ export class Dashboard {
   addToast = (type: "success" | "info" | "error", message: string, duration = 4000) => this.toast.addToast(type, message, duration);
 
   // Facade methods for encapsulated managers
-  playUi(sound: string) { this.audio.playUi(sound); }
-  toggleSpeech(container: HTMLElement) { this.speech.toggle(container); }
+  /**
+   * Plays a UI sound effect.
+   * @param useVariation If true, applies random pitch shifting (useful for typing effects).
+   */
+  playUi(sound: string, useVariation = false, pitch?: number) {
+    this.audio.playUi(sound, useVariation, pitch);
+  }
 
   // Hum synth controls
   startHum() { void this.audio.startHum(); }
@@ -169,7 +186,7 @@ export class Dashboard {
     this.showLoading();
 
     // Reset store to null to trigger skeleton screens
-    this.state.store = null;
+    this.state.reportData = { type: 'loading' };
 
     try {
       const endpoint = `/api/report?lang=${this.state.lang}${isForced ? "&force=true" : ""}`;
@@ -191,7 +208,7 @@ export class Dashboard {
         if (res.headers.get("X-Force-Throttled") === "true")
           this.addToast("info", this.t("forceThrottled"));
 
-        this.state.store = json;
+        this.state.reportData = { type: 'success', report: json };
         if (json.lastUpdate) {
           void this.onUpdateCheck?.();
         }
@@ -199,7 +216,9 @@ export class Dashboard {
       }
     } catch (err) {
       console.error("Error loading data:", err);
-      this.addToast("error", this.t("offline"));
+      const errorMsg = err instanceof Error ? err.message : this.t("offline");
+      this.state.reportData = { type: 'error', message: errorMsg };
+      this.addToast("error", errorMsg);
       this.hideLoading(false);
     } finally {
       this.setSyncing(false);
@@ -222,9 +241,9 @@ export class Dashboard {
   ): () => void {
     const lastValue = selector(this.state);
     const sub = { selector, listener, lastValue, isEqual };
-    this.subscriptions.add(sub);
+    this.subscriptions.add(sub as any);
     listener(lastValue);
-    return () => this.subscriptions.delete(sub);
+    return () => this.subscriptions.delete(sub as any);
   }
 
   /**
@@ -255,7 +274,7 @@ export class Dashboard {
 
     // Only trigger a fresh load if the language actually changed
     // and data isn't already being loaded by the BootstrapManager.
-    if (prevLang !== l && this.state.store) {
+    if (prevLang !== l && this.state.reportData.type === 'success') {
       void this.loadData();
     }
   }
@@ -326,8 +345,13 @@ export class Dashboard {
     this.onSearch?.(term);
   }
 
-  typeText(element: HTMLElement, text: string, useSound = false, isError = false) {
-    typeText(element, text, useSound ? (p?: number) => this.audio.playUi("type", true, p) : undefined, isError);
+  /**
+   * Triggers a high-performance typing effect on a DOM element.
+   * Uses 'any' for the element to support internal property injection (_timer) 
+   * defined in api-utils.
+   */
+  typeText(element: any, text: string, useSound = false, isError = false) {
+    typeText(element, text, useSound ? (p?: number) => this.playUi("type", true, p) : undefined, isError);
   }
 
   /**
@@ -346,15 +370,7 @@ export class Dashboard {
    * Centralized Audio Fetcher for AI Briefing.
    */
   async fetchAiBriefBlob() {
-    const text =
-      (document.getElementById("ai-brief-text") as HTMLElement)?.innerText || "";
-    if (!text) return null;
-    const isPremium = localStorage.getItem("premium-tts") === "true";
-    const res = await authenticatedFetch(
-      `/api/tts?lang=${this.state.lang}&quality=${isPremium ? "premium" : "standard"}&text=${encodeURIComponent(text)}`,
-    );
-    if (!res.ok) throw new Error();
-    return await res.blob();
+    return null;
   }
 
   private attachGlobalEvents() {
@@ -377,7 +393,10 @@ export class Dashboard {
    * Returns a human-readable string representing the time elapsed since the last data fetch.
    */
   getRelativeTimeString(): string {
-    const lastFetch = this.state.lastFetchTime;
+    // We can now derive the last update directly from the success state if we wanted to
+    const lastFetch = this.state.reportData.type === 'success'
+      ? this.state.lastFetchTime
+      : null;
     if (!lastFetch) return this.t("never");
 
     const diff = Date.now() - lastFetch;

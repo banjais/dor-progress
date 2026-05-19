@@ -1,6 +1,6 @@
-import { Dashboard, DashboardState } from "./Dashboard";
-import { getColumnKey } from "./api-utils";
-import { ProjectReport } from "../shared/types";
+import { Dashboard, DashboardState } from "./Dashboard.js";
+import { getColumnKey } from "./api-utils.js";
+import { ProjectReport, ProjectRow } from "../shared/types.js";
 
 // No citation needed, this is internal code.
 export class SearchManager {
@@ -15,7 +15,7 @@ export class SearchManager {
     private initReactivity() {
         // Automatically update UI elements whenever relevant state changes
         this.dashboard.subscribe(
-            ({ search, store }) => {
+            ({ search, store }: { search: string, store: ProjectReport | null }) => {
                 const clearBtn = document.getElementById("clear-search");
                 if (clearBtn) clearBtn.style.display = search ? "block" : "none";
 
@@ -39,12 +39,12 @@ export class SearchManager {
 
         const indicatorKey = getColumnKey(store.headers, "indicator") || store.headers[0];
         const searchTerm = search.toLowerCase();
-        const matches = store.rows
-            .map((r) => String(r[indicatorKey] || ""))
-            .filter((v) => v.toLowerCase().includes(searchTerm))
+        const matches: string[] = store.rows
+            .map((r: ProjectRow) => String(r[indicatorKey] || ""))
+            .filter((v: string) => v.toLowerCase().includes(searchTerm))
             .slice(0, 10);
 
-        dl.innerHTML = [...new Set(matches)]
+        dl.innerHTML = Array.from(new Set(matches))
             .map((m: string) => `<option value="${m.replace(/"/g, '&quot;')}">`)
             .join("");
     }

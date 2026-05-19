@@ -1,14 +1,17 @@
-import { Dashboard } from "./Dashboard";
+import { z } from "zod";
+import { Dashboard } from "./Dashboard.js";
 import {
     authenticatedFetch,
+    parseResponse,
     t,
     toNepaliNumerals,
     I18N,
-} from "./api-utils";
+} from "./api-utils.js";
+import { ProjectReport, ProjectReportSchema, ArchiveMetadata, ArchiveMetadataSchema } from "../shared/types.js";
 
 export class HistoryManager { // No citation needed, this is internal code.
     private dashboard: Dashboard;
-    private weeklyArchives: any[] = [];
+    private weeklyArchives = [] as ArchiveMetadata[];
 
     constructor(dashboard: Dashboard) {
         this.dashboard = dashboard;
@@ -51,7 +54,7 @@ export class HistoryManager { // No citation needed, this is internal code.
     private async fetchWeeklyHistory() {
         const res = await authenticatedFetch(`/api/reports`);
         if (!res.ok) return;
-        this.weeklyArchives = await res.json();
+        this.weeklyArchives = await parseResponse(res, z.array(ArchiveMetadataSchema));
 
         const histBtn = document.getElementById("hist-btn");
         if (this.weeklyArchives.length < 2) {
@@ -61,7 +64,7 @@ export class HistoryManager { // No citation needed, this is internal code.
         }
 
         const html = this.weeklyArchives
-            .map((h: any) => `
+            .map((h: { date: string, bsDate?: string, recordCount: number, summary?: string }) => `
                 <div class="chart-card archive-item" style="display:flex; flex-direction:column; justify-content:space-between">
                   <div style="display:flex; justify-content:space-between; align-items:start; margin-bottom:10px">
                     <div>
@@ -102,14 +105,14 @@ export class HistoryManager { // No citation needed, this is internal code.
         const period = `${year}-${month}`;
 
         try {
-            const res = await authenticatedFetch(
-                `${WORKER_BASE}/api/summary?type=${type}&year=${year}&month=${month}&lang=${this.dashboard.state.lang}`,
+            const res: Response = await authenticatedFetch(
+                `/api/summary?type=${type}&year=${year}&month=${month}&lang=${this.dashboard.state.lang}`,
             );
-            const json = await res.json() as any;
             if (!res.ok) {
-                this.dashboard.addToast("info", json.error || t("noDataForPeriod"));
+                this.dashboard.addToast("info", t("noDataForPeriod"));
                 return;
             }
+            const json = (await parseResponse(res, ProjectReportSchema)) as ProjectReport;
             this.dashboard.state.cumulativeReport = json; // Store in dedicated state
             this.dashboard.setView("cumulative"); // Set a specific view for cumulative reports
 
@@ -138,7 +141,7 @@ export class HistoryManager { // No citation needed, this is internal code.
             const downloadUrl = window.URL.createObjectURL(blob);
             const a = document.createElement("a");
             a.href = downloadUrl;
-            a.download = `DoR_Consolidated_${month}_2026.pdf`;
+            a.download = `DoR_Consolidated_${month}_${year}.pdf`;
             a.click();
         }
     }
@@ -204,7 +207,7 @@ export class HistoryManager { // No citation needed, this is internal code.
         const loader = document.getElementById("loader");
         if (loader) loader.style.display = "flex";
         const res = await authenticatedFetch(`/api/report?date=${date}&lang=${this.dashboard.state.lang}`);
-        const json = await res.json() as any;
+        const json = (await parseResponse(res, ProjectReportSchema)) as ProjectReport;
         this.dashboard.state.store = json;
         this.dashboard.setView("table");
         if (loader) loader.style.display = "none";
@@ -222,7 +225,7 @@ export class HistoryManager { // No citation needed, this is internal code.
         const loader = document.getElementById("loader");
         if (loader) loader.style.display = "flex";
         const verifyTitle = document.getElementById("verify-title");
-        if (verifyTitle) verifyTitle.innerText = I18N[this.dashboard.state.lang].verificationTitle as string;
+        if (verifyTitle) verifyTitle.textContent = t("verificationTitle");
 
         try {
             const endpoint = type === "monthly"
@@ -234,7 +237,7 @@ export class HistoryManager { // No citation needed, this is internal code.
 
             if (res.ok) {
                 if (verifyMsg) {
-                    verifyMsg.innerText = I18N[this.dashboard.state.lang].verifiedSuccess as string;
+                    verifyMsg.textContent = t("verifiedSuccess");
                     verifyMsg.style.color = "var(--good)";
                 }
                 if (verifyDetails) verifyDetails.innerHTML = `<b>Type:</b> ${type.toUpperCase()}<br><b>Period:</b> ${period}<br><b>Status:</b> SYSTEM_MATCH_FOUND`;
@@ -244,7 +247,7 @@ export class HistoryManager { // No citation needed, this is internal code.
         } catch {
             const verifyMsg = document.getElementById("verify-msg");
             if (verifyMsg) {
-                verifyMsg.innerText = I18N[this.dashboard.state.lang].invalidReport as string;
+                verifyMsg.textContent = t("invalidReport");
                 verifyMsg.style.color = "var(--critical)";
             }
         } finally {
@@ -260,13 +263,13 @@ export class HistoryManager { // No citation needed, this is internal code.
         const savedM = mSelect.value;
         const savedY = ySelect.value;
 
-        mSelect.innerHTML = (I18N[this.dashboard.state.lang] as any).months
+        mSelect.innerHTML = (I18N[this.dashboard.state.lang]?.months || [])
             .map((m: string, i: number) => `<option value="${(i + 1).toString().padStart(2, "0")}">${m}</option>`)
             .join("");
 
         const currentADYear = new Date().getFullYear();
         ySelect.innerHTML = [currentADYear, currentADYear - 1, currentADYear - 2]
-            .map((y) => `<option value="${y}">${this.dashboard.state.lang === "ne" ? toNepaliNumerals(y + 57) + " वि.सं." : y + " AD"}</option>`)
+            .map((y: number) => `<option value="${y}">${this.dashboard.state.lang === "ne" ? toNepaliNumerals(y + 57) + " वि.सं." : y + " AD"}</option>`)
             .join("");
 
         if (savedM) mSelect.value = savedM;

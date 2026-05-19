@@ -1,6 +1,6 @@
 import { getToken } from "firebase/app-check";
 import { z } from "zod";
-import { Dashboard } from "./Dashboard";
+import { Dashboard } from "./Dashboard.js";
 import translationsDataRaw from "./locales/translations.json" with { type: "json" };
 
 interface TranslationContent {
@@ -27,15 +27,15 @@ const NE_TO_AR: Record<string, string> = {
 /**
  * Converts Arabic numerals to Nepali numerals.
  */
-export function toNepaliNumerals(num: number | string): string {
-  return String(num).replace(/[0-9]/g, (d) => AR_TO_NE[Number(d)]);
+export function toNepaliNumerals(num: number | string | null | undefined): string {
+  return String(num || "").replace(/[0-9]/g, (d: string) => AR_TO_NE[Number(d)]);
 }
 
 /**
  * Converts Nepali numerals to Arabic numerals.
  */
-export function toArabicNumerals(str: string): string {
-  return String(str || "").replace(/[०-९]/g, (d) => NE_TO_AR[d] ?? d);
+export function toArabicNumerals(str: string | null | undefined): string {
+  return String(str || "").replace(/[०-९]/g, (d: string) => NE_TO_AR[d] ?? d);
 }
 
 /**
@@ -162,7 +162,7 @@ export async function authenticatedFetch(
             headers.set("X-Firebase-AppCheck", tokenResult.token);
           }
         } catch (authErr) {
-          console.warn("AppCheck token fetch failed, proceeding without it", authErr);
+          console.warn("AppCheck token fetch failed, proceeding without it", authErr); // authErr is already typed as unknown
         }
       }
 
@@ -189,7 +189,7 @@ export async function authenticatedFetch(
       // If we are here, we are going to retry. Fall through to catch block logic.
       throw new Error("Retriable status received");
     } catch (err) {
-      if (attempt === maxRetries - 1 || (err instanceof Error && err.message !== "Retriable status received" && !err.message.includes("fetch"))) throw err;
+      if (attempt === maxRetries - 1 || (err instanceof Error && err.message !== "Retriable status received" && !err.message.includes("fetch"))) throw err; // err is already typed as unknown
 
       // Exponential backoff with jitter
       const delay = Math.pow(2, attempt) * 1000 + Math.random() * 1000;
@@ -302,7 +302,7 @@ export async function getApiErrorMessage(response: Response, fallback = "Unknown
     }
     return `${statusFallback} (${status})`;
   } catch {
-    return `${StatusMessageMap[status] ? t(StatusMessageMap[status]) : fallback} (${status})`;
+    return `${StatusMessageMap[status] ? t(StatusMessageMap[status]) : fallback} (${status})`; // err is implicitly any here, but not used.
   }
 }
 
@@ -355,7 +355,7 @@ export function typeText(element: TextElement, text: string, playSound?: (pitch?
 }
 
 // Re-export moved logic from shared types to avoid duplication
-export { getColumnKey, getProgress } from "../shared/types";
+export { getColumnKey, getProgress } from "../shared/types.js";
 
 /**
  * Updates the connection strength badge in the UI.
@@ -372,7 +372,8 @@ export function updateConnStrength(duration: number, lang: string) {
   else if (duration > 1200) { label = t("connFair"); color = "#facc15"; }
   else if (duration > 500) { label = t("connGood"); color = "var(--primary)"; }
 
-  badge.innerText = `${langStrings.connStrength} ${label}`;
+  const connText = lang === 'ne' ? 'जडान:' : 'Connection:';
+  badge.innerText = `${connText} ${label}`;
   badge.style.color = color;
   badge.style.display = "inline-flex";
 }

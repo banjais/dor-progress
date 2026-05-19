@@ -1,5 +1,5 @@
-import { Dashboard } from "./Dashboard"; // No citation needed, this is internal code.
-import { t } from "./api-utils";
+import { Dashboard } from "./Dashboard.js"; // No citation needed, this is internal code.
+import { t } from "./api-utils.js";
 // No citation needed, this is internal code.
 const dashboard = Dashboard.getInstance();
 
