@@ -66,13 +66,19 @@ function runJob(job) {
  * Checks for local changes and pushes to origin
  */
 function handleGitSync() {
-  try {
-    const status = execSync('git status --porcelain').toString().trim();
-    if (!status) {
-      console.log(`${colors.yellow}No local changes to commit.${colors.reset}`);
-      return { success: true };
-    }
+  // When running inside GitHub Actions, GITHUB_SHA is always present.
+  // Skip the commit / push step to avoid rate-limiting, duplicate tags,
+  // or any recursive trigger issues — the CI runner already has the code.
+  const isCI = Boolean(process.env.GITHUB_SHA);
+  const status = execSync('git status --porcelain').toString().trim();
+  if (!status || isCI) {
+    console.log(isCI
+      ? `${colors.yellow}Running in GitHub Actions — skipping git push.${colors.reset}`
+      : `${colors.yellow}No local changes to commit.${colors.reset}`);
+    return { success: true };
+  }
 
+  try {
     const version = JSON.parse(execSync('cat package.json').toString()).version;
     console.log(`${colors.cyan}Syncing version v${version} to Git...${colors.reset}`);
 

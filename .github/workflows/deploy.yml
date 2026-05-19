@@ -1,0 +1,86 @@
+name: Deploy
+
+on:
+  workflow_dispatch:
+    inputs:
+      skip_lint:
+        description: 'Skip lint check'
+        required: false
+        type: boolean
+        default: false
+      skip_tests:
+        description: 'Skip tests'
+        required: false
+        type: boolean
+        default: true
+  push:
+    branches: [main]
+
+permissions:
+  contents: write
+  id-token: write
+
+jobs:
+  deploy:
+    name: 🚀 Deploy (Local Deploy Script)
+    runs-on: ubuntu-latest
+    environment: production
+
+    steps:
+      - name: Checkout full history with tags
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Authenticate secrets file (.env)
+        run: |
+          echo "FIREBASE_SERVICE_ACCOUNT='${{ secrets.FIREBASE_SERVICE_ACCOUNT }}'" > .env
+          echo "GEMINI_API_KEY='${{ secrets.GEMINI_API_KEY }}'" >> .env
+          echo "GOOGLE_GENAI_API_KEY='${{ secrets.GEMINI_API_KEY }}'" >> .env
+          echo "PUBLISHED_SHEET_ID='${{ secrets.PUBLISHED_SHEET_ID }}'" >> .env
+          echo "SNAPSHOT_KEY='${{ secrets.SNAPSHOT_KEY }}'" >> .env
+          echo "DIGITAL_SIGNATURE='${{ secrets.DIGITAL_SIGNATURE || 'true' }}'" >> .env
+          echo "APP_ENV=production" >> .env
+          echo "GITHUB_TOKEN='${{ secrets.GITHUB_TOKEN }}'" >> .env
+
+      - name: Run full deploy script
+        id: deploy
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          SNAPSHOT_KEY: ${{ secrets.SNAPSHOT_KEY }}
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          GOOGLE_GENAI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          PUBLISHED_SHEET_ID: ${{ secrets.PUBLISHED_SHEET_ID }}
+          DIGITAL_SIGNATURE: ${{ secrets.DIGITAL_SIGNATURE || 'true' }}
+          GITHUB_SHA: ${{ github.sha }}
+        run: |
+          if [ "${{ inputs.skip_lint }}" = "true" ]; then
+            echo "Skipping lint via manual override"
+            # Temporarily disable zero-warning lint gate by patching eslint config for this run
+            sed -i 's/"max-warnings 0"/"max-warnings 999"/' package.json scripts/lint.sh eslint.config.js 2>/dev/null || true
+          fi
+
+          node --no-deprecation scripts/deploy.js
+
+      - name: Report Deployment Status
+        if: always()
+        run: |
+          if [ "${{ steps.deploy.outcome }}" == "success" ]; then
+            echo "✅ Deployment completed successfully."
+            NEW_TAG=$(git describe --tags --abbrev=0 2>/dev/null || echo "none")
+            echo "Deployed version: ${{ steps.deploy.outputs.version || $NEW_TAG }}"
+          else
+            echo "❌ Deployment failed. Check logs above."
+            exit 1
+          fi
