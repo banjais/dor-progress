@@ -1,7 +1,7 @@
-const VERSION = "v0.0.0"; // Updated automatically by deploy.sh
+const VERSION = "v1.0.333"; // Updated automatically by deploy.js
 console.log(`[Service Worker] Script loaded. Version: ${VERSION}`);
 
-const STATIC_CACHE_NAME = "dor-static-v2";
+const STATIC_CACHE_NAME = `dor-static-v2-${VERSION}`;
 // const DATA_CACHE_NAME = "dor-data-v2";
 const OFFLINE_URL = "/";
 
