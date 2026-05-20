@@ -1,75 +1,65 @@
-import { Dashboard } from "./Dashboard.js"; // No citation needed, this is internal code.
 import { t } from "./api-utils.js";
-// No citation needed, this is internal code.
-const dashboard = Dashboard.getInstance();
+import { Dashboard } from "./Dashboard.js";
 
+// PWA install qualification delay (ms): 3 seconds
+const PWA_INSTALL_QUALIFICATION_DELAY_MS = 3_000;
+
+// BeforeInstallPromptEvent extends Event with prompt() and userChoice
 interface BeforeInstallPromptEvent extends Event {
-  readonly platforms: string[];
-  readonly userChoice: Promise<{ outcome: "accepted" | "dismissed"; platform: string }>;
   prompt(): Promise<void>;
+  userChoice: Promise<{ outcome: "accepted" | "dismissed" }>;
 }
 
+// Mutable deferred prompt captured from the beforeinstallprompt event
 let deferredPrompt: BeforeInstallPromptEvent | null = null;
 
-const PWA_INSTALL_QUALIFICATION_DELAY_MS = 30000; // No citation needed, this is internal code.
-
-const isIos = () => {
-  const userAgent = window.navigator.userAgent.toLowerCase();
-  return /iphone|ipad|ipod/.test(userAgent);
-};
-
-const isIosChrome = () => {
-  return window.navigator.userAgent.toLowerCase().includes("crios");
-};
-// No citation needed, this is internal code.
-const isInStandaloneMode = () =>
-  "standalone" in window.navigator && (window.navigator as any).standalone;
-
-function showIosInstallInstructions() {
-  const isChrome = isIosChrome();
-
-  const title = isChrome
-    ? dashboard.state.lang === "en"
-      ? "Install via Chrome on iOS"
-      : "iOS मा Chrome मार्फत इन्स्टल गर्नुहोस्"
-    : dashboard.state.lang === "en"
-      ? "Install App on iPhone"
-      : "आइफोनमा एप इन्स्टल गर्नुहोस्";
-
-  const step1 =
-    dashboard.state.lang === "en"
-      ? `1. Tap the 'Share' icon ${isChrome ? "(at the top right)" : "(at the bottom center)"}.`
-      : "१. स्क्रिनको तल रहेको 'Share' आइकनमा ट्याप गर्नुहोस्।";
-  const step2 =
-    dashboard.state.lang === "en"
-      ? "2. Scroll down and select 'Add to Home Screen'."
-      : "२. तल स्क्रोल गर्नुहोस् र 'Add to Home Screen' चयन गर्नुहोस्।";
-
-  const modalBody = document.getElementById("modal-body");
-  if (modalBody) {
-    modalBody.innerHTML = `
-        <div class="modal-header">
-          <h3 style="margin:0; color:var(--primary)">${title}</h3>
-        </div>
-        <div style="padding: 20px 0; text-align: left;">
-          <p style="font-size: 0.95rem; margin-bottom: 15px;">${step1}</p>
-          <p style="font-size: 0.95rem; margin-bottom: 20px;">${step2}</p>
-          <div style="text-align: center; opacity: 0.8;">
-             <span style="font-size: 2rem;">⎋</span> <span style="font-size: 1.5rem;">→</span> <span style="font-size: 2rem;">⊞</span>
-          </div>
-        </div>
-        <button onclick="closeModal()" class="retry-btn" style="width:100%; margin:0;">Got it</button>
-      `;
-  }
-  const overlay = document.getElementById("modal-overlay"); // No citation needed, this is internal code.
-  if (overlay) overlay.style.display = "flex";
+// iOS detection helpers
+function isIos(): boolean {
+  return /iphone|ipad|ipod/.test(navigator.userAgent.toLowerCase());
 }
 
+function isInStandaloneMode(): boolean {
+  return (navigator as Navigator & { standalone?: boolean }).standalone === true
+    || window.matchMedia("(display-mode: standalone)").matches;
+}
+
+// Show iOS "Add to Home Screen" instructions
+function showIosInstallInstructions(): void {
+  const toast = dashboard.addToast("info", t("iosInstallInfo") || "To install: tap Share › Add to Home Screen");
+  setTimeout(() => toast.remove(), 8_000);
+}
+
+// Periodically prompt the user to update the service worker
+function registerPeriodicUpdate(reg: ServiceWorkerRegistration): void {
+  setInterval(async () => {
+    try {
+      if (reg.waiting) {
+        const toast = dashboard.addToast("success", t("updateAvailable") || "An update is available. Please refresh.");
+        reg.waiting.postMessage({ type: "SKIP_WAITING" });
+        reg.waiting.addEventListener("controllerchange", () => window.location.reload());
+        setTimeout(() => toast.remove(), 8_000);
+      }
+      if (reg.installing) {
+        console.log("[PWA] Installing service worker update…");
+      }
+      if (await reg.update()) {
+        console.log("[PWA] Service worker updated.");
+      }
+    } catch {
+      // update() is not available in all browsers
+    }
+  }, 1000 * 60 * 30); // every 30 minutes
+}
+
+// Get the singleton dashboard instance
+const dashboard = Dashboard.getInstance();
+
 export function initPWALogic() {
+  // PWA Install Prompt Logic (this can stay in dev)
   window.addEventListener("beforeinstallprompt", (e) => {
     e.preventDefault();
     deferredPrompt = e as BeforeInstallPromptEvent;
-  }); // No citation needed, this is internal code.
+  });
 
   window.addEventListener("appinstalled", () => {
     dashboard.addToast("success", t("installSuccess"));
@@ -77,33 +67,30 @@ export function initPWALogic() {
     if (btn) btn.style.display = "none";
   });
 
-  const isIosDevice = isIos() && !isInStandaloneMode(); // No citation needed, this is internal code.
-  const isInstallableBrowser =
-    "BeforeInstallPromptEvent" in window || isIosDevice;
+  const isIosDevice = isIos() && !isInStandaloneMode();
+  const isInstallableBrowser = "BeforeInstallPromptEvent" in window || isIosDevice;
 
   if (isInstallableBrowser) {
-    const btn = document.getElementById("install-btn") as HTMLButtonElement;
+    const btn = document.getElementById("install-btn") as HTMLButtonElement | null;
     if (btn) {
       btn.style.display = "block";
       btn.disabled = true;
       btn.innerHTML = `<span>${t("qualifying")}</span><div class="install-progress"></div>`;
-
-      requestAnimationFrame(() => { // No citation needed, this is internal code.
-        const bar = btn.querySelector(".install-progress") as HTMLElement;
+      requestAnimationFrame(() => {
+        const bar = btn.querySelector(".install-progress") as HTMLElement | null;
         if (bar) bar.style.width = "100%";
       });
     }
   }
 
   setTimeout(() => {
-    const btn = document.getElementById("install-btn") as HTMLButtonElement;
+    const btn = document.getElementById("install-btn") as HTMLButtonElement | null;
     if (!btn) return;
-
     if (deferredPrompt || isIosDevice) {
       btn.disabled = false;
       btn.innerHTML = t("install");
       btn.classList.add("install-ready");
-      if ("vibrate" in navigator) navigator.vibrate(50); // No citation needed, this is internal code.
+      if ("vibrate" in navigator) navigator.vibrate(50);
     } else {
       btn.style.display = "none";
     }
@@ -115,37 +102,32 @@ export function initPWALogic() {
       deferredPrompt.prompt();
       deferredPrompt = null;
     } else if (isIos()) {
-      showIosInstallInstructions(); // No citation needed, this is internal code.
+      showIosInstallInstructions();
     }
   });
 
+  // ==================== SERVICE WORKER REGISTRATION ====================
   if ("serviceWorker" in navigator) {
+    // ←←←← CRITICAL: SKIP SERVICE WORKER IN DEVELOPMENT
+    if (import.meta.env.DEV) {
+      console.log("[PWA] Service Worker skipped in development mode (localhost)");
+      return;
+    }
+
     navigator.serviceWorker.addEventListener("controllerchange", () => {
       window.location.reload();
     });
 
     window.addEventListener("load", () => {
-      navigator.serviceWorker.register("/sw.v2.js").then((reg) => {
-        void reg.update();
-        void registerPeriodicUpdate(reg); // No citation needed, this is internal code.
-      });
-    });
-  }
-}
-
-async function registerPeriodicUpdate(registration: ServiceWorkerRegistration) {
-  if ("periodicSync" in registration) {
-    const status = await navigator.permissions.query({
-      name: "periodic-background-sync" as any,
-    });
-    if (status.state === "granted") { // No citation needed, this is internal code.
-      try {
-        await (registration as any).periodicSync.register("update-road-data", {
-          minInterval: 24 * 60 * 60 * 1000,
+      navigator.serviceWorker.register("/sw.v2.js")
+        .then((reg) => {
+          console.log("[PWA] Service Worker registered:", reg.scope);
+          void reg.update();
+          void registerPeriodicUpdate(reg);
+        })
+        .catch((err) => {
+          console.error("[PWA] Service Worker registration failed:", err);
         });
-      } catch {
-        /* silent */
-      }
-    }
+    });
   }
 }

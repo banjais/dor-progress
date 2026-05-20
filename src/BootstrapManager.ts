@@ -18,9 +18,6 @@ export class BootstrapManager {
             try { BrandingEngine.apply(); } catch (e) { console.warn("Branding failed to apply", e); }
 
             this.initLowData();
-            this.initParallaxEffect(dashboard); // Initialize parallax effect
-            this.initParticles(dashboard); // Initialize background particles
-            this.addSkipButton(dashboard); // Add the skip button
             this.handleSplashVideo();
             this.updateSplashProgress(10);
 
@@ -28,7 +25,7 @@ export class BootstrapManager {
 
             // 1. Fetch Configuration & Init System Shell
             const res = await authenticatedFetch(configPath);
-            this.updateSplashProgress(40);
+            this.updateSplashProgress(50);
 
             if (!res.ok) {
                 throw new Error(`${dashboard.t("serverError") || "Server unavailable"} (${res.status})`);
@@ -54,7 +51,12 @@ export class BootstrapManager {
             // 4. Initial State Setup
             dashboard.setLang(dashboard.state.lang);
             void dashboard.onVerify?.();
-            this.updateSplashProgress(90);
+            this.updateSplashProgress(85);
+
+            // Defer non-critical visual effects
+            setTimeout(() => this.addSkipButton(dashboard), 0);
+            setTimeout(() => this.initParallaxEffect(dashboard), 50);
+            setTimeout(() => this.initParticles(dashboard), 100);
 
             // 4. Reveal App Early
             // We hide splash here so the user sees the dashboard skeleton/loading state

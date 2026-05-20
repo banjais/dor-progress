@@ -91,17 +91,33 @@ export class AudioEngine {
     }
   }
 
-  /** Pre‑render every sound profile into an AudioBuffer */
+  /**
+  * Initial pre‑render for modern pack only; other packs load in background
+  */
   private async preRenderAll(): Promise<void> {
     if (!this.ctx) return;
     const sampleRate = this.ctx.sampleRate;
-    for (const [packName, profiles] of Object.entries(AudioEngine.SOUND_PROFILES)) {
-      for (const [soundId, profile] of Object.entries(profiles)) {
-        const buffer = await this.renderProfileToBuffer(profile, sampleRate);
-        this.bufferPool.set(`${packName}:${soundId}`, buffer);
-      }
+    
+    // Render only the "modern" pack initially for faster startup
+    const defaultPack = AudioEngine.SOUND_PROFILES.modern;
+    for (const [soundId, profile] of Object.entries(defaultPack)) {
+      const buffer = await this.renderProfileToBuffer(profile, sampleRate);
+      this.bufferPool.set(`modern:${soundId}`, buffer);
     }
+    
+    // Pre-render other packs in background
+    setTimeout(async () => {
+      for (const [packName, profiles] of Object.entries(AudioEngine.SOUND_PROFILES)) {
+        if (packName === "modern") continue;
+        for (const [soundId, profile] of Object.entries(profiles)) {
+          const buffer = await this.renderProfileToBuffer(profile, sampleRate);
+          this.bufferPool.set(`${packName}:${soundId}`, buffer);
+        }
+      }
+    }, 2000);
   }
+
+  /** Set UI volume (clamped 0‑1) and persist */
 
   /** Render a single {@link SoundProfile} to an offline buffer */
   private async renderProfileToBuffer(profile: SoundProfile, sampleRate: number): Promise<AudioBuffer> {
@@ -200,15 +216,11 @@ export class AudioEngine {
     this.musicGain.gain.setTargetAtTime(this.uiVolume, this.ctx.currentTime, fadeTime);
   }
 
-  /**
-   * Applies a high-pass filter to music when risk is low (good state).
-   * This creates a "thin/airy" sound when stable, and a "heavy/full" sound when risky.
-   */
+  /** Set the music filter frequency based on risk level */
   updateMusicFilter(risk: number): void {
     if (!this.ctx || !this.musicFilter) return;
-    // If risk < 0.3 (good), increase high-pass frequency (up to 800Hz)
-    const cutoff = risk < 0.3 ? (1 - risk / 0.3) * 800 : 0;
-    this.musicFilter.frequency.setTargetAtTime(cutoff, this.ctx.currentTime, 0.4);
+    const freq = risk * 2000;
+    this.musicFilter.frequency.setTargetAtTime(freq, this.ctx.currentTime, 0.1);
   }
 
   /** Set UI volume (clamped 0‑1) and persist */

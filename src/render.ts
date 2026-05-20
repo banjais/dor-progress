@@ -109,6 +109,8 @@ function renderSystemStats(json: ProjectReport, rows: ProjectRow[]) {
 }
 function renderTableView(headers: string[], rows: ProjectRow[], highlightRegex: RegExp | null) {
   const dashboard = Dashboard.getInstance();
+  
+  // Build thead HTML
   let thead = `<tr><th></th>`;
   headers.forEach((h) => {
     thead += `<th onclick="App.sortData('${h}'); event.stopPropagation()">${t(h)} ${dashboard.state.sort.key === h ? (dashboard.state.sort.dir === 1 ? "↑" : "↓") : ""}</th>`;
@@ -117,8 +119,12 @@ function renderTableView(headers: string[], rows: ProjectRow[], highlightRegex: 
   const theadEl = document.getElementById("thead");
   if (theadEl) theadEl.innerHTML = thead;
 
+  // Build tbody HTML with row limit for performance
+  const rowLimit = 100;
+  const rowsToRender = rows.slice(0, rowLimit);
   let tbody = "";
-  rows.forEach((r: ProjectRow) => {
+  
+  rowsToRender.forEach((r: ProjectRow) => {
     const name = r[headers[0]] || "";
     const annualPerc = getProgress(r, headers);
     tbody += `<tr data-indicator-name="${name.replace(/"/g, "&quot;")}" class="fade-in">`;
@@ -133,17 +139,44 @@ function renderTableView(headers: string[], rows: ProjectRow[], highlightRegex: 
     });
     tbody += "</tr>";
   });
+  
+  // If more rows exist, add a placeholder for lazy loading
+  if (rows.length > rowLimit) {
+    tbody += `<tr id="load-more-row"><td colspan="${headers.length + 1}" style="text-align:center;padding:20px">Loading more items...</td></tr>`;
+  }
+  
   const tbodyEl = document.getElementById("tbody");
   if (tbodyEl) tbodyEl.innerHTML = tbody;
 }
 
 /**
- * Renders the dedicated Cumulative Report section.
- * This provides a formal, branded presentation distinct from the interactive table.
- */
+  * Renders the dedicated Cumulative Report section.
+  * This provides a formal, branded presentation distinct from the interactive table.
+  */
 function renderCumulativeView(headers: string[], rows: ProjectRow[], highlightRegex: RegExp | null) {
   const container = document.getElementById("view-cumulative");
   if (!container) return;
+
+  // Paginate rows for better performance
+  const rowLimit = 50;
+  const visibleRows = rows.slice(0, rowLimit);
+  const hasMore = rows.length > rowLimit;
+
+  let tbodyHtml = "";
+  visibleRows.forEach((r: ProjectRow) => {
+    const annualPerc = getProgress(r, headers);
+    tbodyHtml += `
+                <tr class="cumulative-row" style="background:var(--surface); border-radius:12px; transition:transform 0.2s;">
+                  <td style="padding:15px; border-radius:12px 0 0 12px;">${renderMiniChart(annualPerc, false)}</td>
+                  ${headers.map((h, i) => {
+      let val = t(r[h]);
+      if (highlightRegex) val = String(val).replace(highlightRegex, "<b>$1</b>");
+      const isStatus = h.toLowerCase().includes("status") || i === 0;
+      const color = isStatus ? (r._status === "good" ? "var(--good)" : r._status === "critical" ? "var(--critical)" : "var(--stable)") : "var(--text)";
+      return `<td style="padding:15px; color:${color}; font-weight:${isStatus ? 700 : 400}; ${i === headers.length - 1 ? 'border-radius:0 12px 12px 0;' : ''}">${val}</td>`;
+    }).join('')}
+                </tr>`;
+  });
 
   container.innerHTML = `
     <div class="cumulative-report-section fade-in">
@@ -169,20 +202,8 @@ function renderCumulativeView(headers: string[], rows: ProjectRow[], highlightRe
             </tr>
           </thead>
           <tbody>
-            ${rows.map((r: ProjectRow) => {
-    const annualPerc = getProgress(r, headers);
-    return `
-                <tr class="cumulative-row" style="background:var(--surface); border-radius:12px; transition:transform 0.2s;">
-                  <td style="padding:15px; border-radius:12px 0 0 12px;">${renderMiniChart(annualPerc, false)}</td>
-                  ${headers.map((h, i) => {
-      let val = t(r[h]);
-      if (highlightRegex) val = String(val).replace(highlightRegex, "<b>$1</b>");
-      const isStatus = h.toLowerCase().includes("status") || i === 0;
-      const color = isStatus ? (r._status === "good" ? "var(--good)" : r._status === "critical" ? "var(--critical)" : "var(--stable)") : "var(--text)";
-      return `<td style="padding:15px; color:${color}; font-weight:${isStatus ? 700 : 400}; ${i === headers.length - 1 ? 'border-radius:0 12px 12px 0;' : ''}">${val}</td>`;
-    }).join('')}
-                </tr>`;
-  }).join('')}
+            ${tbodyHtml}
+            ${hasMore ? `<tr><td colspan="${headers.length + 1}" style="text-align:center;padding:20px;color:var(--text-light)">Showing ${rowLimit} of ${rows.length} items</td></tr>` : ''}
           </tbody>
         </table>
       </div>
@@ -197,8 +218,13 @@ function renderCumulativeView(headers: string[], rows: ProjectRow[], highlightRe
 function renderCardView(headers: string[], rows: ProjectRow[]) {
   const indicatorKey = getColumnKey(headers, "indicator");
 
+  // Paginate for performance
+  const rowLimit = 20;
+  const visibleRows = rows.slice(0, rowLimit);
+  const hasMore = rows.length > rowLimit;
+
   let cardHtml = "";
-  rows.forEach((r: ProjectRow) => {
+  visibleRows.forEach((r: ProjectRow) => {
     const name = indicatorKey ? r[indicatorKey] || "" : "";
     const annPerc = getProgress(r, headers);
     cardHtml += `<div class="data-card" data-indicator="${name.replace(/"/g, "&quot;")}">
@@ -206,8 +232,13 @@ function renderCardView(headers: string[], rows: ProjectRow[]) {
         <h3 style="margin:0; font-size:0.9rem;">${t(name)}</h3>
         ${renderMiniChart(annPerc, true)}
       </div>
-    </div>`; // No citation needed, this is internal code.
+    </div>`;
   });
+  
+  if (hasMore) {
+    cardHtml += `<div style="grid-column:1/-1;text-align:center;padding:20px;color:var(--text-light)">Showing ${rowLimit} of ${rows.length} items</div>`;
+  }
+  
   const cardContainer = document.getElementById("view-cards");
   if (cardContainer) cardContainer.innerHTML = cardHtml;
 }
