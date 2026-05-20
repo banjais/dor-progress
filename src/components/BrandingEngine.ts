@@ -4,21 +4,19 @@ export class BrandingEngine { // No citation needed, this is internal code.
   static apply() {
     console.log("💎 Applying Dynamic Branding Engine...");
 
-    const { app } = branding;
-
     // 1. Update Global Titles
-    document.title = app.title;
+    document.title = branding.app.title;
 
     // 2. Update Header & Branding Sections
     const mappings = {
-      "header-app-name": app.title,
-      "h-govt": app.government,
-      "h-min": app.ministry,
-      "h-city": app.location,
-      "h-report": app.reportTitle,
-      "splash-gov-text": app.government,
-      "splash-dept-text": app.department,
-      "footer-copy": `&copy; ${new Date().getFullYear()} ${app.department}. All rights Reserved.`,
+      "header-app-name": branding.app.title,
+      "h-govt": branding.organization.government,
+      "h-min": branding.organization.ministry,
+      "h-city": branding.organization.location,
+      "h-report": branding.report.title,
+      "splash-gov-text": branding.organization.government,
+      "splash-dept-text": branding.organization.department,
+      "footer-copy": `&copy; ${new Date().getFullYear()} ${branding.organization.department}. All rights Reserved.`,
     };
 
     Object.entries(mappings).forEach(([id, value]) => {

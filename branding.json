@@ -1,0 +1,23 @@
+{
+  "app": {
+    "name": "DoR Progress",
+    "fullName": "DoR Progress Tracking System",
+    "shortName": "DoR Progress",
+    "title": "DoR Progress - Monitoring & Reporting",
+    "subtitle": "Tracking Development Outcomes",
+    "tagline": "Measuring what matters",
+    "government": "Government of Exampleland",
+    "ministry": "Ministry of Planning",
+    "location": "Capital City",
+    "reportTitle": "Annual Progress Report",
+    "department": "Department of Monitoring and Evaluation"
+  },
+  "colors": {
+    "primary": "#0066cc",
+    "secondary": "#004c99"
+  },
+  "lastUpdate": {
+    "label": "Last Updated",
+    "value": "2026-05-20"
+  }
+}

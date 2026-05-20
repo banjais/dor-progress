@@ -1,7 +1,7 @@
 {
-  "name": "DOR Progress Dashboard",
-  "short_name": "DOR Progress",
-  "description": "Department of Roads Progress Monitoring Dashboard",
+  "name": "DoR Progress Dashboard",
+  "short_name": "DoR MIS",
+  "description": "Official Department of Roads Weekly Progress & Statistics Dashboard.",
   "id": "/?source=pwa",
   "start_url": "/",
   "scope": "/",
