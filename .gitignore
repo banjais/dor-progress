@@ -35,6 +35,7 @@ dist/
 
 # dotenv / local secrets (NEVER commit)
 .env
+.env.production
 .dev.vars
 .dev.vars.backup
 .env.simple
