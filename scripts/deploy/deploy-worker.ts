@@ -1,1 +1,0 @@
-// DEPRECATED: This script is an unused leftover. Worker deployment is handled via package.json's "deploy:worker" script.

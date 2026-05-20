@@ -1,1 +1,0 @@
-// DEPRECATED: This script is an unused leftover. Project cleanup is handled via "rimraf .build" in package.json.

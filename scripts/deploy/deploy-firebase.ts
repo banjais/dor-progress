@@ -1,1 +1,0 @@
-// DEPRECATED: This script is an unused leftover. Firebase deployment is handled via "firebase deploy --only hosting" in package.json.

@@ -1,1 +1,0 @@
-// DEPRECATED: This script is an unused leftover. Deployment logging is handled by CI/CD integrations.

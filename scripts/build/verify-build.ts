@@ -1,1 +1,0 @@
-// DEPRECATED: This script is an unused leftover. Build verification is handled by standard package.json tasks.
