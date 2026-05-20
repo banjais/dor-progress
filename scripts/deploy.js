@@ -82,7 +82,7 @@ function handleGitSync() {
     const version = JSON.parse(execSync('cat package.json').toString()).version;
     console.log(`${colors.cyan}Syncing version v${version} to Git...${colors.reset}`);
 
-    execSync('git add .');
+    execSync('git add . -- :!*.env'); // Exclude .env file from being added to git
     execSync(`git commit -m "chore(deploy): release v${version} [skip ci]"`);
     execSync(`git tag -a v${version} -m "Release v${version}"`);
     execSync('git push origin main --tags');
