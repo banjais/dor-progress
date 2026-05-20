@@ -1,37 +1,17 @@
-import dotenv from 'dotenv';
-import { execFile } from 'child_process';
-import { promisify } from 'util';
+// scripts/deploy-worker.js
+import { execSync } from 'child_process';
 
-const execFileAsync = promisify(execFile);
+console.log('🚀 Deploying Cloudflare Worker...');
 
-dotenv.config({ path: '.dev.vars' });
+try {
+  execSync('npx wrangler deploy src/worker.ts', {
+    stdio: 'inherit',     // Show live logs
+    env: process.env
+  });
 
-console.log('Environment variables loaded:');
-console.log('TRANSLATION_KV_ID:', process.env.TRANSLATION_KV_ID ? 'SET' : 'NOT SET');
-console.log('REPORTS_KV_ID:', process.env.REPORTS_KV_ID ? 'SET' : 'NOT SET');
-
-async function deployWorker() {
-  try {
-    console.log('Deploying Worker...');
-    const { stdout, stderr } = await execFileAsync('./node_modules/.bin/wrangler', [ 'deploy', 'src/worker.ts', '--env-file', '.dev.vars' ], { 
-      env: process.env,
-      stdio: 'pipe'
-    });
-    console.log('Worker deployed successfully!');
-    console.log(stdout);
-    if (stderr) {
-      console.error('stderr:', stderr);
-    }
-  } catch (error) {
-    console.error('Deployment failed:', error.message);
-    if (error.stderr) {
-      console.error('stderr:', error.stderr.toString());
-    }
-    if (error.stdout) {
-      console.error('stdout:', error.stdout.toString());
-    }
-    process.exit(1);
-  }
+  console.log('✅ Cloudflare Worker deployed successfully!');
+} catch (error) {
+  console.error('❌ Worker deployment failed!');
+  console.error(error.message);
+  process.exit(1);
 }
-
-deployWorker();

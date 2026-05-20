@@ -1,6 +1,6 @@
 {
   "name": "dor-progress",
-  "version": "1.0.357",
+  "version": "1.0.358",
   "private": true,
   "type": "module",
   "scripts": {
@@ -11,14 +11,14 @@
     "typecheck": "node --no-deprecation ./node_modules/typescript/bin/tsc --noEmit",
     "verify": "npm run lint && npm run typecheck",
     "test": "echo \"No tests specified\" && exit 0",
+    "audit": "node --no-deprecation scripts/audit-check.js",
+    "audit:fix": "npm audit fix",
     "update-version": "node --no-deprecation scripts/update-version.js",
     "clean": "rimraf dist node_modules/.vite",
-    "deploy:worker": "node --no-deprecation ./node_modules/wrangler/bin/wrangler.js deploy src/worker.ts",
+    "deploy:worker": "node --no-deprecation scripts/deploy-worker.js",
     "deploy:hosting": "firebase deploy --only hosting",
     "deploy:firebase": "firebase deploy --only hosting",
-    "deploy:git": "git push --follow-tags",
     "deploy": "node --no-deprecation scripts/deploy.js",
-    "audit:fix": "npm audit fix",
     "reinstall": "rimraf node_modules package-lock.json && npm install"
   },
   "devDependencies": {
