@@ -12,16 +12,22 @@
         "destination": "https://dor-progress.banjays.workers.dev/api/:splat"
       },
       {
-        "source": "**",
-        "destination": "/index.html",
-        "run": {
-          "rewrite": "SPA"
-        }
+        "source": "!/assets/**",
+        "destination": "/index.html"
       }
     ],
     "headers": [
       {
-        "source": "**/*.@(js|css|png|jpg|jpeg|gif|webp|svg|woff|woff2)",
+        "source": "/assets/**",
+        "headers": [
+          {
+            "key": "Cache-Control",
+            "value": "public, max-age=31536000, immutable"
+          }
+        ]
+      },
+      {
+        "source": "**/*.@(js|css|png|jpg|jpeg|gif|webp|svg|woff|woff2|ttf)",
         "headers": [
           {
             "key": "Cache-Control",
@@ -51,37 +57,6 @@
           {
             "key": "Content-Security-Policy",
             "value": "default-src 'self'; connect-src 'self' https://fonts.googleapis.com https://*.googleapis.com https://*.gstatic.com https://unpkg.com https://api.qrserver.com https://api.elevenlabs.io https://*.firebaseapp.com https://*.web.app http://localhost:*; font-src 'self' data: https://fonts.gstatic.com https://fonts.googleapis.com; img-src 'self' data: https://api.qrserver.com https://*.googleusercontent.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://unpkg.com; script-src 'self' 'unsafe-inline' 'unsafe-eval' https://unpkg.com https://www.gstatic.com; worker-src 'self' blob:;"
-          }
-        ]
-      },
-      {
-        "source": "/manifest.json",
-        "headers": [
-          {
-            "key": "Cache-Control",
-            "value": "public, max-age=86400"
-          }
-        ]
-      },
-      {
-        "source": "/sw.v2.js",
-        "headers": [
-          {
-            "key": "Cache-Control",
-            "value": "no-cache"
-          }
-        ]
-      },
-      {
-        "source": "/index.html",
-        "headers": [
-          {
-            "key": "Cache-Control",
-            "value": "no-store, no-cache, must-revalidate, max-age=0"
-          },
-          {
-            "key": "Content-Type",
-            "value": "text/html; charset=utf-8"
           }
         ]
       }
