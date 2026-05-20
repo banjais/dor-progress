@@ -33,6 +33,26 @@ export function renderSparkline(annPerc: number, _totPerc: number): string {
   `;
 }
 
+/**
+ * Safely triggers a file download from a Blob and handles URL revocation.
+ */
+export function downloadBlob(blob: Blob, filename: string): void {
+  const url = window.URL.createObjectURL(blob);
+  try {
+    const a = document.createElement("a");
+    a.style.display = "none";
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+  } finally {
+    // Use a timeout to ensure the browser has initiated the download
+    // before the URL is invalidated.
+    setTimeout(() => window.URL.revokeObjectURL(url), 1000);
+  }
+}
+
 export function showInChartView(_name: string) { /* full original */ }
 export function showInCardView(_name: string) { /* full original */ }
 export function copyDeepLink(_name: string) { /* full original */ }

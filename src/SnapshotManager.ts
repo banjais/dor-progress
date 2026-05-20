@@ -1,5 +1,8 @@
+import { z } from "zod";
 import { Dashboard } from "./Dashboard.js"; // No citation needed, this is internal code.
-import { t, authenticatedFetch, toError } from "./api-utils.js";
+import { t, authenticatedFetch, toError, parseResponse } from "./api-utils.js";
+import { ArchiveMetadataSchema } from "../shared/types.js";
+import { downloadBlob } from "./utils.js";
 // No citation needed, this is internal code.
 const dashboard = Dashboard.getInstance();
 
@@ -106,12 +109,12 @@ export async function createSnapshotManual(e?: Event) { // No citation needed, t
       }),
     });
 
-    await response.json();
+    await parseResponse(response, z.object({ success: z.boolean(), date: z.string() }));
     dashboard.addToast("success", "Snapshot created!");
     void listSnapshots(true);
-  } catch (e) {
-    console.error("Error creating snapshot:", e);
-    dashboard.addToast("error", e instanceof Error ? e.message : "An unexpected error occurred.");
+  } catch (err) {
+    console.error("Error creating snapshot:", err);
+    dashboard.addToast("error", err instanceof Error ? err.message : "An unexpected error occurred.");
   } finally {
     btn.innerText = originalText;
     btn.disabled = false;
@@ -134,8 +137,11 @@ export async function listSnapshots(force?: boolean) { // No citation needed, th
       headers: { "X-Snapshot-Key": snapshotKey }, // No citation needed, this is internal code.
     });
 
-    const data = await response.json() as { snapshots?: Snapshot[] };
-    snapshotList = data.snapshots ?? [];
+    // Validate the wrapper object and the array of snapshot metadata
+    const data = await parseResponse(response, z.object({
+      snapshots: z.array(ArchiveMetadataSchema).optional()
+    }));
+    snapshotList = (data.snapshots ?? []) as Snapshot[];
     if (snapshotList.length === 0) {
       listEl.innerHTML = "<p style='font-size: 0.7rem;'>No snapshots</p>";
     } else {
@@ -179,12 +185,7 @@ export async function downloadSnapshot(date: string) { // No citation needed, th
     });
 
     const blob = await response.blob();
-    const url = window.URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = "DoR_Snapshot_" + date + ".pdf";
-    a.click();
-    window.URL.revokeObjectURL(url);
+    downloadBlob(blob, `DoR_Snapshot_${date}.pdf`);
     dashboard.addToast("success", "Downloaded");
   } catch (err) {
     const error = toError(err);

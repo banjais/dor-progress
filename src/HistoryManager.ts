@@ -8,6 +8,7 @@ import {
     I18N,
 } from "./api-utils.js";
 import { ProjectReport, ProjectReportSchema, ArchiveMetadata, ArchiveMetadataSchema } from "../shared/types.js";
+import { downloadBlob } from "./utils.js";
 
 export class HistoryManager { // No citation needed, this is internal code.
     private dashboard: Dashboard;
@@ -138,11 +139,7 @@ export class HistoryManager { // No citation needed, this is internal code.
 
         if (res.ok) {
             const blob = await res.blob();
-            const downloadUrl = window.URL.createObjectURL(blob);
-            const a = document.createElement("a");
-            a.href = downloadUrl;
-            a.download = `DoR_Consolidated_${month}_${year}.pdf`;
-            a.click();
+            downloadBlob(blob, `DoR_Consolidated_${month}_${year}.pdf`);
         }
     }
 
@@ -162,11 +159,7 @@ export class HistoryManager { // No citation needed, this is internal code.
                 const contentLength = res.headers.get("Content-Length");
                 if (!contentLength) {
                     const blob = await res.blob();
-                    const url = window.URL.createObjectURL(blob);
-                    const a = document.createElement("a");
-                    a.href = url;
-                    a.download = `DoR_Official_Report_${date}.pdf`;
-                    a.click();
+                    downloadBlob(blob, `DoR_Official_Report_${date}.pdf`);
                     return;
                 }
 
@@ -186,12 +179,7 @@ export class HistoryManager { // No citation needed, this is internal code.
                 }
 
                 const blob = new Blob(chunks, { type: "application/pdf" });
-                const downloadUrl = window.URL.createObjectURL(blob);
-                const a = document.createElement("a");
-                a.href = downloadUrl;
-                a.download = `DoR_Official_Report_${date}.pdf`;
-                a.click();
-                window.URL.revokeObjectURL(downloadUrl);
+                downloadBlob(blob, `DoR_Official_Report_${date}.pdf`);
             } else {
                 this.dashboard.addToast("error", this.dashboard.state.lang === "en" ? "Failed to download PDF archive." : "PDF अभिलेख डाउनलोड गर्न असफल भयो।");
             }

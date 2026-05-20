@@ -1,5 +1,6 @@
 import { Dashboard } from "./Dashboard.js";
 import { t, toNepaliNumerals, getProgress } from "./api-utils.js";
+import { downloadBlob } from "./utils.js";
 
 /**
  * Generates a Progress Report PDF directly in the browser using pdf-lib.
@@ -295,10 +296,8 @@ export async function generateClientPDF(): Promise<void> {
 
         const pdfBytes = await pdfDoc.save();
         const blob = new Blob([pdfBytes], { type: "application/pdf" });
-        const link = document.createElement("a");
-        link.href = URL.createObjectURL(blob);
-        link.download = `DoR_Report_${new Date().toISOString().slice(0, 10)}.pdf`;
-        link.click();
+        const filename = `DoR_Report_${new Date().toISOString().slice(0, 10)}.pdf`;
+        downloadBlob(blob, filename);
     } catch (err) {
         console.error("PDF generation failed:", err);
         dashboard.addToast("error", "Failed to generate PDF");
