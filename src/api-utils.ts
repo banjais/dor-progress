@@ -127,26 +127,23 @@ export async function authenticatedFetch(
 ): Promise<Response> {
   const dashboard = Dashboard.getInstance();
 
-  // Safely access global injected at build time
-  const safeWorkerBase = typeof WORKER_BASE !== "undefined" ? WORKER_BASE : "";
+  // Prefer the private WORKER_BASE (production). If not present, fall back to the dev-prefixed VITE_WORKER_BASE.
+  const safeWorkerBase = typeof WORKER_BASE !== 'undefined' ? WORKER_BASE : (typeof VITE_WORKER_BASE !== 'undefined' ? VITE_WORKER_BASE : '');
 
-  if (!safeWorkerBase && !path.startsWith("http")) {
-    console.warn(`[Network] WORKER_BASE is empty. Requesting relative path: ${path}. ` +
-      `This will likely fail with a 404 on Firebase Hosting.`);
+  // Optional Firebase base URL for client-side usage (public, never contains secrets)
+  const firebaseBase = typeof VITE_FIREBASE_URL !== 'undefined' ? VITE_FIREBASE_URL : '';
+
+  if (!safeWorkerBase && !firebaseBase && !path.startsWith('http')) {
+    console.warn(`[Network] No base URL defined. Requesting relative path: ${path}. This may fail with 404.`);
   }
 
-  // Normalize URL joining
-  let baseUrl = safeWorkerBase.endsWith("/") ? safeWorkerBase.slice(0, -1) : safeWorkerBase;
-
-  // If WORKER_BASE is just "/", normalize it to empty so we don't get double slashes
-  if (baseUrl === "/") baseUrl = "";
-
-  // If baseUrl is empty, ensure we don't create protocol-relative // URLs
-  const url = path.startsWith("http")
+  // Build final URL: prefer worker base, otherwise fallback to firebase base, otherwise relative.
+  const baseUrl = safeWorkerBase || firebaseBase;
+  const url = path.startsWith('http')
     ? path
     : baseUrl
-      ? `${baseUrl}/${path.replace(/^\//, "")}`
-      : `/${path.replace(/^\//, "")}`;
+      ? `${baseUrl.replace(/\/*$/, '')}/${path.replace(/^\//, '')}`
+      : `/${path.replace(/^\//, '')}`;
 
   // Use native Headers API for robust merging
   const headers = new Headers(options.headers);

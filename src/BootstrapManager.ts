@@ -59,7 +59,7 @@ export class BootstrapManager {
             // 4. Reveal App Early
             // We hide splash here so the user sees the dashboard skeleton/loading state
             // instead of a static splash screen while waiting for the actual report data.
-            this.hideSplash();
+            setTimeout(() => this.hideSplash(), 500);
 
             // 5. Load Content
             this.updateSplashProgress(100);
@@ -74,7 +74,7 @@ export class BootstrapManager {
                 console.error("ACTION REQUIRED: Check WORKER_BASE configuration and Cloudflare Worker deployment.");
             }
 
-            this.hideSplash(); // Ensure splash is hidden so user can see the error toast
+            setTimeout(() => this.hideSplash(), 500); // Ensure splash is hidden so user can see the error toast
             dashboard.addToast(
                 "error",
                 `${dashboard.t("bootError") || "System failed to initialize"}: ${msg.split(" (Status:")[0]}`, // Trim status for toast
