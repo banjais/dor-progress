@@ -29,42 +29,10 @@ jobs:
             echo "Firebase Service Account is set"
           fi
   
-  install-dependencies:
-    name: 📦 Install Dependencies
-    runs-on: ubuntu-latest
-    # This job sets up Node.js and installs dependencies, caching them for subsequent jobs.
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
 
-      - name: Setup Node
-        uses: actions/setup-node@v4
-        with:
-          node-version: 22
-
-      - name: Cache node_modules
-        id: cache-npm
-        uses: actions/cache@v4
-        with:
-          path: node_modules
-          key: ${{ runner.os }}-node-${{ hashFiles('**/package-lock.json') }}
-          restore-keys: |
-            ${{ runner.os }}-node-
-
-      - name: Install dependencies
-        if: steps.cache-npm.outputs.cache-hit != 'true'
-        run: npm ci
-
-      - name: Upload node_modules as artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: node_modules
-          path: node_modules
-          retention-days: 1 # Keep for a short period
 
   lint:
     name: 🧹 Lint Code
-    needs: install-dependencies # Depends on dependencies being installed
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -73,17 +41,14 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: 22
-      - name: Download node_modules
-        uses: actions/download-artifact@v4
-        with:
-          name: node_modules
-          path: node_modules
+          cache: npm
+      - name: Install dependencies
+        run: npm ci
       - name: Lint
         run: npm run lint
 
   typecheck:
     name: 🔍 Typecheck Code
-    needs: install-dependencies # Depends on dependencies being installed
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -92,17 +57,14 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: 22
-      - name: Download node_modules
-        uses: actions/download-artifact@v4
-        with:
-          name: node_modules
-          path: node_modules
+          cache: npm
+      - name: Install dependencies
+        run: npm ci
       - name: Typecheck
         run: npm run typecheck
 
   test:
     name: 🧪 Run Tests
-    needs: install-dependencies # Depends on dependencies being installed
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -111,11 +73,9 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: 22
-      - name: Download node_modules
-        uses: actions/download-artifact@v4
-        with:
-          name: node_modules
-          path: node_modules
+          cache: npm
+      - name: Install dependencies
+        run: npm ci
       - name: Test
         run: npm test
 
@@ -133,13 +93,10 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: 22
+          cache: npm
       
-      # Download node_modules from the install-dependencies job
-      - name: Download node_modules
-        uses: actions/download-artifact@v4
-        with:
-          name: node_modules
-          path: node_modules
+      - name: Install dependencies
+        run: npm ci
 
       - name: Build project
         run: npm run build
@@ -184,12 +141,8 @@ jobs:
           node-version: 22
           cache: npm
       
-      # Download node_modules from the install-dependencies job
-      - name: Download node_modules
-        uses: actions/download-artifact@v4
-        with:
-          name: node_modules
-          path: node_modules
+      - name: Install dependencies
+        run: npm ci
 
       - name: Deploy Worker
         run: npx wrangler deploy
@@ -250,12 +203,8 @@ jobs:
           node-version: 22
           cache: npm
       
-      # Download node_modules from the install-dependencies job
-      - name: Download node_modules
-        uses: actions/download-artifact@v4
-        with:
-          name: node_modules
-          path: node_modules
+      - name: Install dependencies
+        run: npm ci
 
       # This script likely needs access to node_modules for tsx
       - name: Log deployment
