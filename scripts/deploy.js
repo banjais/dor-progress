@@ -44,19 +44,24 @@ function handleGitSync() {
   const branch = process.env.GITHUB_REF_NAME || 'local';
   const allowCiPush = process.env.ALLOW_CI_PUSH === 'true';
 
-  // Guard: Only allow git sync in CI if explicitly allowed AND we are on the main branch
-  if (isCI && (!allowCiPush || branch !== 'main')) {
-    console.log(`${colors.yellow}→ skipping git commit/push (CI: ${isCI}, Branch: ${branch}, Allowed: ${allowCiPush})${colors.reset}`);
+  // Guard: Only allow git sync in CI if explicitly allowed AND we are on the main branch.
+  // Also prevent syncing if this is a Pull Request build to avoid polluting main.
+  const isPR = process.env.GITHUB_EVENT_NAME === 'pull_request';
+
+  if (isCI && (!allowCiPush || branch !== 'main' || isPR)) {
+    console.log(`${colors.yellow}→ skipping git commit/push (CI: ${isCI}, Branch: ${branch}, PR: ${isPR}, Allowed: ${allowCiPush})${colors.reset}`);
     return { success: true };
   }
 
   if (isCI) {
-    console.log(`${colors.cyan}→ Diagnostic: Verifying CI environment permissions...${colors.reset}`);
+    console.log(`${colors.cyan}→ Configuring Git identity for CI...${colors.reset}`);
     try {
-      // This will print the active account and token scopes to the logs
-      execSync('git config --get user.name || echo "No git user.name configured"', { stdio: 'inherit' });
-      execSync('gh auth status', { stdio: 'inherit' });
-    } catch (e) { /* Diagnostic failed, likely gh CLI not authenticated in this env */ }
+      // Ensure git user is configured so commit doesn't fail
+      execSync('git config user.name "github-actions[bot]"');
+      execSync('git config user.email "github-actions[bot]@users.noreply.github.com"');
+    } catch (e) {
+      console.warn(`${colors.yellow}⚠️ Failed to configure git identity, commit might fail.${colors.reset}`);
+    }
   }
 
   // Proceed with git commit/push (Local or Authorized CI)
@@ -70,7 +75,10 @@ function handleGitSync() {
     const version = JSON.parse(fs.readFileSync('package.json', 'utf8')).version;
     execSync('git add . -- :!*.env');
     execSync(`git commit -m "chore(release): v${version} [skip ci]"`);
-    execSync(`git tag -a v${version} -m "Release v${version}"`);
+    // Use -f to overwrite tag if it exists locally from a previous failed run
+    execSync(`git tag -af v${version} -m "Release v${version}"`);
+
+    console.log(`${colors.cyan}→ Pushing to origin...${colors.reset}`);
     execSync('git push origin main --tags');
 
     console.log(`${colors.green}✓ Successfully tagged and pushed v${version}${colors.reset}`);
