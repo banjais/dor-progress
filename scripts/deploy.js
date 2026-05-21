@@ -11,7 +11,7 @@ const colors = {
 const JOBS = [
   { name: 'Update Version', command: 'npm run update-version' },
   { name: 'Install Dependencies', command: 'npm ci' },
-  { name: 'Security Audit', command: 'npm run audit' },
+  { name: 'Security Audit', command: 'node --no-deprecation scripts/audit-check.js' },
   { name: 'Lint & Typecheck', command: 'npm run lint && npm run typecheck' },
   { name: 'Clean', command: 'npm run clean' },
   { name: 'Build', command: 'npm run build' },
