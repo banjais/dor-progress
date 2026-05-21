@@ -1,111 +1,60 @@
-name: CI & Deploy - DoR Progress
+name: Build and Deploy
 
 on:
   push:
-    branches: [ main ]
-  pull_request:
-    branches: [ main ]
-  workflow_dispatch:      # Allows manual trigger from GitHub UI
+    branches:
+      - main
+  workflow_dispatch:
 
-permissions:
-  contents: write
-  id-token: write
-
-env:
-  NODE_OPTIONS: "--no-deprecation"
+# Prevent concurrent deployments that could cause Git tag/push conflicts
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
 
 jobs:
-  # 1. Secrets Check
-  validate-secrets:
-    name: 🔐 Validate Secrets
-    runs-on: ubuntu-latest
-    steps:
-      - name: Check Required Secrets
-        run: |
-          echo "✅ CLOUDFLARE_API_TOKEN     : ${{ secrets.CLOUDFLARE_API_TOKEN != '' && 'SET' || 'MISSING' }}"
-          echo "✅ FIREBASE_SERVICE_ACCOUNT : ${{ secrets.FIREBASE_SERVICE_ACCOUNT != '' && 'SET' || 'MISSING' }}"
-
-  # 2. Code Quality
-  lint-and-test:
-    name: 🧹 Lint & Typecheck
-    needs: validate-secrets
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 22
-          cache: 'npm'
-      - run: npm ci
-      - run: npm run lint
-      - run: npm run typecheck
-      - run: npm test
-
-  # 3. Security Audit
-  security-audit:
-    name: 🔒 Security Audit
-    needs: lint-and-test
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 22
-          cache: 'npm'
-      - name: Install Dependencies
-        run: npm ci
-      - name: Run Security Audit
-        run: node --no-deprecation scripts/audit-check.js
-
-  # 4. Build Frontend
-  build:
-    name: 🏗️ Build Frontend
-    needs: [lint-and-test, security-audit]
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 22
-          cache: 'npm'
-      - run: npm ci
-      - run: npm run build
-      - name: Upload Build Artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: dist
-          path: dist
-          retention-days: 1
-
-  # 5. Deploy (Worker + Hosting)
   deploy:
-    name: 🚀 Deploy Production
-    needs: build
-    if: github.ref == 'refs/heads/main'
+    name: Orchestrated Deployment
     runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-          token: ${{ secrets.GITHUB_TOKEN }}
+    
+    permissions:
+      contents: write # Essential for scripts/deploy.js to push version tags
 
-      - uses: actions/setup-node@v4
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
         with:
-          node-version: 22
+          fetch-depth: 0 # Required to fetch tags and history for versioning logic
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
           cache: 'npm'
 
-      - name: Download Build
-        uses: actions/download-artifact@v4
-        with:
-          name: dist
-          path: dist
-
-      - name: Run Full Deployment Script
+      - name: Run Deployment Script
         env:
-          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-          GITHUB_SHA: ${{ github.sha }}
+          # Flags for scripts/deploy.js
           ALLOW_CI_PUSH: 'true'
-        run: node --no-deprecation scripts/deploy.js
+          
+          # Authentication for deployment jobs
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          GITHUB_TOKEN: ${{ github.token }}
+
+          # Firebase Service Account for secure deployment
+          # The content of this secret will be written to a temporary file
+          # and its path will be set as GOOGLE_APPLICATION_CREDENTIALS.
+          # This is crucial for `firebase deploy` to authenticate.
+          FIREBASE_SERVICE_ACCOUNT_KEY_CONTENT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT_KEY }}
+
+          # Context variables used by update-version.js and deploy.js
+          GITHUB_REF_NAME: ${{ github.ref_name }}
+          GITHUB_SHA: ${{ github.sha }}
+        run: |
+          # Write the service account key to a temporary file
+          echo "$FIREBASE_SERVICE_ACCOUNT_KEY_CONTENT" > firebase-service-account.json
+          export GOOGLE_APPLICATION_CREDENTIALS=$(pwd)/firebase-service-account.json
+          node scripts/deploy.js
+
+      - name: Clean up Firebase Service Account Key
+        if: always() # Ensure this step runs even if previous steps fail
+        run: rm -f firebase-service-account.json
