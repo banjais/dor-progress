@@ -11,6 +11,9 @@ permissions:
   contents: write
   id-token: write
 
+env:
+  NODE_OPTIONS: "--no-deprecation"
+
 jobs:
   # 1. Secrets Check
   validate-secrets:
