@@ -1,6 +1,7 @@
 // scripts/deploy.js
 import { spawn } from 'child_process';
 import { execSync } from 'child_process';
+import fs from 'fs';
 
 const colors = {
   green: '\x1b[32m', red: '\x1b[31m', yellow: '\x1b[33m',
@@ -8,15 +9,15 @@ const colors = {
 };
 
 const JOBS = [
-  { name: 'Update Version',       command: 'npm run update-version' },
+  { name: 'Update Version', command: 'npm run update-version' },
   { name: 'Install Dependencies', command: 'npm ci' },
-  { name: 'Security Audit',       command: 'npm run audit' },
-  { name: 'Lint & Typecheck',     command: 'npm run lint && npm run typecheck' },
-  { name: 'Clean',                command: 'npm run clean' },
-  { name: 'Build',                command: 'npm run build' },
-  { name: 'Deploy Worker',        command: 'npm run deploy:worker' },
-  { name: 'Deploy Hosting',       command: 'npm run deploy:hosting' },
-  { name: 'Git Sync',             command: 'GIT_SYNC' }
+  { name: 'Security Audit', command: 'npm run audit' },
+  { name: 'Lint & Typecheck', command: 'npm run lint && npm run typecheck' },
+  { name: 'Clean', command: 'npm run clean' },
+  { name: 'Build', command: 'npm run build' },
+  { name: 'Deploy Worker', command: 'npm run deploy:worker' },
+  { name: 'Deploy Hosting', command: 'npm run deploy:hosting' },
+  { name: 'Git Sync', command: 'GIT_SYNC' }
 ];
 
 function runJob(job) {
@@ -39,13 +40,26 @@ function runJob(job) {
 }
 
 function handleGitSync() {
-  const isCI = Boolean(process.env.GITHUB_SHA);
-  if (isCI) {
-    console.log(`${colors.yellow}→ Running in GitHub Actions, skipping git commit/push${colors.reset}`);
+  const isCI = !!process.env.GITHUB_SHA;
+  const branch = process.env.GITHUB_REF_NAME || 'local';
+  const allowCiPush = process.env.ALLOW_CI_PUSH === 'true';
+
+  // Guard: Only allow git sync in CI if explicitly allowed AND we are on the main branch
+  if (isCI && (!allowCiPush || branch !== 'main')) {
+    console.log(`${colors.yellow}→ skipping git commit/push (CI: ${isCI}, Branch: ${branch}, Allowed: ${allowCiPush})${colors.reset}`);
     return { success: true };
   }
 
-  // Local development deploy
+  if (isCI) {
+    console.log(`${colors.cyan}→ Diagnostic: Verifying CI environment permissions...${colors.reset}`);
+    try {
+      // This will print the active account and token scopes to the logs
+      execSync('git config --get user.name || echo "No git user.name configured"', { stdio: 'inherit' });
+      execSync('gh auth status', { stdio: 'inherit' });
+    } catch (e) { /* Diagnostic failed, likely gh CLI not authenticated in this env */ }
+  }
+
+  // Proceed with git commit/push (Local or Authorized CI)
   try {
     const status = execSync('git status --porcelain').toString().trim();
     if (!status) {
@@ -53,7 +67,7 @@ function handleGitSync() {
       return { success: true };
     }
 
-    const version = JSON.parse(execSync('cat package.json').toString()).version;
+    const version = JSON.parse(fs.readFileSync('package.json', 'utf8')).version;
     execSync('git add . -- :!*.env');
     execSync(`git commit -m "chore(release): v${version} [skip ci]"`);
     execSync(`git tag -a v${version} -m "Release v${version}"`);
@@ -89,7 +103,7 @@ async function main() {
   console.log(`\n${colors.bold}${colors.cyan}═══════════════ DEPLOYMENT SUMMARY ═══════════════${colors.reset}`);
   results.forEach((r, i) => {
     const icon = r.status === 'SUCCESS' ? '✅' : r.status === 'FAILED' ? '❌' : '⏭️';
-    console.log(` ${String(i+1).padStart(2)}. ${r.name.padEnd(24)} ${icon} ${r.status}`);
+    console.log(` ${String(i + 1).padStart(2)}. ${r.name.padEnd(24)} ${icon} ${r.status}`);
   });
 
   if (!hasFailed) {

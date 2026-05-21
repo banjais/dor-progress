@@ -7,10 +7,11 @@ async function updateVersion() {
   try {
     console.log('🔄 Updating version and branding...');
 
-    // Get current branch (safe in CI)
-    const branch = execSync('git rev-parse --abbrev-ref HEAD').toString().trim();
-    if (branch !== 'main' && !process.env.GITHUB_SHA) {
-      console.warn(`⚠️  Warning: Not on main branch (current: ${branch})`);
+    const branch = process.env.GITHUB_REF_NAME || execSync('git rev-parse --abbrev-ref HEAD').toString().trim();
+
+    if (branch !== 'main') {
+      console.log(`⏭️  Skipping version bump: Current branch is "${branch}", not "main".`);
+      return; // Exit gracefully without updating files
     }
 
     const packageJsonPath = path.join(process.cwd(), 'package.json');
@@ -28,7 +29,7 @@ async function updateVersion() {
     // Update branding.json
     if (await fs.access(brandingPath).then(() => true).catch(() => false)) {
       const branding = JSON.parse(await fs.readFile(brandingPath, 'utf8'));
-      
+
       branding.app.lastUpdate = new Date().toISOString().split('T')[0];
       branding.app.lastCommitHash = execSync('git rev-parse HEAD').toString().trim();
 
