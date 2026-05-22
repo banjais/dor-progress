@@ -1,5 +1,5 @@
 import { AudioEngine } from "./components/AudioEngine.js";
-import { ProjectReport, ProjectReportSchema, ClientConfig } from "../shared/types.js";
+import { ProjectReport, ProjectReportSchema, ClientConfig } from "../shared/types.ts";
 import { ThemeManager } from "./ThemeManager.js";
 import { LoadingIndicatorManager } from "./LoadingIndicatorManager.js";
 import { ToastManager } from "./ToastManager.js";

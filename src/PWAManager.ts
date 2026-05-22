@@ -33,6 +33,12 @@ function showIosInstallInstructions(): void {
 function registerPeriodicUpdate(reg: ServiceWorkerRegistration): void {
   setInterval(async () => {
     try {
+      // Trigger cache maintenance regardless of whether an update is found
+      if (reg.active) {
+        console.log("[PWA] Requesting periodic cache cleanup...");
+        reg.active.postMessage({ type: "CLEANUP_EXPIRED_CACHE" });
+      }
+
       if (reg.waiting) {
         const toast = dashboard.addToast("success", t("updateAvailable") || "An update is available. Please refresh.");
         reg.waiting.postMessage({ type: "SKIP_WAITING" });
@@ -108,20 +114,20 @@ export function initPWALogic() {
 
   // ==================== SERVICE WORKER REGISTRATION ====================
   if ("serviceWorker" in navigator) {
-    // ←←←← CRITICAL: SKIP SERVICE WORKER IN DEVELOPMENT
-    if (import.meta.env.DEV) {
-      console.log("[PWA] Service Worker skipped in development mode (localhost)");
-      return;
-    }
-
     navigator.serviceWorker.addEventListener("controllerchange", () => {
       window.location.reload();
     });
 
     window.addEventListener("load", () => {
-      navigator.serviceWorker.register("/sw.v2.js")
+      // Pass mode and worker base to the Service Worker via query parameters.
+      // This allows the static SW script to adapt to development vs production environments.
+      const mode = import.meta.env.MODE;
+      const workerBase = import.meta.env.VITE_WORKER_BASE || '';
+      const swUrl = `/sw.v2.js?mode=${mode}&worker_base=${encodeURIComponent(workerBase)}`;
+
+      navigator.serviceWorker.register(swUrl)
         .then((reg) => {
-          console.log("[PWA] Service Worker registered:", reg.scope);
+          console.log(`[PWA] Service Worker registered in ${mode} mode:`, reg.scope);
           void reg.update();
           void registerPeriodicUpdate(reg);
         })

@@ -1,9 +1,9 @@
 import {
-  Env as BaseEnv,
   ProjectRow as BaseProjectRow,
   AiSummary as BaseAiSummary,
   ProjectReport as BaseProjectReport,
-  SpreadsheetHeaders as BaseHeaders
+  SpreadsheetHeaders as BaseHeaders,
+  Env as BaseEnv
 } from "../shared/types.ts";
 
 /**
@@ -147,7 +147,7 @@ declare global {
     standalone?: boolean;
   }
 
-  interface Env extends BaseEnv { VITE_API_BASE_URL?: string; }
+  type Env = BaseEnv;
   type ProjectRow = BaseProjectRow;
   type AiSummary = BaseAiSummary;
   type ProjectReport = BaseProjectReport;

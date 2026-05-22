@@ -1,10 +1,30 @@
 /**
  * Shared type definitions for the Department of Roads (DoR) MIS Dashboard.
  * These types are used by both the Frontend client and the Cloudflare Worker.
- * @cloudflare/workers-types is implicitly available in worker.ts, but explicit import is good for type checking.
  */
 
 import { z } from "zod";
+
+/** Shared Environment variables/bindings */
+export interface Env {
+  UPSTASH_REDIS_REST_URL?: string;
+  UPSTASH_REDIS_REST_TOKEN?: string;
+  GEMINI_API_KEY?: string;
+  GOOGLE_GENAI_API_KEY?: string;
+  FIREBASE_PROJECT_ID?: string;
+  FIREBASE_PROJECT_NUMBER?: string;
+  FIREBASE_APP_ID?: string;
+  FIREBASE_API_KEY?: string;
+  FIREBASE_AUTH_DOMAIN?: string;
+  FIREBASE_STORAGE_BUCKET?: string;
+  FIREBASE_MESSAGING_SENDER_ID?: string;
+  FIREBASE_MEASUREMENT_ID?: string;
+  PUBLISHED_SHEET_ID?: string;
+  SNAPSHOT_KEY?: string;
+  APP_ENV?: string;
+  DIGITAL_SIGNATURE?: string;
+  RECAPTCHA_SITE_KEY?: string;
+}
 
 export const SpreadsheetHeadersSchema = z.array(z.string());
 export type SpreadsheetHeaders = z.infer<typeof SpreadsheetHeadersSchema>;
@@ -31,7 +51,7 @@ export function getColumnKey(
   };
 
   const searchTerms = aliases[field] || [];
-  return headers.find((h) =>
+  return headers.find((h: string) =>
     searchTerms.some((term) => h.toLowerCase().includes(term.toLowerCase())),
   );
 }
@@ -71,35 +91,34 @@ export const AiSummarySchema = z.object({
 });
 export type AiSummary = z.infer<typeof AiSummarySchema>;
 
-export const ProjectReportSchema = z.object({
+const ProjectReportBaseSchema = z.object({
   created: z.string().optional(),
   headers: SpreadsheetHeadersSchema,
   rows: z.array(ProjectRowSchema),
   lastUpdate: z.string(),
   aiSummary: AiSummarySchema.nullable(),
   adminMessage: z.string().optional()
-  }).transform((report) => {
-    const { headers, created = new Date().toISOString(), lastUpdate = new Date().toISOString(), aiSummary, adminMessage } = report;
+});
 
-    // Use report.rows as-is with fallback
-    const rows = (report as any).rows ?? [];
+export const ProjectReportSchema = ProjectReportBaseSchema.transform((report) => {
+  const { headers, created = new Date().toISOString(), lastUpdate = new Date().toISOString(), aiSummary, adminMessage, rows } = report;
 
-    // Automatically calculate status color/enum for each row during the parsing phase.
-    const updatedRows = (rows as ProjectRow[]).map((row) => {
-      // If the API already provided a status, preserve it
-      if (row._status) return row;
+  // Automatically calculate status color/enum for each row during the parsing phase.
+  const updatedRows = rows.map((row) => {
+    // If the API already provided a status, preserve it
+    if (row._status) return row;
 
-      const progress = getProgress(row, headers ?? []);
-      let status: "good" | "stable" | "critical" = "critical";
+    const progress = getProgress(row, headers);
+    let status: "good" | "stable" | "critical" = "critical";
 
-      if (progress >= 80) status = "good";
-      else if (progress >= 40) status = "stable";
+    if (progress >= 80) status = "good";
+    else if (progress >= 40) status = "stable";
 
-      return { ...row, _status: status };
-    });
-
-    return { headers: headers ?? [], rows: updatedRows, created, lastUpdate, aiSummary, adminMessage };
+    return { ...row, _status: status };
   });
+
+  return { headers, rows: updatedRows, created, lastUpdate, aiSummary, adminMessage };
+});
 export type ProjectReport = z.infer<typeof ProjectReportSchema>;
 
 /** Schema for metadata stored in KV alongside archived reports */
@@ -138,21 +157,14 @@ export const ClientConfigSchema = z.object({
 });
 export type ClientConfig = z.infer<typeof ClientConfigSchema>;
 
-export interface Env {
-  APP_ENV?: string;
-  FIREBASE_PROJECT_ID?: string;
-  FIREBASE_PROJECT_NUMBER?: string;
-  FIREBASE_APP_ID?: string;
-  FIREBASE_API_KEY?: string;
-  FIREBASE_AUTH_DOMAIN?: string;
-  FIREBASE_STORAGE_BUCKET?: string;
-  FIREBASE_MESSAGING_SENDER_ID?: string;
-  GOOGLE_GENAI_API_KEY?: string;
-  GEMINI_API_KEY?: string; // Used as a fallback for GOOGLE_GENAI_API_KEY
-  PUBLISHED_SHEET_ID?: string;
-  SNAPSHOT_KEY?: string;
-  DIGITAL_SIGNATURE?: string; // "true" or "false" from .env, GitHub Secrets, Cloudflare Secrets
-  REPORTS_KV: KVNamespace;
-  RECAPTCHA_SITE_KEY?: string; // Used in client-config
-  [key: string]: any;
+/**
+ * Converts an ArrayBuffer to a Base64 string.
+ */
+export function arrayBufferToBase64(buffer: ArrayBuffer): string {
+  const bytes = new Uint8Array(buffer);
+  let binary = "";
+  for (let i = 0; i < bytes.byteLength; i++) {
+    binary += String.fromCharCode(bytes[i]);
+  }
+  return btoa(binary);
 }

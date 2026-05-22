@@ -1,38 +1,100 @@
 // scripts/deploy.js
-import { spawn } from 'child_process';
-import { execSync } from 'child_process';
+import { spawn, spawnSync, execSync } from 'child_process';
 import fs from 'fs';
+import path from 'path';
 
 const colors = {
   green: '\x1b[32m', red: '\x1b[31m', yellow: '\x1b[33m',
   cyan: '\x1b[36m', bold: '\x1b[1m', reset: '\x1b[0m'
 };
 
+const IS_CI = !!process.env.GITHUB_SHA;
+
+// Locally, try to load environment variables from .env files if they aren't already set.
+// This prevents "MISSING" prints when running outside of GitHub Actions.
+if (!IS_CI) {
+  const envFiles = ['.env.production', '.env.development', '.env.local', '.env', 'src/.env.production', 'src/.env.development'];
+  for (const file of envFiles) {
+    if (fs.existsSync(file)) {
+      const content = fs.readFileSync(file, 'utf8');
+      const lines = content.split(/\r?\n/);
+      let currentKey = null;
+      let currentValue = [];
+
+      for (const line of lines) {
+        const match = line.match(/^\s*([\w.-]+)\s*=\s*(.*)?$/);
+        if (match) {
+          const key = match[1];
+          const val = (match[2] || '').trim();
+          // Handle start of multi-line quoted value
+          if (val.startsWith('"') && !val.endsWith('"')) {
+            currentKey = key;
+            currentValue = [val.slice(1)];
+          } else if (!process.env[key]) {
+            process.env[key] = val.replace(/^["'](.*)["']$/, '$1');
+          }
+        } else if (currentKey) {
+          // Handle end of multi-line quoted value
+          if (line.trim().endsWith('"')) {
+            currentValue.push(line.trim().slice(0, -1));
+            if (!process.env[currentKey]) process.env[currentKey] = currentValue.join('\n');
+            currentKey = null;
+          } else {
+            currentValue.push(line);
+          }
+        }
+      }
+
+      if (process.env.VERBOSE === 'true') {
+        console.log(`${colors.yellow}💡 Loaded environment from ${file}${colors.reset}`);
+      }
+    }
+  }
+}
+
 const JOBS = [
-  { name: 'Update Version', command: 'npm run update-version' },
-  { name: 'Install Dependencies', command: 'npm ci' },
-  { name: 'Security Audit', command: 'node scripts/audit-check.js' },
+  { name: 'Install Dependencies', command: IS_CI ? 'echo "Skipping: already installed by workflow."' : 'npm install --prefer-offline --no-audit' },
+  { name: 'Workflow Validation', command: 'node scripts/validate-workflow.js' },
+  { name: 'Worker Type-Check', command: 'npm run typecheck:worker' },
   { name: 'Lint & Typecheck', command: 'npm run lint && npm run typecheck' },
+  { name: 'Security Audit', command: 'node scripts/audit-check.js' },
+  { name: 'Update Version', command: 'npm run update-version' },
   { name: 'Clean', command: 'npm run clean' },
   { name: 'Build', command: 'npm run build' },
+  { name: 'Sync Worker Secrets', command: 'node scripts/sync-worker-secrets.js' },
   { name: 'Deploy Worker', command: 'npm run deploy:worker' },
   { name: 'Deploy Hosting', command: 'npm run deploy:hosting' },
   { name: 'Git Sync', command: 'GIT_SYNC' }
 ];
 
+// List of environment variable keys that should never appear in logs
+const SENSITIVE_KEYS = [
+  'CLOUDFLARE_API_TOKEN',
+  'GOOGLE_GENAI_API_KEY',
+  'FIREBASE_SERVICE_ACCOUNT',
+  'SNAPSHOT_KEY'
+];
+
+function maskSensitive(text) {
+  if (!text) return text;
+  return SENSITIVE_KEYS.reduce((acc, key) => {
+    const val = process.env[key];
+    return val ? acc.split(val).join('********') : acc;
+  }, text);
+}
+
 function runJob(job) {
   return new Promise((resolve) => {
     console.log(`\n${colors.bold}${colors.cyan}════════════════════════════════════════════════════════════${colors.reset}`);
     console.log(`🚀 ${colors.bold}${job.name}${colors.reset}`);
-    console.log(`   ${colors.yellow}${job.command}${colors.reset}`);
+    console.log(`   ${colors.yellow}${maskSensitive(job.command)}${colors.reset}`);
     console.log(`${colors.bold}${colors.cyan}════════════════════════════════════════════════════════════${colors.reset}\n`);
 
     if (job.command === 'GIT_SYNC') {
       return resolve(handleGitSync());
     }
 
-    const [cmd, ...args] = job.command.split(' ');
-    const cp = spawn(cmd, args, { shell: true, stdio: 'inherit' });
+    const cp = spawn(job.command, { shell: true, stdio: 'inherit' });
 
     cp.on('close', (code) => resolve({ success: code === 0, code }));
     cp.on('error', (err) => resolve({ success: false, error: err.message }));
@@ -40,7 +102,6 @@ function runJob(job) {
 }
 
 function handleGitSync() {
-  const isCI = !!process.env.GITHUB_SHA;
   const branch = process.env.GITHUB_REF_NAME || 'local';
   const allowCiPush = process.env.ALLOW_CI_PUSH === 'true';
 
@@ -48,12 +109,12 @@ function handleGitSync() {
   // Also prevent syncing if this is a Pull Request build to avoid polluting main.
   const isPR = process.env.GITHUB_EVENT_NAME === 'pull_request';
 
-  if (isCI && (!allowCiPush || branch !== 'main' || isPR)) {
-    console.log(`${colors.yellow}→ skipping git commit/push (CI: ${isCI}, Branch: ${branch}, PR: ${isPR}, Allowed: ${allowCiPush})${colors.reset}`);
+  if (IS_CI && (!allowCiPush || branch !== 'main' || isPR)) {
+    console.log(`${colors.yellow}→ skipping git commit/push (CI: ${IS_CI}, Branch: ${branch}, PR: ${isPR}, Allowed: ${allowCiPush})${colors.reset}`);
     return { success: true };
   }
 
-  if (isCI) {
+  if (IS_CI) {
     console.log(`${colors.cyan}→ Configuring Git identity for CI...${colors.reset}`);
     try {
       // Ensure git user is configured so commit doesn't fail
@@ -73,13 +134,17 @@ function handleGitSync() {
     }
 
     const version = JSON.parse(fs.readFileSync('package.json', 'utf8')).version;
-    execSync('git add . -- :!*.env');
-    execSync(`git commit -m "chore(release): v${version} [skip ci]"`);
+
+    // Explicitly unstage any .env files that might have been accidentally added
+    try { execSync('git reset -- .env* src/.env*', { stdio: 'ignore' }); } catch (e) { /* ignore */ }
+    execSync('git add . -- ":!*.env*" ":!src/.env*"');
+    execSync(`git commit -m "chore(release): v${version} [skip ci] [ci skip]"`);
     // Use -f to overwrite tag if it exists locally from a previous failed run
     execSync(`git tag -af v${version} -m "Release v${version}"`);
 
     console.log(`${colors.cyan}→ Pushing to origin...${colors.reset}`);
-    execSync('git push origin main --tags');
+    execSync(`git push origin HEAD:${branch}`);
+    execSync(`git push origin v${version} --force`);
 
     console.log(`${colors.green}✓ Successfully tagged and pushed v${version}${colors.reset}`);
     return { success: true };
@@ -89,8 +154,121 @@ function handleGitSync() {
   }
 }
 
+async function verifyCloudflareToken() {
+  const token = process.env.CLOUDFLARE_API_TOKEN;
+
+  if (!token) {
+    if (IS_CI) {
+      console.error(`   ${colors.red}❌ Error: CLOUDFLARE_API_TOKEN is missing in CI.${colors.reset}`);
+      return false;
+    }
+    console.log(`   ${colors.yellow}⚠️  No CLOUDFLARE_API_TOKEN found. Proceeding with local session...${colors.reset}`);
+    return true;
+  }
+
+  console.log(`   ${colors.cyan}📡 Validating Cloudflare API Token...${colors.reset}`);
+  const result = spawnSync('npx', ['wrangler', 'whoami'], {
+    shell: true,
+    encoding: 'utf8',
+    env: process.env
+  });
+
+  if (result.status !== 0) {
+    console.error(`   ${colors.red}❌ Cloudflare Token validation failed.${colors.reset}`);
+    return false;
+  }
+
+  console.log(`   ${colors.green}✅ Cloudflare Token is valid.${colors.reset}`);
+  return true;
+}
+
+async function verifyFirebaseAccess() {
+  let projectId = process.env.VITE_FIREBASE_PROJECT_ID;
+
+  // Fallback: try to read from .firebaserc if the environment variable is missing
+  if (!projectId && fs.existsSync('.firebaserc')) {
+    try {
+      const rc = JSON.parse(fs.readFileSync('.firebaserc', 'utf8'));
+      projectId = rc.projects?.default;
+    } catch (e) { /* ignore parse errors */ }
+  }
+
+  projectId = projectId || 'dor-progress';
+
+  let tempKeyPath = null;
+  let originalGoogleCreds = process.env.GOOGLE_APPLICATION_CREDENTIALS;
+
+  try {
+    if (!IS_CI && process.env.FIREBASE_SERVICE_ACCOUNT && !process.env.GOOGLE_APPLICATION_CREDENTIALS) {
+      try {
+        // Validate that the service account string is actual JSON before trying to use it
+        JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT);
+
+        console.log(`   ${colors.cyan}📝 Using FIREBASE_SERVICE_ACCOUNT for local Firebase authentication.${colors.reset}`);
+        tempKeyPath = 'temp-firebase-key.json';
+        fs.writeFileSync(tempKeyPath, process.env.FIREBASE_SERVICE_ACCOUNT);
+        process.env.GOOGLE_APPLICATION_CREDENTIALS = path.resolve(tempKeyPath);
+      } catch (e) {
+        console.log(`   ${colors.yellow}⚠️  FIREBASE_SERVICE_ACCOUNT found but is not valid JSON. Falling back to CLI session...${colors.reset}`);
+      }
+    }
+
+    if (!IS_CI && !process.env.FIREBASE_SERVICE_ACCOUNT && !process.env.GOOGLE_APPLICATION_CREDENTIALS) {
+      console.log(`   ${colors.cyan}📡 Checking Firebase session for project: ${colors.bold}${projectId}${colors.reset}...`);
+    }
+
+    if (IS_CI && !process.env.GOOGLE_APPLICATION_CREDENTIALS && !process.env.FIREBASE_TOKEN) {
+      console.error(`   ${colors.red}❌ Error: Firebase credentials missing in CI.${colors.reset}`);
+      return false;
+    }
+
+    // Use firebase-tools explicitly; capture all output for better error reporting
+    // Note: projects:get was removed; use projects:list to verify access
+    const result = spawnSync('npx', ['firebase-tools', 'projects:list'], {
+      shell: true,
+      encoding: 'utf8',
+      env: process.env
+    });
+
+    if (result.status !== 0) {
+      const output = (result.stdout + (result.stderr || '')).trim();
+      const errorDetail = output.split('\n')[0] || 'Check if you are logged in (npx firebase login)';
+      console.error(`   ${colors.red}❌ Firebase access validation failed: ${errorDetail}${colors.reset}`);
+      return false;
+    }
+
+    // Verify the expected project is in the list
+    if (!result.stdout.includes(projectId)) {
+      console.error(`   ${colors.red}❌ Firebase access validation failed: Project "${projectId}" not found in accessible projects.${colors.reset}`);
+      return false;
+    }
+
+    console.log(`   ${colors.green}✅ Firebase access is valid.${colors.reset}`);
+    return true;
+  } finally {
+    if (tempKeyPath && fs.existsSync(tempKeyPath)) {
+      fs.unlinkSync(tempKeyPath);
+      process.env.GOOGLE_APPLICATION_CREDENTIALS = originalGoogleCreds; // Restore original value
+    }
+  }
+}
+
 async function main() {
   console.log(`${colors.bold}${colors.cyan}🚀 Starting DoR Progress Deployment${colors.reset}\n`);
+
+  if (process.env.VERBOSE === 'true') {
+    console.log(`${colors.bold}🔍 Environment Verification:${colors.reset}`);
+    SENSITIVE_KEYS.forEach(key => {
+      const val = process.env[key];
+      const status = val ? `${colors.green}PRESENT${colors.reset} (length: ${val.length})` : `${colors.red}MISSING${colors.reset}`;
+      console.log(`   - ${key.padEnd(25)}: ${status}`);
+    });
+  }
+
+  if (!(await verifyCloudflareToken()) || !(await verifyFirebaseAccess())) {
+    console.error(`\n${colors.red}❌ Authentication check failed. Deployment aborted.${colors.reset}\n`);
+    process.exit(1);
+  }
 
   let hasFailed = false;
   const results = [];

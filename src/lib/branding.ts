@@ -1,5 +1,5 @@
 // src/lib/branding.ts
-import brandingRaw from '../../public/branding.json' assert { type: 'json' };
+import brandingRaw from '../../public/branding.json' with { type: 'json' };
 
 export const branding = {
   ...brandingRaw,

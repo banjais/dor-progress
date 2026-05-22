@@ -5,10 +5,19 @@ on:
     branches:
       - main
   workflow_dispatch:
+    inputs:
+      environment:
+        description: "Target Environment"
+        required: true
+        default: "production"
+        type: choice
+        options:
+          - production
+          - staging
 
-# Prevent concurrent deployments that could cause Git tag/push conflicts
+# Prevent concurrent deployments on the same branch/environment.
 concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
+  group: ${{ github.workflow }}-${{ github.event.inputs.environment || github.ref_name }}
   cancel-in-progress: false
 
 jobs:
@@ -29,30 +38,69 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: 20
-          cache: 'npm'
+          cache: "npm"
+
+      - name: Install Dependencies
+        run: npm ci --prefer-offline --no-audit
+
+      - name: Worker Type-Check
+        run: npm run typecheck:worker
+
+      - name: Validate Firebase Secret
+        shell: bash
+        run: |
+          if [ -z "$FIREBASE_SERVICE_ACCOUNT" ]; then
+            echo "::error::FIREBASE_SERVICE_ACCOUNT is missing or empty!"
+            exit 1
+          fi
+          node -e "try { JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT); console.log('✅ Secret is valid JSON') } catch(e) { console.error('❌ Secret is NOT valid JSON:', e.message); process.exit(1) }"
+        env:
+          FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+
+      - name: Verify Firebase Permissions
+        shell: bash
+        run: |
+          echo "$FIREBASE_SERVICE_ACCOUNT" > temp-key.json
+          export GOOGLE_APPLICATION_CREDENTIALS=$(pwd)/temp-key.json
+          echo "Checking Firebase Hosting access..."
+          npx firebase-tools projects:get --project "$FIREBASE_PROJECT_ID" --debug && echo "✅ Permissions verified" || (echo "❌ Permission check failed"; exit 1)
+          rm temp-key.json
+        env:
+          FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+          FIREBASE_PROJECT_ID: ${{ secrets.VITE_FIREBASE_PROJECT_ID || 'dor-progress' }}
 
       - name: Run Deployment Script
         env:
           # Flags for scripts/deploy.js
-          ALLOW_CI_PUSH: 'true'
+          ALLOW_CI_PUSH: "true"
+          FIREBASE_DEBUG: "true"
           
           # Authentication for deployment jobs
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           GITHUB_TOKEN: ${{ github.token }}
+          
+          # Worker Secrets for sync-worker-secrets.js
+          GOOGLE_GENAI_API_KEY: ${{ secrets.GOOGLE_GENAI_API_KEY }}
+          SNAPSHOT_KEY: ${{ secrets.SNAPSHOT_KEY }}
+          FIREBASE_API_KEY: ${{ secrets.FIREBASE_API_KEY }}
 
-          # Firebase Service Account for secure deployment
-          # The content of this secret will be written to a temporary file
-          # and its path will be set as GOOGLE_APPLICATION_CREDENTIALS.
-          # This is crucial for `firebase deploy` to authenticate.
-          FIREBASE_SERVICE_ACCOUNT_KEY_CONTENT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT_KEY }}
+          # Standard naming convention for Firebase Service Account secrets.
+          FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+
+          # Pass environment variables to Vite during the production build.
+          # These will be baked into the app and passed to sw.v2.js via query params.
+          VITE_WORKER_BASE: ${{ secrets.VITE_WORKER_BASE }}
+          VITE_FIREBASE_URL: ${{ secrets.VITE_FIREBASE_URL }}
+          VITE_APP_ENV: ${{ github.event.inputs.environment || 'production' }}
 
           # Context variables used by update-version.js and deploy.js
           GITHUB_REF_NAME: ${{ github.ref_name }}
           GITHUB_SHA: ${{ github.sha }}
         run: |
-          # Write the service account key to a temporary file
-          echo "$FIREBASE_SERVICE_ACCOUNT_KEY_CONTENT" > firebase-service-account.json
-          export GOOGLE_APPLICATION_CREDENTIALS=$(pwd)/firebase-service-account.json
+          # Safely write the JSON secret to a file. Quotes are essential for multi-line JSON.
+          echo "$FIREBASE_SERVICE_ACCOUNT" > firebase-service-account.json
+          # Use the absolute workspace path for reliability across different execution contexts.
+          export GOOGLE_APPLICATION_CREDENTIALS="${{ github.workspace }}/firebase-service-account.json"
           node scripts/deploy.js
 
       - name: Clean up Firebase Service Account Key

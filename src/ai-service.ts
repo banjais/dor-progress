@@ -1,6 +1,6 @@
 import { GoogleGenerativeAI, HarmCategory, HarmBlockThreshold, SchemaType, GenerationConfig, Part } from "@google/generative-ai";
 import { z } from "zod";
-import { AiSummary, AiSummarySchema } from "../shared/types.js";
+import { AiSummary, AiSummarySchema } from "../shared/types.ts";
 import aiPromptsData from "./ai-prompts.json" with { type: "json" };
 
 let aiInstance: GoogleGenerativeAI | null = null;

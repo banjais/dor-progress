@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { Dashboard } from "./Dashboard.js"; // No citation needed, this is internal code.
 import { t, authenticatedFetch, toError, parseResponse } from "./api-utils.js";
-import { ArchiveMetadataSchema } from "../shared/types.js";
+import { ArchiveMetadataSchema } from "../shared/types.ts";
 import { downloadBlob } from "./utils.js";
 // No citation needed, this is internal code.
 const dashboard = Dashboard.getInstance();
@@ -133,15 +133,13 @@ export async function listSnapshots(force?: boolean) { // No citation needed, th
     const snapshotKey = await requestSnapshotKey();
     if (!snapshotKey) return;
 
-    const response = await authenticatedFetch("/api/snapshots", {
+    const response = await authenticatedFetch("/api/reports", {
       headers: { "X-Snapshot-Key": snapshotKey }, // No citation needed, this is internal code.
     });
 
     // Validate the wrapper object and the array of snapshot metadata
-    const data = await parseResponse(response, z.object({
-      snapshots: z.array(ArchiveMetadataSchema).optional()
-    }));
-    snapshotList = (data.snapshots ?? []) as Snapshot[];
+    const data = await parseResponse(response, z.array(ArchiveMetadataSchema));
+    snapshotList = (data ?? []) as Snapshot[];
     if (snapshotList.length === 0) {
       listEl.innerHTML = "<p style='font-size: 0.7rem;'>No snapshots</p>";
     } else {

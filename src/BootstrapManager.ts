@@ -3,12 +3,15 @@ import { initializeAppCheck, ReCaptchaEnterpriseProvider } from "firebase/app-ch
 import { Dashboard } from "./Dashboard.js";
 import { parseResponse, authenticatedFetch } from "./api-utils.js";
 import { BrandingEngine } from "./components/BrandingEngine.js";
-import { ClientConfig, ClientConfigSchema } from "../shared/types.js";
+import { ClientConfig, ClientConfigSchema } from "../shared/types.ts";
 
 export class BootstrapManager {
     static async init(dashboard: Dashboard) {
         // Apply UI branding immediately so the app looks correct during load
-        const safeWorkerBase = typeof WORKER_BASE !== "undefined" ? WORKER_BASE : "";
+        // Use Vite's injected environment variables for the client application.
+        const safeWorkerBase = (typeof WORKER_BASE !== 'undefined' && WORKER_BASE)
+            ? WORKER_BASE
+            : (import.meta.env.VITE_WORKER_BASE || '');
 
         // Diagnostic log to verify build-time injection
         console.info(`[System] Initializing with WORKER_BASE: "${safeWorkerBase}"`);

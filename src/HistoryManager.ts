@@ -7,7 +7,7 @@ import {
     toNepaliNumerals,
     I18N,
 } from "./api-utils.js";
-import { ProjectReport, ProjectReportSchema, ArchiveMetadata, ArchiveMetadataSchema } from "../shared/types.js";
+import { ProjectReport, ProjectReportSchema, ArchiveMetadata, ArchiveMetadataSchema } from "../shared/types.ts";
 import { downloadBlob } from "./utils.js";
 
 export class HistoryManager { // No citation needed, this is internal code.

@@ -8,14 +8,14 @@ import { resolve } from 'node:path';
  * `/api` requests to the appropriate Cloudflare Worker URL.
  *
  * Development mode expects a local worker (`VITE_WORKER_BASE`).
- * Production mode expects the public worker endpoint (`VITE_API_BASE_URL`).
+ * Production mode expects the public worker endpoint (`VITE_WORKER_BASE`).
  */
-export default defineConfig(({ mode }) => {
+export default defineConfig(() => {
   // Vite automatically reads .env files and injects any VITE_ prefixed vars.
   const env = process.env;
 
-  // Choose the proper base URL depending on the mode.
-  const apiBaseUrl = mode === 'production' ? env.VITE_API_BASE_URL : env.VITE_WORKER_BASE;
+  // Using VITE_WORKER_BASE as the primary API target per the updated secrets list.
+  const apiBaseUrl = env.VITE_WORKER_BASE || '';
 
   return {
     // Resolve path aliases for convenience.
@@ -36,7 +36,6 @@ export default defineConfig(({ mode }) => {
     },
     // Make the variable available in the client bundle.
     define: {
-      'import.meta.env.VITE_API_BASE_URL': JSON.stringify(env.VITE_API_BASE_URL ?? ''),
       'import.meta.env.VITE_WORKER_BASE': JSON.stringify(env.VITE_WORKER_BASE ?? ''),
       'import.meta.env.VITE_FIREBASE_URL': JSON.stringify(env.VITE_FIREBASE_URL ?? '')
     },

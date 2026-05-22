@@ -1,46 +1,28 @@
 {
+    "extends": "../tsconfig.json",
     "compilerOptions": {
-        "baseUrl": ".",
-        "paths": {
-            "@locales/*": [
-                "locales/*"
-            ],
-            "@components/*": [
-                "components/*"
-            ]
-        },
-        "target": "esnext",
-        "module": "nodenext",
-        "moduleResolution": "nodenext",
-        "allowJs": true,
-        "allowImportingTsExtensions": true,
-        "resolveJsonModule": true,
-        "checkJs": true,
-        "esModuleInterop": true,
-        "forceConsistentCasingInFileNames": true,
-        "strict": true,
-        "noUnusedLocals": true,
-        "noUnusedParameters": true,
-        "noImplicitReturns": true,
-        "noFallthroughCasesInSwitch": true,
-        "skipLibCheck": true,
-        "noEmit": true,
-        "isolatedModules": true,
+        "rootDir": ".",
         "lib": [
             "ESNext",
             "DOM",
             "DOM.Iterable"
         ],
         "types": [
-            "node",
-            "@cloudflare/workers-types"
+            "vite/client"
         ]
     },
+    "include": [
+        "**/*.ts",
+        "**/*.js",
+        "global.d.ts"
+    ],
     "exclude": [
-        "node_modules",
-        ".build",
-        "coverage",
-        "scripts",
-        "public"
+        "worker.ts",
+        "ai-service.ts"
+    ],
+    "references": [
+        {
+            "path": "../shared"
+        }
     ]
 }

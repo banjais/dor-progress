@@ -1,0 +1,27 @@
+{
+    "extends": "../tsconfig.json",
+    "compilerOptions": {
+        "composite": true,
+        "lib": [
+            "ESNext"
+        ],
+        "types": [
+            "@cloudflare/workers-types"
+        ],
+        "noEmit": false
+    },
+    "references": [
+        {
+            "path": "../shared"
+        }
+    ],
+    "include": [
+        "worker.ts",
+        "ai-service.ts"
+    ],
+    "exclude": [
+        "PWAManager.ts",
+        "Dashboard.ts",
+        "pdf-utils.ts"
+    ]
+}

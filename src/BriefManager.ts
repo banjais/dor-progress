@@ -1,6 +1,6 @@
 import { Dashboard, DashboardState, isReportSuccess, isReportLoading, isReportError, isReportIdle, ReportState } from "./Dashboard.js";
 import { authenticatedFetch, parseResponse, t, toNepaliNumerals } from "./api-utils.js";
-import { ProjectReport, ProjectReportSchema } from "../shared/types.js";
+import { ProjectReport, ProjectReportSchema } from "../shared/types.ts";
 
 // No citation needed, this is internal code.
 export class BriefManager {
@@ -17,7 +17,7 @@ export class BriefManager {
             (state: DashboardState) => ({
                 reportData: state.reportData,
                 lang: state.lang
-            }            )
+            })
         );
     }
     private render(reportData: ReportState, lang: string) {
@@ -200,7 +200,7 @@ export class BriefManager {
                     title: "DOR Progress Dashboard - Executive Briefing",
                     text: text,
                 });
-        } catch (_err) {
+            } catch (_err) {
                 console.log("Share cancelled or failed", _err);
             }
         } else {

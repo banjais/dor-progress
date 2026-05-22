@@ -2,15 +2,31 @@
   "compilerOptions": {
     "target": "ESNext",
     "module": "ESNext",
-    "moduleResolution": "bundler",
-    "lib": ["ESNext", "DOM", "DOM.Iterable"],
-    "strict": false,
+    "moduleResolution": "Bundler",
+    "strict": true,
+    "esModuleInterop": true,
     "skipLibCheck": true,
+    "forceConsistentCasingInFileNames": true,
+    "allowImportingTsExtensions": true,
     "resolveJsonModule": true,
-    "jsx": "preserve",
-
-    "types": ["@cloudflare/workers-types"]
+    "types": [],
+    "isolatedModules": true,
+    "noEmit": false,
+    "emitDeclarationOnly": true,
+    "composite": true,
+    "declaration": true,
+    "declarationMap": true
   },
-  "include": ["**/*.ts", "index.html"],
-  "exclude": ["node_modules", ".build", "dist", ".wrangler"]
+  "files": [],
+  "references": [
+    {
+      "path": "./shared"
+    },
+    {
+      "path": "./src"
+    },
+    {
+      "path": "./src/tsconfig.worker.json"
+    }
+  ]
 }

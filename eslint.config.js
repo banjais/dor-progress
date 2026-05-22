@@ -30,6 +30,17 @@ export default tseslint.config(
     },
   },
   {
+    files: ["shared/**/*.js"],
+    languageOptions: {
+      globals: { ...globals.browser, ...globals.es2021, ...globals.serviceWorker },
+    },
+    rules: {
+      "@typescript-eslint/no-explicit-any": "off",
+      "@typescript-eslint/no-unused-vars": ["warn", { varsIgnorePattern: "^_", argsIgnorePattern: "^_", caughtErrors: "none" }],
+      "no-console": "off",
+    },
+  },
+  {
     files: ["scripts/*.js", "src/**/*.js"],
     languageOptions: {
       globals: { ...globals.node, ...globals.es2021, console: true },

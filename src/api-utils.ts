@@ -127,17 +127,17 @@ export async function authenticatedFetch(
 ): Promise<Response> {
   const dashboard = Dashboard.getInstance();
 
-  // Prefer the private WORKER_BASE (production). If not present, fall back to the dev-prefixed VITE_WORKER_BASE.
-  const safeWorkerBase = typeof WORKER_BASE !== 'undefined' ? WORKER_BASE : (typeof VITE_WORKER_BASE !== 'undefined' ? VITE_WORKER_BASE : '');
+  // WORKER_BASE is used in Worker environments, while import.meta.env is used by Vite for the client.
+  const safeWorkerBase = (typeof WORKER_BASE !== 'undefined' && WORKER_BASE)
+    ? WORKER_BASE
+    : (import.meta.env.VITE_WORKER_BASE || '');
 
-  // Optional Firebase base URL for client-side usage (public, never contains secrets)
-  const firebaseBase = typeof VITE_FIREBASE_URL !== 'undefined' ? VITE_FIREBASE_URL : '';
+  const firebaseBase = import.meta.env.VITE_FIREBASE_URL || '';
 
   if (!safeWorkerBase && !firebaseBase && !path.startsWith('http')) {
     console.warn(`[Network] No base URL defined. Requesting relative path: ${path}. This may fail with 404.`);
   }
 
-  // Build final URL: prefer worker base, otherwise fallback to firebase base, otherwise relative.
   const baseUrl = safeWorkerBase || firebaseBase;
   const url = path.startsWith('http')
     ? path
@@ -357,7 +357,7 @@ export function typeText(element: TextElement, text: string, playSound?: (pitch?
 }
 
 // Re-export moved logic from shared types to avoid duplication
-export { getColumnKey, getProgress } from "../shared/types.js";
+export { getColumnKey, getProgress } from "../shared/types.ts";
 
 /**
  * Updates the connection strength badge in the UI.

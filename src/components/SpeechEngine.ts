@@ -1,5 +1,5 @@
-import { AudioEngine } from "./AudioEngine";
-import { Dashboard } from "../Dashboard";
+import { AudioEngine } from "./AudioEngine.js";
+import { Dashboard } from "../Dashboard.js";
 
 export class SpeechEngine {
   audio: AudioEngine;
@@ -31,8 +31,10 @@ export class SpeechEngine {
         this.container.innerText = this.originalText; // Restore original text
       }
       this.resetUI();
-    } else if (this.currentBlobAudioSource) {
-      this.currentBlobAudioSource.stop();
+    }
+
+    if (this.currentBlobAudioSource) {
+      this.currentBlobAudioSource?.stop();
       this.currentBlobAudioSource = null;
       this.audio.unduckMusic(0.5); // Fade music back in
       this.audio.stopVisualizer();
@@ -99,25 +101,27 @@ export class SpeechEngine {
       const arrayBuffer = await blob.arrayBuffer();
       const audioBuffer = await this.audio.ctx.decodeAudioData(arrayBuffer);
 
-      this.currentBlobAudioSource = this.audio.ctx.createBufferSource();
-      this.currentBlobAudioSource.buffer = audioBuffer;
+      const sourceNode = this.audio.ctx.createBufferSource();
+      this.currentBlobAudioSource = sourceNode; // Assign to class property
 
-      // Connect to analyser for visualization
-      if (this.audio.analyser) {
-        this.currentBlobAudioSource.connect(this.audio.analyser);
+      sourceNode.buffer = audioBuffer;
+
+      // Connect to analyser for visualization, ensuring analyser is not null
+      if (this.audio.analyser && this.audio.ctx) {
+        sourceNode.connect(this.audio.analyser);
         this.audio.analyser.connect(this.audio.ctx.destination); // Ensure analyser is connected to destination
-      } else {
-        this.currentBlobAudioSource.connect(this.audio.ctx.destination);
+      } else if (this.audio.ctx) {
+        sourceNode.connect(this.audio.ctx.destination);
       }
 
-      this.currentBlobAudioSource.onended = () => {
+      sourceNode.onended = () => {
         this.currentBlobAudioSource = null;
         this.resetUI();
         this.audio.unduckMusic(0.5); // Fade music back in
       };
 
       this.audio.duckMusic(); // Duck background music
-      this.currentBlobAudioSource.start(0);
+      sourceNode.start(0);
       this.audio.startVisualizer(
         document.getElementById("ai-visualizer") as HTMLCanvasElement,
       ); // Start visualizer

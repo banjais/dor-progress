@@ -3,7 +3,6 @@
 interface ImportMetaEnv {
   readonly VITE_WORKER_BASE: string;
   readonly VITE_FIREBASE_URL: string;
-  readonly VITE_API_BASE_URL: string;
   readonly VITE_BUILD_ID: string;
   readonly VITE_COMMIT_SHA: string;
   readonly VITE_APP_ENV: string;

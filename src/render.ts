@@ -1,7 +1,7 @@
 import { Dashboard, DashboardState } from "./Dashboard.js";
 import { getProgress, t, toNepaliNumerals, toArabicNumerals, getColumnKey } from "./api-utils.js";
 import { renderMiniChart, renderSparkline } from "./utils.js"; // Import I18N directly
-import { ProjectReport, ProjectRow } from "../shared/types.js";
+import { ProjectReport, ProjectRow } from "../shared/types.ts";
 
 /**
  * Core render function that updates the UI based on the project state.
@@ -109,7 +109,7 @@ function renderSystemStats(json: ProjectReport, rows: ProjectRow[]) {
 }
 function renderTableView(headers: string[], rows: ProjectRow[], highlightRegex: RegExp | null) {
   const dashboard = Dashboard.getInstance();
-  
+
   // Build thead HTML
   let thead = `<tr><th></th>`;
   headers.forEach((h) => {
@@ -123,7 +123,7 @@ function renderTableView(headers: string[], rows: ProjectRow[], highlightRegex: 
   const rowLimit = 100;
   const rowsToRender = rows.slice(0, rowLimit);
   let tbody = "";
-  
+
   rowsToRender.forEach((r: ProjectRow) => {
     const name = r[headers[0]] || "";
     const annualPerc = getProgress(r, headers);
@@ -139,12 +139,12 @@ function renderTableView(headers: string[], rows: ProjectRow[], highlightRegex: 
     });
     tbody += "</tr>";
   });
-  
+
   // If more rows exist, add a placeholder for lazy loading
   if (rows.length > rowLimit) {
     tbody += `<tr id="load-more-row"><td colspan="${headers.length + 1}" style="text-align:center;padding:20px">Loading more items...</td></tr>`;
   }
-  
+
   const tbodyEl = document.getElementById("tbody");
   if (tbodyEl) tbodyEl.innerHTML = tbody;
 }
@@ -234,11 +234,11 @@ function renderCardView(headers: string[], rows: ProjectRow[]) {
       </div>
     </div>`;
   });
-  
+
   if (hasMore) {
     cardHtml += `<div style="grid-column:1/-1;text-align:center;padding:20px;color:var(--text-light)">Showing ${rowLimit} of ${rows.length} items</div>`;
   }
-  
+
   const cardContainer = document.getElementById("view-cards");
   if (cardContainer) cardContainer.innerHTML = cardHtml;
 }

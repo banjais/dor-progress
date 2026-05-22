@@ -16,6 +16,7 @@ async function updateVersion() {
 
     const packageJsonPath = path.join(process.cwd(), 'package.json');
     const brandingPath = path.join(process.cwd(), 'config', 'branding.json');
+    const swPath = path.join(process.cwd(), 'public', 'sw.v2.js');
 
     // Update package.json version
     const pkg = JSON.parse(await fs.readFile(packageJsonPath, 'utf8'));
@@ -35,6 +36,15 @@ async function updateVersion() {
 
       await fs.writeFile(brandingPath, JSON.stringify(branding, null, 2) + '\n');
       console.log(`✅ Branding updated (lastUpdate: ${branding.app.lastUpdate})`);
+    }
+
+    // Update Service Worker version for cache busting
+    if (await fs.access(swPath).then(() => true).catch(() => false)) {
+      let swContent = await fs.readFile(swPath, 'utf8');
+      const versionRegex = /const VERSION = "v.*";/;
+      swContent = swContent.replace(versionRegex, `const VERSION = "v${newVersion}";`);
+      await fs.writeFile(swPath, swContent);
+      console.log(`✅ Service Worker version updated: v${newVersion}`);
     }
 
   } catch (err) {
