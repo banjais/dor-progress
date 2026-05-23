@@ -111,6 +111,7 @@ export class BootstrapManager {
     private static handleSplashVideo() {
         const video = document.querySelector(".splash-video") as HTMLVideoElement;
         if (video) {
+            video.muted = true; // Muted video is required for programmatic autoplay
             video.play().catch(() => {
                 // Autoplay may be blocked by browser policy until user interaction
                 console.warn("[System] Splash video autoplay blocked or unavailable.");
@@ -129,6 +130,7 @@ export class BootstrapManager {
         splashScreen.appendChild(skipButton);
 
         skipButton.addEventListener("click", () => {
+            dashboard.startHum(); // Resume AudioContext on user gesture
             this.hideSplash(true); // Pass true to indicate immediate hide
             // The dashboard.loadData() call in BootstrapManager.init() will still proceed,
             // ensuring the app loads correctly even if the splash is skipped early.
@@ -225,9 +227,6 @@ export class BootstrapManager {
         };
         window.addEventListener("resize", resize);
         resize();
-
-        // Start the background hum when particles begin
-        dashboard.startHum();
 
         for (let i = 0; i < count; i++) {
             particles.push({

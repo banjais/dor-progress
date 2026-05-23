@@ -60,7 +60,12 @@ export class AudioEngine {
     try {
       const AudioContextClass = window.AudioContext ?? (window as any).webkitAudioContext;
       if (!AudioContextClass) throw new Error("Web Audio API not supported");
+
       this.ctx = new AudioContextClass();
+
+      // If the context is suspended, we only attempt to resume it.
+      // If this is called outside a user gesture, the browser will log a warning,
+      // but the engine will remain ready to resume on the next valid interaction.
       if (this.ctx.state === "suspended") await this.ctx.resume();
 
       // Create nodes
@@ -97,14 +102,14 @@ export class AudioEngine {
   private async preRenderAll(): Promise<void> {
     if (!this.ctx) return;
     const sampleRate = this.ctx.sampleRate;
-    
+
     // Render only the "modern" pack initially for faster startup
     const defaultPack = AudioEngine.SOUND_PROFILES.modern;
     for (const [soundId, profile] of Object.entries(defaultPack)) {
       const buffer = await this.renderProfileToBuffer(profile, sampleRate);
       this.bufferPool.set(`modern:${soundId}`, buffer);
     }
-    
+
     // Pre-render other packs in background
     setTimeout(async () => {
       for (const [packName, profiles] of Object.entries(AudioEngine.SOUND_PROFILES)) {
@@ -179,15 +184,15 @@ export class AudioEngine {
     this.humGain.gain.setTargetAtTime(gain, this.ctx.currentTime, 0.1);
   }
 
-   /** Fades out and stops the hum */
-   stopHum(): void {
-     if (!this.ctx || !this.humGain || !this.humOsc) return;
-     this.humGain.gain.setTargetAtTime(0, this.ctx.currentTime, 0.5);
-     setTimeout(() => {
-       this.humOsc?.stop();
-       this.humOsc = null;
-     }, 600);
-   }
+  /** Fades out and stops the hum */
+  stopHum(): void {
+    if (!this.ctx || !this.humGain || !this.humOsc) return;
+    this.humGain.gain.setTargetAtTime(0, this.ctx.currentTime, 0.5);
+    setTimeout(() => {
+      this.humOsc?.stop();
+      this.humOsc = null;
+    }, 600);
+  }
 
   /** Play a UI sound effect */
   async playUi(id: string, checkMute = true, pitchOverride?: number): Promise<void> {
