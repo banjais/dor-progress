@@ -3,10 +3,10 @@ name: Build and Deploy
 on:
   push:
     branches:
-      - '**' # Run workflow on push to any branch to validate checks
+      - '**' # Run checks on any branch
   pull_request:
     branches:
-      - main # Run checks on PRs targeting main
+      - main
   workflow_dispatch:
     inputs:
       environment:
@@ -18,138 +18,95 @@ on:
           - production
           - staging
 
-# Prevent concurrent deployments on the same branch/environment.
 concurrency:
   group: ${{ github.workflow }}-${{ github.event.inputs.environment || github.ref_name }}
   cancel-in-progress: false
 
 jobs:
-  # -----------------------------------------------------------------
-  # 1. Validate Secrets
-  # -----------------------------------------------------------------
   validate-secrets:
     name: Validate Secrets
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout Repository
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-      - name: Validate Firebase Service Account Secret
+      - name: Validate Firebase Service Account
         shell: bash
         run: |
           if [ -z "$FIREBASE_SERVICE_ACCOUNT" ]; then
-            echo "::error::FIREBASE_SERVICE_ACCOUNT is missing or empty!"
+            echo "::error::FIREBASE_SERVICE_ACCOUNT is missing!"
             exit 1
           fi
-          node -e "try { JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT); console.log('✅ Secret is valid JSON') } catch(e) { console.error('❌ Secret is NOT valid JSON:', e.message); process.exit(1) }"
+          node -e "JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT); console.log('✅ Firebase secret is valid JSON')"
         env:
           FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
 
-      - name: Validate Cloudflare Secret
+      - name: Validate Cloudflare Token
         shell: bash
         run: |
           if [ -z "$CLOUDFLARE_API_TOKEN" ]; then
-            echo "::error::CLOUDFLARE_API_TOKEN is missing or empty!"
+            echo "::error::CLOUDFLARE_API_TOKEN is missing!"
             exit 1
           fi
           echo "✅ Cloudflare API Token is present."
-        env:
-          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
 
-  # -----------------------------------------------------------------
-  # 2. Lint & Typecheck
-  # -----------------------------------------------------------------
   lint-typecheck:
     name: Lint & Typecheck
     runs-on: ubuntu-latest
     needs: validate-secrets
     steps:
-      - name: Checkout Repository
-        uses: actions/checkout@v4
-
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
         with:
           node-version: 20
           cache: "npm"
+      - run: npm ci --prefer-offline --no-audit
+      - run: npm run typecheck:worker
+      - run: npm run lint && npm run typecheck
 
-      - name: Install Dependencies
-        run: npm ci --prefer-offline --no-audit
-
-      - name: Worker Type-Check
-        run: npm run typecheck:worker
-
-      - name: Frontend Lint & Typecheck
-        run: npm run lint && npm run typecheck
-
-  # -----------------------------------------------------------------
-  # 3. Security Audit
-  # -----------------------------------------------------------------
   security-audit:
     name: Security Audit
     runs-on: ubuntu-latest
     needs: lint-typecheck
     steps:
-      - name: Checkout Repository
-        uses: actions/checkout@v4
-
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
         with:
           node-version: 20
           cache: "npm"
+      - run: npm ci --prefer-offline --no-audit
+      - run: node scripts/audit-check.js
 
-      - name: Install Dependencies
-        run: npm ci --prefer-offline --no-audit
-
-      - name: Run Security Audit
-        run: node scripts/audit-check.js
-
-  # -----------------------------------------------------------------
-  # 4. Build Frontend
-  # -----------------------------------------------------------------
   build-frontend:
     name: Build Frontend
     runs-on: ubuntu-latest
     needs: security-audit
     steps:
-      - name: Checkout Repository
-        uses: actions/checkout@v4
-
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
         with:
           node-version: 20
           cache: "npm"
-
-      - name: Install Dependencies
-        run: npm ci --prefer-offline --no-audit
-
-      - name: Clean & Build Frontend
-        run: |
-          npm run clean
-          npm run build
+      - run: npm ci --prefer-offline --no-audit
+      - run: npm run clean
+      - run: npm run build
         env:
           VITE_WORKER_BASE: ${{ secrets.VITE_WORKER_BASE }}
           VITE_FIREBASE_URL: ${{ secrets.VITE_FIREBASE_URL }}
           VITE_APP_ENV: ${{ github.event.inputs.environment || 'production' }}
 
-  # -----------------------------------------------------------------
-  # 5. Deploy Production
-  # -----------------------------------------------------------------
   deploy-production:
     name: Deploy Production
     runs-on: ubuntu-latest
     needs: build-frontend
-    # Allow deployment from main, production branches, or via manual dispatch (but never from PRs)
     if: (github.ref_name == 'main' || github.ref_name == 'production' || github.event_name == 'workflow_dispatch') && github.event_name != 'pull_request'
     permissions:
-      contents: write # Essential for scripts/deploy.js to push version tags
+      contents: write
+
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v4
         with:
-          fetch-depth: 0 # Required to fetch tags and history for versioning logic
+          fetch-depth: 0
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
@@ -160,41 +117,48 @@ jobs:
       - name: Install Dependencies
         run: npm ci --prefer-offline --no-audit
 
+      - name: Configure Git
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
       - name: Run Deployment Script
         env:
-          # Flags for scripts/deploy.js
           ALLOW_CI_PUSH: "true"
-          FIREBASE_DEBUG: "true"
-          SKIP_PRE_DEPLOY_CHECKS: "true" # Skips redundant checks already run in earlier jobs
-          
-          # Authentication for deployment jobs
-          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          SKIP_PRE_DEPLOY_CHECKS: "true"
           GITHUB_TOKEN: ${{ github.token }}
-          
-          # Worker Secrets for sync-worker-secrets.js
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           GOOGLE_GENAI_API_KEY: ${{ secrets.GOOGLE_GENAI_API_KEY }}
           SNAPSHOT_KEY: ${{ secrets.SNAPSHOT_KEY }}
           FIREBASE_API_KEY: ${{ secrets.FIREBASE_API_KEY }}
-
-          # Standard naming convention for Firebase Service Account secrets.
           FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
-
-          # Pass environment variables to Vite during the production build.
-          # These will be baked into the app and passed to sw.v2.js via query params.
           VITE_WORKER_BASE: ${{ secrets.VITE_WORKER_BASE }}
           VITE_FIREBASE_URL: ${{ secrets.VITE_FIREBASE_URL }}
           VITE_APP_ENV: ${{ github.event.inputs.environment || 'production' }}
-
-          # Context variables used by update-version.js and deploy.js
           GITHUB_REF_NAME: ${{ github.ref_name }}
           GITHUB_SHA: ${{ github.sha }}
         run: |
-          # Safely write the JSON secret to a file. Quotes are essential for multi-line JSON.
           echo "$FIREBASE_SERVICE_ACCOUNT" > firebase-service-account.json
-          # Use the absolute workspace path for reliability across different execution contexts.
           export GOOGLE_APPLICATION_CREDENTIALS="${{ github.workspace }}/firebase-service-account.json"
+          
           node scripts/deploy.js
 
-      - name: Clean up Firebase Service Account Key
-        if: always() # Ensure this step runs even if previous steps fail
+      - name: Ensure Single Commit Push
+        if: always()
+        run: |
+          if [[ -z $(git status --porcelain) ]]; then
+            echo "No changes detected. Creating 'Everything is up to date' commit..."
+            git commit --allow-empty -m "Everything is up to date [skip ci]" || true
+          else
+            echo "Changes detected. Committing..."
+            git add -A
+            git commit -m "chore: deploy update [skip ci]" || true
+          fi
+          
+          git push --follow-tags
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+
+      - name: Cleanup
+        if: always()
         run: rm -f firebase-service-account.json
