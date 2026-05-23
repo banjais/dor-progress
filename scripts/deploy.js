@@ -1,159 +1,207 @@
 // scripts/deploy.js
-import { spawnSync, execSync } from 'child_process';
-import fs from 'fs';
 
-process.env.NODE_NO_WARNINGS = '1';
+import { spawnSync, execSync } from "child_process";
+import fs from "fs";
+
+process.env.NODE_NO_WARNINGS = "1";
 
 const colors = {
-  green: '\x1b[32m', red: '\x1b[31m', yellow: '\x1b[33m',
-  cyan: '\x1b[36m', bold: '\x1b[1m', reset: '\x1b[0m'
+  green: "\x1b[32m",
+  red: "\x1b[31m",
+  yellow: "\x1b[33m",
+  cyan: "\x1b[36m",
+  bold: "\x1b[1m",
+  reset: "\x1b[0m",
 };
 
-const IS_CI = !!process.env.GITHUB_ACTIONS || !!process.env.CI;
+const run = (command, args = [], options = {}) => {
+  const useShell = process.platform === "win32";
 
-console.log(`${colors.bold}${colors.cyan}🚀 Starting DoR Progress Deployment${colors.reset}\n`);
+  // When using shell mode with verbatim arguments on Windows, Node.js skips 
+  // automatic escaping. We must manually quote arguments containing spaces.
+  const finalArgs = useShell ? args.map(arg => (arg.includes(" ") ? `"${arg}"` : arg)) : args;
 
-// ── Security Audit ────────────────────────────────────────────────────────────
-console.log('🔍 Running Security Audit...');
-spawnSync('npm', ['audit', 'fix', '--force'], { stdio: 'inherit', shell: true });
-
-let auditPassed = true;
-try {
-  const raw = execSync('npm audit --json', { encoding: 'utf8' }).trim();
-  if (raw) {
-    const audit = JSON.parse(raw);
-    const high = audit.metadata?.vulnerabilities?.high || 0;
-    const critical = audit.metadata?.vulnerabilities?.critical || 0;
-    if (high + critical > 0) {
-      console.error(`❌ Blocked: ${high + critical} high/critical vulnerabilities`);
-      auditPassed = false;
-    }
-  }
-} catch (e) {
-  // npm audit returns non-zero when vulnerabilities are found - handled above
-}
-
-if (!auditPassed) process.exit(1);
-console.log('✅ Security audit passed.\n');
-
-// ── Update Version ────────────────────────────────────────────────────────────
-console.log('🔄 Updating version...');
-const pkg = JSON.parse(fs.readFileSync('package.json', 'utf8'));
-const [major, minor, patch] = pkg.version.split('.').map(Number);
-const newVersion = `${major}.${minor}.${patch + 1}`;
-pkg.version = newVersion;
-fs.writeFileSync('package.json', JSON.stringify(pkg, null, 2) + '\n');
-
-const today = new Date().toISOString().split('T')[0];
-const hash = execSync('git rev-parse HEAD').toString().trim().slice(0, 7);
-
-// Update branding files
-['config/branding.json', 'public/branding.json', 'src/branding.json', 'branding.json']
-  .forEach(file => {
-    if (fs.existsSync(file)) {
-      try {
-        const data = JSON.parse(fs.readFileSync(file, 'utf8'));
-        if (file.includes('config')) {
-          data.app = data.app || {};
-          data.app.lastUpdate = today;
-          data.app.lastCommitHash = hash;
-        } else {
-          data.version = newVersion;
-          data.lastUpdate = data.lastUpdate || {};
-          data.lastUpdate.value = today;
-          data.lastCommitHash = hash;
-        }
-        fs.writeFileSync(file, JSON.stringify(data, null, 2) + '\n');
-      } catch (e) {
-        // Ignore errors for missing or malformed branding files
-      }
-    }
+  const result = spawnSync(command, finalArgs, {
+    stdio: "inherit",
+    shell: useShell,
+    windowsVerbatimArguments: true,
+    ...options,
   });
 
-// Update service worker
-if (fs.existsSync('public/sw.v2.js')) {
+  if (result.status !== 0) {
+    console.error(
+      `${colors.red}❌ Command failed:${colors.reset}`,
+      command,
+      args.join(" ")
+    );
+    process.exit(result.status || 1);
+  }
+};
+
+console.log(
+  `${colors.bold}${colors.cyan}🚀 Starting DoR Progress Deployment${colors.reset}\n`
+);
+
+const today = new Date().toISOString().split("T")[0];
+
+const branch =
+  process.env.GITHUB_REF_NAME ||
+  execSync("git rev-parse --abbrev-ref HEAD")
+    .toString()
+    .trim();
+
+const hash = execSync("git rev-parse HEAD")
+  .toString()
+  .trim()
+  .slice(0, 7);
+
+// ─────────────────────────────────────────────────────────────
+// Security Audit
+// ─────────────────────────────────────────────────────────────
+
+console.log("🔍 Running Security Audit...");
+run("npm", ["audit", "--audit-level=high"]);
+
+console.log("✅ Security audit passed.\n");
+
+// ─────────────────────────────────────────────────────────────
+// Update Version
+// ─────────────────────────────────────────────────────────────
+
+console.log("🔄 Updating version...");
+
+const pkg = JSON.parse(fs.readFileSync("package.json", "utf8"));
+
+const [major, minor, patch] = pkg.version
+  .split(".")
+  .map(Number);
+
+const newVersion = `${major}.${minor}.${patch + 1}`;
+
+pkg.version = newVersion;
+
+fs.writeFileSync(
+  "package.json",
+  JSON.stringify(pkg, null, 2) + "\n"
+);
+
+// ─────────────────────────────────────────────────────────────
+// Branding Updates
+// ─────────────────────────────────────────────────────────────
+
+[
+  "config/branding.json",
+  "public/branding.json",
+  "src/branding.json",
+  "branding.json",
+].forEach((file) => {
+  if (!fs.existsSync(file)) return;
+
   try {
-    let sw = fs.readFileSync('public/sw.v2.js', 'utf8');
-    sw = sw.replace(/const VERSION = "v.*";/, `const VERSION = "v${newVersion}";`);
-    fs.writeFileSync('public/sw.v2.js', sw);
-  } catch (e) {
-    // Ignore service worker update errors
+    const data = JSON.parse(fs.readFileSync(file, "utf8"));
+
+    if (file.includes("config")) {
+      data.app = data.app || {};
+      data.app.lastUpdate = today;
+      data.app.lastCommitHash = hash;
+      data.app.version = newVersion;
+    } else {
+      data.version = newVersion;
+      data.lastUpdate = {
+        value: today,
+      };
+      data.lastCommitHash = hash;
+    }
+
+    fs.writeFileSync(
+      file,
+      JSON.stringify(data, null, 2) + "\n"
+    );
+  } catch {
+    console.log(`⚠️ Skipped invalid JSON: ${file}`);
+  }
+});
+
+// ─────────────────────────────────────────────────────────────
+// Service Worker Update
+// ─────────────────────────────────────────────────────────────
+
+if (fs.existsSync("public/sw.v2.js")) {
+  try {
+    let sw = fs.readFileSync("public/sw.v2.js", "utf8");
+
+    sw = sw.replace(
+      /const VERSION = "v.*";/,
+      `const VERSION = "v${newVersion}";`
+    );
+
+    fs.writeFileSync("public/sw.v2.js", sw);
+
+    console.log("✅ Service worker updated.");
+  } catch {
+    console.log("⚠️ Service worker update skipped.");
   }
 }
 
 console.log(`✅ Version updated to ${newVersion}\n`);
 
-// ── Build ─────────────────────────────────────────────────────────────────────
-console.log('🏗️  Building project...');
-spawnSync('npm', ['run', 'clean'], { stdio: 'inherit', shell: true });
-const buildResult = spawnSync('npm', ['run', 'build'], { stdio: 'inherit', shell: true });
-if (buildResult.status !== 0) process.exit(1);
-console.log('✅ Build completed.\n');
+// ─────────────────────────────────────────────────────────────
+// Clean
+// ─────────────────────────────────────────────────────────────
 
-// ── Deploy Worker ─────────────────────────────────────────────────────────────
-console.log('☁️  Deploying Cloudflare Worker...');
-if (spawnSync('npx', ['wrangler', 'deploy'], { stdio: 'inherit', shell: true }).status !== 0) process.exit(1);
+console.log("🧹 Cleaning...");
+run("npm", ["run", "clean"]);
 
-// ── Sync Secrets ──────────────────────────────────────────────────────────────
-console.log('🔐 Syncing secrets...');
-['GOOGLE_GENAI_API_KEY', 'SNAPSHOT_KEY', 'FIREBASE_API_KEY'].forEach(secret => {
-  if (process.env[secret]) {
-    spawnSync('npx', ['wrangler', 'secret', 'put', secret], { 
-      input: process.env[secret], 
-      stdio: ['pipe', 'inherit', 'inherit'],
-      shell: true 
-    });
-    console.log(`✅ ${secret} synced`);
-  }
-});
+console.log("✅ Clean completed.\n");
 
-// ── Deploy Firebase Hosting ───────────────────────────────────────────────────
-console.log('🔥 Deploying to Firebase Hosting...');
-if (process.env.FIREBASE_SERVICE_ACCOUNT) {
-  fs.writeFileSync('firebase-service-account.json', process.env.FIREBASE_SERVICE_ACCOUNT);
-  process.env.GOOGLE_APPLICATION_CREDENTIALS = 'firebase-service-account.json';
-}
+// ─────────────────────────────────────────────────────────────
+// Verify
+// ─────────────────────────────────────────────────────────────
 
-const hostingResult = spawnSync('firebase', ['deploy', '--only', 'hosting', '--non-interactive'], { 
-  stdio: 'inherit', 
-  shell: true,
-  env: process.env 
-});
-if (hostingResult.status !== 0) process.exit(1);
+console.log("🧪 Running verification...");
+run("npm", ["run", "verify"]);
 
-console.log('✅ Firebase Hosting deployed successfully.\n');
+console.log("✅ Verification passed.\n");
 
-// ── Git Commit & Push ─────────────────────────────────────────────────────────
-console.log('\n📤 Syncing Git...');
-const branch = process.env.GITHUB_REF_NAME || execSync('git rev-parse --abbrev-ref HEAD').toString().trim();
-const timestamp = new Date().toISOString().replace('T', ' ').split('.')[0];
+// ─────────────────────────────────────────────────────────────
+// Build
+// ─────────────────────────────────────────────────────────────
 
-if (IS_CI) {
-  execSync('git config user.name "github-actions[bot]"', { stdio: 'ignore' });
-  execSync('git config user.email "github-actions[bot]@users.noreply.github.com"', { stdio: 'ignore' });
-}
+console.log("🏗️ Building project...");
+run("npm", ["run", "build"]);
 
-execSync('git add . -- ":(exclude)**/.env*"', { stdio: 'ignore' });
+console.log("✅ Build completed.\n");
 
-const hasChanges = execSync('git diff --cached --name-only').toString().trim().length > 0;
+// ─────────────────────────────────────────────────────────────
+// Git Commit
+// ─────────────────────────────────────────────────────────────
 
-const commitMsg = hasChanges 
-  ? `chore(release): v${newVersion} [${timestamp}] [skip ci]`
-  : `Everything is up to date [${timestamp}] [skip ci]`;
+console.log("📦 Preparing git commit...");
 
-console.log(`Commit: "${commitMsg}"`);
+run("git", ["add", ".", '--', ':(exclude)**/.env*']);
 
-if (!hasChanges) {
-  execSync(`git commit --allow-empty -m "${commitMsg}"`, { stdio: 'inherit' });
+const hasChanges =
+  execSync("git diff --cached --name-only")
+    .toString()
+    .trim()
+    .length > 0;
+
+if (hasChanges) {
+  const commitMsg = `deploy v${newVersion}`;
+
+  console.log(`📝 Commit: ${commitMsg}`);
+
+  run("git", ["commit", "-m", commitMsg]);
+
+  run("git", ["tag", "-f", `v${newVersion}`]);
+
+  console.log(`📤 Pushing to ${branch}...`);
+
+  run("git", ["push", "origin", `HEAD:${branch}`]);
+
+  run("git", ["push", "origin", `v${newVersion}`, "--force"]);
+
+  console.log("✅ Git push completed.\n");
 } else {
-  execSync(`git commit -m "${commitMsg}"`, { stdio: 'inherit' });
+  console.log("ℹ️ No git changes detected.");
 }
-
-execSync(`git tag -af v${newVersion} -m "v${newVersion}"`, { stdio: 'ignore' });
-
-console.log(`Pushing to ${branch}...`);
-execSync(`git push origin HEAD:${branch} --force-with-lease`, { stdio: 'inherit' });
-execSync(`git push origin v${newVersion} --force`, { stdio: 'ignore' });
-
-console.log(`\n${colors.bold}${colors.green}🎉 DEPLOYMENT COMPLETED SUCCESSFULLY!${colors.reset}`);
-console.log(`Version: ${newVersion} | Branch: ${branch}\n`);

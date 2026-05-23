@@ -8,7 +8,8 @@
     "location": "Chakupat, Lalitpur",
     "reportTitle": "DoR Progress Report (Weekly)",
     "lastUpdate": "2026-05-23",
-    "lastCommitHash": "7a02fb6"
+    "lastCommitHash": "f3f8661",
+    "version": "1.0.423"
   },
   "colors": {
     "primary": "#8D1B1B",

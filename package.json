@@ -1,22 +1,22 @@
 {
   "name": "dor-progress",
-  "version": "1.0.419",
+  "version": "1.0.423",
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "node --no-deprecation ./node_modules/vite/bin/vite.js",
-    "build": "node --no-deprecation ./node_modules/vite/bin/vite.js build",
-    "preview": "node --no-deprecation ./node_modules/vite/bin/vite.js preview",
-    "lint": "node --no-deprecation ./node_modules/eslint/bin/eslint.js . --ext .js,.ts --max-warnings 0",
-    "typecheck": "node --no-deprecation ./node_modules/typescript/bin/tsc --noEmit",
-    "typecheck:worker": "node --no-deprecation scripts/typecheck-worker.js",
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview",
+    "lint": "eslint . --ext .js,.ts --max-warnings 0",
+    "typecheck": "tsc --noEmit",
+    "typecheck:worker": "node scripts/typecheck-worker.js",
     "verify": "npm run lint && npm run typecheck",
     "clean": "rimraf dist node_modules/.vite",
-    "deploy": "node --no-deprecation scripts/deploy.js",
+    "deploy": "node scripts/deploy.js",
     "deploy:hosting": "firebase deploy --only hosting --non-interactive",
     "test": "echo \"No tests specified\" && exit 0",
     "reinstall": "rimraf node_modules package-lock.json && npm install",
-    "upgrade:firebase": "npm i -g firebase-tools@latest && npm i firebase-tools@latest && npm install"
+    "upgrade:firebase": "npm i firebase-tools@latest firebase@latest"
   },
   "devDependencies": {
     "@cloudflare/workers-types": "^4.20260521.1",
@@ -56,7 +56,7 @@
     "teeny-request": "^10.0.0"
   },
   "lint-staged": {
-    "*.{js,ts}": "node --no-deprecation ./node_modules/eslint/bin/eslint.js --max-warnings 0"
+    "*.{js,ts}": "eslint --max-warnings 0"
   },
   "engines": {
     "node": ">=22"
