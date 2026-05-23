@@ -453,8 +453,9 @@ async function handleAutoArchive(env: Env) {
       lang: "ne",
     });
 
-    if (!aiResult?.extractedData) {
-      throw new Error("AI extraction failed during auto-archive procedure"); // No citation needed, this is internal code.
+    if (!aiResult?.extractedData || !aiResult.extractedData.rows.length) {
+      console.error("[Auto-Archive] AI extraction returned no data. Aborting archive.");
+      return;
     }
 
     const reportDate =

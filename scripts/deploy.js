@@ -17,9 +17,11 @@ const colors = {
 const run = (command, args = [], options = {}) => {
   const useShell = process.platform === "win32";
 
-  // When using shell mode with verbatim arguments on Windows, Node.js skips 
-  // automatic escaping. We must manually quote arguments containing spaces.
-  const finalArgs = useShell ? args.map(arg => (arg.includes(" ") ? `"${arg}"` : arg)) : args;
+  // When using shell mode with verbatim arguments on Windows, Node.js skips
+  // automatic escaping. We must manually quote arguments containing spaces or parentheses.
+  const finalArgs = useShell
+    ? args.map(arg => (/[ ()]/.test(arg) ? `"${arg}"` : arg))
+    : args;
 
   const result = spawnSync(command, finalArgs, {
     stdio: "inherit",
