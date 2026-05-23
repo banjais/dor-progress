@@ -5,7 +5,7 @@ compatibility_flags = ["nodejs_compat"]
 
 [vars]
 APP_ENV = "production"
-version = "1.0.409"
+version = "1.0.410"
 [[kv_namespaces]]
 binding = "TRANSLATION_KV"
 id = "d032e134adec47ab85ea1b5a8c18caab"
