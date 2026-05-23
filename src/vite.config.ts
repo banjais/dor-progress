@@ -1,4 +1,4 @@
-import { defineConfig } from 'vite';
+import { defineConfig, loadEnv } from 'vite';
 import { resolve } from 'node:path';
 
 /**
@@ -10,9 +10,10 @@ import { resolve } from 'node:path';
  * Development mode expects a local worker (`VITE_WORKER_BASE`).
  * Production mode expects the public worker endpoint (`VITE_WORKER_BASE`).
  */
-export default defineConfig(() => {
-  // Vite automatically reads .env files and injects any VITE_ prefixed vars.
-  const env = process.env;
+export default defineConfig(({ mode }) => {
+  // Load env file based on `mode` in the current working directory.
+  // Set the third parameter to '' to load all env regardless of the `VITE_` prefix.
+  const env = loadEnv(mode, process.cwd(), '');
 
   // Using VITE_WORKER_BASE as the primary API target per the updated secrets list.
   const apiBaseUrl = env.VITE_WORKER_BASE || '';

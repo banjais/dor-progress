@@ -419,7 +419,10 @@ async function handleFetch(
       return jsonResponse({ message: "Migration Complete", results }, 200, origin);
     }
 
-    return new Response("Not Found", { status: 404 }) as unknown as WorkerResponse;
+    return new Response(`Not Found: ${url.pathname}`, {
+      status: 404,
+      headers: getCorsHeaders(origin)
+    }) as unknown as WorkerResponse;
   } catch (e) {
     const err = e instanceof ServiceError ? e : new ServiceError((e as Error).message || "Internal Server Error", { status: 500, cause: e });
     return jsonResponse({ error: err.message }, err.status, origin) as unknown as WorkerResponse;

@@ -87,6 +87,8 @@ fs.writeFileSync(
   JSON.stringify(pkg, null, 2) + "\n"
 );
 
+run("npm", ["install", "--package-lock-only"]);
+
 // ─────────────────────────────────────────────────────────────
 // Branding Updates
 // ─────────────────────────────────────────────────────────────
@@ -189,7 +191,7 @@ const hasChanges =
     .length > 0;
 
 if (hasChanges) {
-  const commitMsg = `deploy v${newVersion}`;
+  const commitMsg = `deploy v${newVersion} [skip ci]`;
 
   console.log(`📝 Commit: ${commitMsg}`);
 

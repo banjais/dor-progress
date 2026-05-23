@@ -135,7 +135,7 @@ export async function authenticatedFetch(
   const firebaseBase = import.meta.env.VITE_FIREBASE_URL || '';
 
   if (!safeWorkerBase && !firebaseBase && !path.startsWith('http')) {
-    console.warn(`[Network] No base URL defined. Requesting relative path: ${path}. This may fail with 404.`);
+    console.error(`[Network] Critical: No API base URL (VITE_WORKER_BASE) defined. Requesting relative path: ${path}. Ensure your .env or GitHub Secrets are configured.`);
   }
 
   const baseUrl = safeWorkerBase || firebaseBase;
