@@ -175,6 +175,13 @@ async function verifyCloudflareToken() {
     return true;
   }
 
+  // In CI environments, API tokens are often scoped for specific tasks and 
+  // lack the broader permissions required for identity checks like 'whoami'.
+  if (IS_CI || SKIP_PRE_DEPLOY_CHECKS) {
+    console.log(`   ${colors.green}✅ CLOUDFLARE_API_TOKEN is present.${colors.reset}`);
+    return true;
+  }
+
   console.log(`   ${colors.cyan}📡 Validating Cloudflare API Token...${colors.reset}`);
   const result = spawnSync('npx', ['wrangler', 'whoami'], {
     shell: true,
@@ -231,9 +238,14 @@ async function verifyFirebaseAccess() {
       return false;
     }
 
-    // Use firebase-tools explicitly; capture all output for better error reporting
-    // Note: projects:get was removed; use projects:list to verify access
-    const result = spawnSync('npx', ['firebase-tools', 'projects:list'], {
+    if (IS_CI || SKIP_PRE_DEPLOY_CHECKS) {
+      console.log(`   ${colors.green}✅ Firebase credentials are present.${colors.reset}`);
+      return true;
+    }
+
+    // Capture all output for better error reporting.
+    // Note: projects:list verifies access to the account.
+    const result = spawnSync('npx', ['firebase', 'projects:list'], {
       shell: true,
       encoding: 'utf8',
       env: process.env
