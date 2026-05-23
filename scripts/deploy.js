@@ -8,7 +8,7 @@ const colors = {
   cyan: '\x1b[36m', bold: '\x1b[1m', reset: '\x1b[0m'
 };
 
-const IS_CI = !!process.env.GITHUB_SHA;
+const IS_CI = process.env.GITHUB_ACTIONS === 'true' || !!process.env.CI;
 
 // Locally, try to load environment variables from .env files if they aren't already set.
 // This prevents "MISSING" prints when running outside of GitHub Actions.
@@ -190,7 +190,8 @@ async function verifyCloudflareToken() {
   });
 
   if (result.status !== 0) {
-    console.error(`   ${colors.red}❌ Cloudflare Token validation failed.${colors.reset}`);
+    const errorDetail = result.stderr?.trim() || result.error?.message || 'Check if you are logged in or if your token has correct permissions.';
+    console.error(`   ${colors.red}❌ Cloudflare Token validation failed: ${errorDetail}${colors.reset}`);
     return false;
   }
 
