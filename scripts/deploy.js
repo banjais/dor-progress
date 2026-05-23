@@ -30,8 +30,7 @@ try {
     }
   }
 } catch (e) {
-  // npm audit exits non-zero when vulnerabilities exist - we already handled it above
-  console.log('⚠️  Audit check completed with warnings (non-blocking)');
+  // npm audit returns non-zero when vulnerabilities are found - handled above
 }
 
 if (!auditPassed) process.exit(1);
@@ -46,7 +45,7 @@ pkg.version = newVersion;
 fs.writeFileSync('package.json', JSON.stringify(pkg, null, 2) + '\n');
 
 const today = new Date().toISOString().split('T')[0];
-const hash = execSync('git rev-parse HEAD').toString().trim();
+const hash = execSync('git rev-parse HEAD').toString().trim().slice(0, 7);
 
 // Update branding files
 ['config/branding.json', 'public/branding.json', 'src/branding.json', 'branding.json']
@@ -66,7 +65,7 @@ const hash = execSync('git rev-parse HEAD').toString().trim();
         }
         fs.writeFileSync(file, JSON.stringify(data, null, 2) + '\n');
       } catch (e) {
-        console.warn(`⚠️  Could not update ${file}`);
+        // Ignore errors for missing or malformed branding files
       }
     }
   });
@@ -78,7 +77,7 @@ if (fs.existsSync('public/sw.v2.js')) {
     sw = sw.replace(/const VERSION = "v.*";/, `const VERSION = "v${newVersion}";`);
     fs.writeFileSync('public/sw.v2.js', sw);
   } catch (e) {
-    console.warn('⚠️  Could not update service worker version');
+    // Ignore service worker update errors
   }
 }
 
@@ -88,16 +87,12 @@ console.log(`✅ Version updated to ${newVersion}\n`);
 console.log('🏗️  Building project...');
 spawnSync('npm', ['run', 'clean'], { stdio: 'inherit', shell: true });
 const buildResult = spawnSync('npm', ['run', 'build'], { stdio: 'inherit', shell: true });
-if (buildResult.status !== 0) {
-  console.error('❌ Build failed');
-  process.exit(1);
-}
+if (buildResult.status !== 0) process.exit(1);
 console.log('✅ Build completed.\n');
 
 // ── Deploy Worker ─────────────────────────────────────────────────────────────
 console.log('☁️  Deploying Cloudflare Worker...');
-const workerResult = spawnSync('npx', ['wrangler', 'deploy'], { stdio: 'inherit', shell: true });
-if (workerResult.status !== 0) process.exit(1);
+if (spawnSync('npx', ['wrangler', 'deploy'], { stdio: 'inherit', shell: true }).status !== 0) process.exit(1);
 
 // ── Sync Secrets ──────────────────────────────────────────────────────────────
 console.log('🔐 Syncing secrets...');
@@ -114,12 +109,9 @@ console.log('🔐 Syncing secrets...');
 
 // ── Deploy Firebase Hosting ───────────────────────────────────────────────────
 console.log('🔥 Deploying to Firebase Hosting...');
-
-if (process.env.FIREBASE_SERVICE_ACCOUNT && !process.env.GOOGLE_APPLICATION_CREDENTIALS) {
-  const keyPath = 'firebase-service-account.json';
-  fs.writeFileSync(keyPath, process.env.FIREBASE_SERVICE_ACCOUNT);
-  process.env.GOOGLE_APPLICATION_CREDENTIALS = keyPath;
-  console.log('✅ Using service account for Firebase');
+if (process.env.FIREBASE_SERVICE_ACCOUNT) {
+  fs.writeFileSync('firebase-service-account.json', process.env.FIREBASE_SERVICE_ACCOUNT);
+  process.env.GOOGLE_APPLICATION_CREDENTIALS = 'firebase-service-account.json';
 }
 
 const hostingResult = spawnSync('firebase', ['deploy', '--only', 'hosting', '--non-interactive'], { 
@@ -149,13 +141,17 @@ const commitMsg = hasChanges
   ? `chore(release): v${newVersion} [${timestamp}] [skip ci]`
   : `Everything is up to date [${timestamp}] [skip ci]`;
 
+console.log(`Commit: "${commitMsg}"`);
+
 if (!hasChanges) {
   execSync(`git commit --allow-empty -m "${commitMsg}"`, { stdio: 'inherit' });
 } else {
   execSync(`git commit -m "${commitMsg}"`, { stdio: 'inherit' });
 }
 
-execSync(`git tag -af v${newVersion} -m "Release v${newVersion}"`, { stdio: 'ignore' });
+execSync(`git tag -af v${newVersion} -m "v${newVersion}"`, { stdio: 'ignore' });
+
+console.log(`Pushing to ${branch}...`);
 execSync(`git push origin HEAD:${branch} --force-with-lease`, { stdio: 'inherit' });
 execSync(`git push origin v${newVersion} --force`, { stdio: 'ignore' });
 
