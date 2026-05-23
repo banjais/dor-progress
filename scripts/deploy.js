@@ -3,6 +3,10 @@ import { spawn, spawnSync, execSync } from 'child_process';
 import fs from 'fs';
 import path from 'path';
 
+// Silence Node.js deprecation warnings (like the punycode warning in Node 21+) 
+// to keep the deployment logs clean.
+process.env.NODE_NO_WARNINGS = '1';
+
 const colors = {
   green: '\x1b[32m', red: '\x1b[31m', yellow: '\x1b[33m',
   cyan: '\x1b[36m', bold: '\x1b[1m', reset: '\x1b[0m'
@@ -144,9 +148,22 @@ function handleGitSync() {
 
     const version = JSON.parse(fs.readFileSync('package.json', 'utf8')).version;
 
-    // Explicitly unstage any .env files that might have been accidentally added
-    try { execSync('git reset -- .env* src/.env*', { stdio: 'ignore' }); } catch (e) { /* ignore */ }
-    execSync('git add . -- ":!*.env*" ":!src/.env*"');
+    // 1. Safety Unstage: Attempt to remove any .env files from the index globally.
+    // We use a try/catch because this might fail if no files match or if the repo is in a specific state.
+    try {
+      execSync('git reset HEAD -- "**/.env*" ".env*" "src/.env*" "public/.env*"', { stdio: 'ignore' });
+    } catch (e) { /* ignore */ }
+
+    // 2. Recursive Exclusion: Stage all changes except any file matching .env anywhere in the tree.
+    // The ':(exclude)**/.env*' pathspec is the most robust way to handle global exclusions in Git.
+    execSync('git add . -- ":(exclude)**/.env*"');
+
+    // 3. Verification Guard: Final check of the index. If a .env file is found, we abort immediately.
+    const stagedSecrets = execSync('git diff --cached --name-only').toString().split('\n').filter(f => f.includes('.env'));
+    if (stagedSecrets.length > 0 && stagedSecrets[0] !== '') {
+      throw new Error(`Security Guard: Aborting commit. Sensitive files detected in git index: ${stagedSecrets.join(', ')}`);
+    }
+
     execSync(`git commit -m "chore(release): v${version} [skip ci] [ci skip]"`);
     // Use -f to overwrite tag if it exists locally from a previous failed run
     execSync(`git tag -af v${version} -m "Release v${version}"`);
