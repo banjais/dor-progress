@@ -1,4 +1,4 @@
-const VERSION = "v1.0.429"; // Updated automatically by deploy.js
+const VERSION = "v1.0.431"; // Updated automatically by deploy.js
 
 // Parse environment variables passed from the registration script in PWAManager.ts
 const swUrl = new URL(self.location);
@@ -176,15 +176,23 @@ self.addEventListener("fetch", (event) => {
     } else if (isUiRequest) {
       // Cache-first, then network for UI assets
       event.respondWith(
-        caches.match(request).then((response) => {
-          // Only return cached response if it's not a navigation request or if it matches exactly
-          if (response && request.mode !== 'navigate') return response;
+        caches.match(request).then(async (response) => {
+          // For navigation requests (e.g., direct URL entry, refresh):
+          // Try network first to get the latest version, then fallback to cache, then offline page.
+          if (request.mode === 'navigate' || request.destination === 'document') {
+            return fetch(request).catch(() => caches.match(OFFLINE_URL));
+          }
 
-          return fetch(request).catch(() => {
-            // Only fallback to index.html if it's an actual page navigation
-            if (request.mode === "navigate" || request.destination === "document") {
-              return caches.match("/");
-            }
+          // For other UI assets (scripts, styles, images, etc.):
+          // 1. Serve from cache if available.
+          if (response) return response;
+
+          // 2. Otherwise, go to network.
+          return fetch(request).catch((_err) => {
+            // If network fails for a non-navigation request, and it's not in cache,
+            // it's a network error for that specific asset. Do NOT fallback to index.html.
+            // The browser will then show its own error for the failed asset.
+            return new Response("Network error or asset not found", { status: 503, statusText: "Service Unavailable" });
           });
         })
       );

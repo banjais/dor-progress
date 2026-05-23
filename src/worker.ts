@@ -507,6 +507,12 @@ async function fetchProjectPdf(env: Env): Promise<ArrayBuffer> {
   let response = await cache.match(publishedUrl);
   if (!response) {
     response = await fetch(publishedUrl);
+    // Explicitly check for content type to prevent HTML error pages from being treated as PDFs
+    const contentType = response.headers.get("Content-Type");
+    if (response.ok && contentType && !contentType.includes("application/pdf")) {
+      const text = await response.text(); // Read the body to log it
+      throw new ServiceError(`Expected PDF but received ${contentType}. Content: ${text.substring(0, 200)}...`, { status: 400 });
+    }
     if (response?.ok) {
       const headers = new Headers(response.headers);
       headers.set("Cache-Control", "public, max-age=300");

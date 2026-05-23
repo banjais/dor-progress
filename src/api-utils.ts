@@ -135,8 +135,12 @@ export async function authenticatedFetch(
   const firebaseBase = import.meta.env.VITE_FIREBASE_URL || '';
 
   // Improved validation: warn if we are making a relative request that likely needs an absolute worker URL
-  if (!safeWorkerBase && !path.startsWith('http') && (path.includes('/api/') || path.includes('/snapshot'))) {
-    console.warn(`[Network] Warning: VITE_WORKER_BASE is empty. API request to "${path}" will be relative to ${window.location.origin}.`);
+  const isProduction = import.meta.env.PROD;
+  if (!safeWorkerBase && !path.startsWith('http') && (path.includes('/api/') || path.includes('/snapshot')) && isProduction) {
+    throw new Error(
+      `Routing Error: VITE_WORKER_BASE is not defined. API requests cannot be made to relative paths in production. ` +
+      `Check your GitHub Secrets and deployment environment.`
+    );
   }
 
   const baseUrl = safeWorkerBase || firebaseBase;
@@ -295,10 +299,12 @@ export async function getApiErrorMessage(response: Response, fallback = "Unknown
 
     if (!text) return `${statusFallback} (${status})`;
 
-    const json = JSON.parse(text);
-    const parsed = ApiErrorSchema.safeParse(json);
+    // Attempt to parse application-level error codes (like the 403 seen in logs)
+    let json;
+    try { json = JSON.parse(text); } catch { json = null; }
 
-    if (parsed.success) {
+    const parsed = json ? ApiErrorSchema.safeParse(json) : null;
+    if (parsed?.success) {
       const data = parsed.data;
       const serverMessage = data.error || data.message || (typeof data.details === 'string' ? data.details : data.details?.message);
       return serverMessage ? `${serverMessage} (${status})` : `${statusFallback} (${status})`;

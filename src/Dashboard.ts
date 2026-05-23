@@ -218,7 +218,7 @@ export class Dashboard {
       console.error("Error loading data:", err);
       const errorMsg = err instanceof Error ? err.message : this.t("offline");
       this.state.reportData = { type: 'error', message: errorMsg };
-      this.addToast("error", errorMsg);
+      this.addToast("error", errorMsg, 6000);
       this.hideLoading(false);
     } finally {
       this.setSyncing(false);
