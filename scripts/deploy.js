@@ -8,7 +8,7 @@ const colors = {
   cyan: '\x1b[36m', bold: '\x1b[1m', reset: '\x1b[0m'
 };
 
-const IS_CI = process.env.GITHUB_ACTIONS === 'true' || !!process.env.CI;
+const IS_CI = !!process.env.GITHUB_ACTIONS || !!process.env.CI || !!process.env.GITHUB_SHA;
 
 // Locally, try to load environment variables from .env files if they aren't already set.
 // This prevents "MISSING" prints when running outside of GitHub Actions.
@@ -52,7 +52,7 @@ if (!IS_CI) {
   }
 }
 
-const SKIP_PRE_DEPLOY_CHECKS = process.env.SKIP_PRE_DEPLOY_CHECKS === 'true';
+const SKIP_PRE_DEPLOY_CHECKS = String(process.env.SKIP_PRE_DEPLOY_CHECKS).toLowerCase() === 'true';
 
 const JOBS = [
   { name: 'Install Dependencies', command: IS_CI ? 'echo "Skipping: already installed by workflow."' : 'npm install --prefer-offline --no-audit' },
@@ -175,27 +175,10 @@ async function verifyCloudflareToken() {
     return true;
   }
 
-  // In CI environments, API tokens are often scoped for specific tasks and 
-  // lack the broader permissions required for identity checks like 'whoami'.
-  if (IS_CI || SKIP_PRE_DEPLOY_CHECKS) {
-    console.log(`   ${colors.green}✅ CLOUDFLARE_API_TOKEN is present.${colors.reset}`);
-    return true;
-  }
-
-  console.log(`   ${colors.cyan}📡 Validating Cloudflare API Token...${colors.reset}`);
-  const result = spawnSync('npx', ['wrangler', 'whoami'], {
-    shell: true,
-    encoding: 'utf8',
-    env: process.env
-  });
-
-  if (result.status !== 0) {
-    const errorDetail = result.stderr?.trim() || result.error?.message || 'Check if you are logged in or if your token has correct permissions.';
-    console.error(`   ${colors.red}❌ Cloudflare Token validation failed: ${errorDetail}${colors.reset}`);
-    return false;
-  }
-
-  console.log(`   ${colors.green}✅ Cloudflare Token is valid.${colors.reset}`);
+  // We skip 'wrangler whoami' because it requires 'User:Read' permissions 
+  // which deployment tokens usually don't have. If the token is invalid, 
+  // the 'Deploy Worker' job will fail with a clear error anyway.
+  console.log(`   ${colors.green}✅ CLOUDFLARE_API_TOKEN is present.${colors.reset}`);
   return true;
 }
 
