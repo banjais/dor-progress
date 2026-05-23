@@ -1,6 +1,6 @@
 {
   "name": "dor-progress",
-  "version": "1.0.412",
+  "version": "1.0.416",
   "private": true,
   "type": "module",
   "scripts": {
@@ -11,15 +11,10 @@
     "typecheck": "node --no-deprecation ./node_modules/typescript/bin/tsc --noEmit",
     "typecheck:worker": "node --no-deprecation scripts/typecheck-worker.js",
     "verify": "npm run lint && npm run typecheck",
-    "test": "echo \"No tests specified\" && exit 0",
-    "audit": "node --no-deprecation scripts/audit-check.js",
-    "audit:fix": "npm audit fix",
-    "update-version": "node --no-deprecation scripts/update-version.js",
     "clean": "rimraf dist node_modules/.vite",
-    "deploy:worker": "node --no-deprecation scripts/deploy-worker.js",
-    "deploy:hosting": "firebase deploy --only hosting --non-interactive",
-    "deploy:firebase": "firebase deploy --only hosting",
     "deploy": "node --no-deprecation scripts/deploy.js",
+    "deploy:hosting": "firebase deploy --only hosting --non-interactive",
+    "test": "echo \"No tests specified\" && exit 0",
     "reinstall": "rimraf node_modules package-lock.json && npm install",
     "upgrade:firebase": "npm i -g firebase-tools@latest && npm i firebase-tools@latest && npm install"
   },
@@ -64,6 +59,6 @@
     "*.{js,ts}": "node --no-deprecation ./node_modules/eslint/bin/eslint.js --max-warnings 0"
   },
   "engines": {
-    "node": ">=20"
+    "node": ">=22"
   }
 }
