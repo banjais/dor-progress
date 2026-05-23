@@ -52,12 +52,14 @@ if (!IS_CI) {
   }
 }
 
+const SKIP_PRE_DEPLOY_CHECKS = process.env.SKIP_PRE_DEPLOY_CHECKS === 'true';
+
 const JOBS = [
   { name: 'Install Dependencies', command: IS_CI ? 'echo "Skipping: already installed by workflow."' : 'npm install --prefer-offline --no-audit' },
-  { name: 'Workflow Validation', command: 'node scripts/validate-workflow.js' },
-  { name: 'Worker Type-Check', command: 'npm run typecheck:worker' },
-  { name: 'Lint & Typecheck', command: 'npm run lint && npm run typecheck' },
-  { name: 'Security Audit', command: 'node scripts/audit-check.js' },
+  { name: 'Workflow Validation', command: SKIP_PRE_DEPLOY_CHECKS ? 'echo "Skipping: verified in CI workflow."' : 'node scripts/validate-workflow.js' },
+  { name: 'Worker Type-Check', command: SKIP_PRE_DEPLOY_CHECKS ? 'echo "Skipping: verified in CI workflow."' : 'npm run typecheck:worker' },
+  { name: 'Lint & Typecheck', command: SKIP_PRE_DEPLOY_CHECKS ? 'echo "Skipping: verified in CI workflow."' : 'npm run lint && npm run typecheck' },
+  { name: 'Security Audit', command: SKIP_PRE_DEPLOY_CHECKS ? 'echo "Skipping: verified in CI workflow."' : 'node scripts/audit-check.js' },
   { name: 'Update Version', command: 'npm run update-version' },
   { name: 'Clean', command: 'npm run clean' },
   { name: 'Build', command: 'npm run build' },
@@ -102,7 +104,14 @@ function runJob(job) {
 }
 
 function handleGitSync() {
-  const branch = process.env.GITHUB_REF_NAME || 'local';
+  let branch = process.env.GITHUB_REF_NAME;
+  if (!branch) {
+    try {
+      branch = execSync('git rev-parse --abbrev-ref HEAD').toString().trim();
+    } catch (e) {
+      branch = 'local';
+    }
+  }
   const allowCiPush = process.env.ALLOW_CI_PUSH === 'true';
 
   // Guard: Only allow git sync in CI if explicitly allowed AND we are on the main branch.

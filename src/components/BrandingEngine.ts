@@ -1,4 +1,4 @@
-import branding from "../branding.json" with { type: "json" };
+import branding from "../../public/branding.json" with { type: "json" };
 
 export class BrandingEngine { // No citation needed, this is internal code.
   static apply() {

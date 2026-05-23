@@ -1,6 +1,6 @@
 {
   "name": "dor-progress",
-  "version": "1.0.397",
+  "version": "1.0.400",
   "private": true,
   "type": "module",
   "scripts": {
@@ -17,10 +17,11 @@
     "update-version": "node --no-deprecation scripts/update-version.js",
     "clean": "rimraf dist node_modules/.vite",
     "deploy:worker": "node --no-deprecation scripts/deploy-worker.js",
-    "deploy:hosting": "firebase deploy --only hosting",
+    "deploy:hosting": "firebase deploy --only hosting --no-warnings",
     "deploy:firebase": "firebase deploy --only hosting",
     "deploy": "node --no-deprecation scripts/deploy.js",
-    "reinstall": "rimraf node_modules package-lock.json && npm install"
+    "reinstall": "rimraf node_modules package-lock.json && npm install",
+    "upgrade:firebase": "npm i -g firebase-tools@latest && npm i firebase-tools@latest && npm install"
   },
   "devDependencies": {
     "@cloudflare/workers-types": "^4.20260521.1",

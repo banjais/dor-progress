@@ -15,7 +15,6 @@ async function updateVersion() {
     }
 
     const packageJsonPath = path.join(process.cwd(), 'package.json');
-    const brandingPath = path.join(process.cwd(), 'config', 'branding.json');
     const swPath = path.join(process.cwd(), 'public', 'sw.v2.js');
 
     // Update package.json version
@@ -27,16 +26,33 @@ async function updateVersion() {
     await fs.writeFile(packageJsonPath, JSON.stringify(pkg, null, 2) + '\n');
     console.log(`✅ Version updated: ${newVersion}`);
 
-    // Update branding.json
-    if (await fs.access(brandingPath).then(() => true).catch(() => false)) {
-      const branding = JSON.parse(await fs.readFile(brandingPath, 'utf8'));
+    // Update branding files
+    const updateBrandingFile = async (filePath, isConfigSchema) => {
+      if (await fs.access(filePath).then(() => true).catch(() => false)) {
+        const branding = JSON.parse(await fs.readFile(filePath, 'utf8'));
+        const today = new Date().toISOString().split('T')[0];
+        const hash = execSync('git rev-parse HEAD').toString().trim();
 
-      branding.app.lastUpdate = new Date().toISOString().split('T')[0];
-      branding.app.lastCommitHash = execSync('git rev-parse HEAD').toString().trim();
+        if (isConfigSchema) {
+          branding.app = branding.app || {};
+          branding.app.lastUpdate = today;
+          branding.app.lastCommitHash = hash;
+        } else {
+          branding.version = newVersion;
+          branding.lastUpdate = branding.lastUpdate || {};
+          branding.lastUpdate.value = today;
+          branding.lastCommitHash = hash;
+        }
 
-      await fs.writeFile(brandingPath, JSON.stringify(branding, null, 2) + '\n');
-      console.log(`✅ Branding updated (lastUpdate: ${branding.app.lastUpdate})`);
-    }
+        await fs.writeFile(filePath, JSON.stringify(branding, null, 2) + '\n');
+        console.log(`✅ Branding updated: ${path.relative(process.cwd(), filePath)}`);
+      }
+    };
+
+    await updateBrandingFile(path.join(process.cwd(), 'config', 'branding.json'), true);
+    await updateBrandingFile(path.join(process.cwd(), 'public', 'branding.json'), false);
+    await updateBrandingFile(path.join(process.cwd(), 'src', 'branding.json'), false);
+    await updateBrandingFile(path.join(process.cwd(), 'branding.json'), false);
 
     // Update Service Worker version for cache busting
     if (await fs.access(swPath).then(() => true).catch(() => false)) {
