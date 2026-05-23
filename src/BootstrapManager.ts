@@ -24,9 +24,10 @@ export class BootstrapManager {
             this.handleSplashVideo();
             this.updateSplashProgress(10);
 
-            const configPath = "/api/client-config";
+            const configPath = "api/client-config";
 
             // 1. Fetch Configuration & Init System Shell
+            console.info(`[System] Fetching config from path: ${configPath}`);
             const res = await authenticatedFetch(configPath);
             this.updateSplashProgress(50);
 

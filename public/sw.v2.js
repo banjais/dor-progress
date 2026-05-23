@@ -1,4 +1,4 @@
-const VERSION = "v1.0.432"; // Updated automatically by deploy.js
+const VERSION = "v1.0.433"; // Updated automatically by deploy.js
 
 // Parse environment variables passed from the registration script in PWAManager.ts
 const swUrl = new URL(self.location);
@@ -91,7 +91,7 @@ self.addEventListener("fetch", (event) => {
           if (request.mode === "navigate") {
             return caches.match(OFFLINE_URL);
           }
-          return new Response("API Network error", { status: 503, statusText: "Service Unavailable" });
+          return new Response(JSON.stringify({ error: "API Network error (Development)" }), { status: 503, headers: { "Content-Type": "application/json" } });
         })
       );
     } else if (isUiRequest) {
@@ -153,7 +153,7 @@ self.addEventListener("fetch", (event) => {
                 if (request.mode === "navigate") {
                   return caches.match(OFFLINE_URL);
                 }
-                return new Response(`API Network error${isExpired ? ' (Expired Cache)' : ''}`, { status: 503, statusText: "Service Unavailable" });
+                return new Response(JSON.stringify({ error: `API Network error${isExpired ? ' (Expired Cache)' : ''}` }), { status: 503, headers: { "Content-Type": "application/json" } });
               }
               // If cachedResponse was returned, this error is for background update.
               // We don't need to respond with it, but we should log it.

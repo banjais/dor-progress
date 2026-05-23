@@ -226,7 +226,7 @@ export async function parseResponse<T>(response: Response, schema: z.ZodSchema<T
       const isHtml = text.trim().startsWith("<");
 
       let hint = "Received non-JSON response.";
-      if (isHtml) {
+      if (isHtml || contentType.includes("text/html")) {
         hint = "Routing Error: Received HTML instead of JSON. Firebase Hosting is returning index.html because it can't find the resource.";
         if (response.url.includes(window.location.hostname)) {
           hint += " If this is an API call, ensure WORKER_BASE is set to your absolute Cloudflare URL, or that Cloudflare is configured as a reverse proxy.";
@@ -241,7 +241,7 @@ export async function parseResponse<T>(response: Response, schema: z.ZodSchema<T
     const result = schema.safeParse(json);
 
     if (!result.success) {
-      console.error("[Validation Error]", result.error.format());
+      console.error("[Validation Error]", JSON.stringify(result.error.format(), null, 2));
       throw new Error(`Data Contract Violation: The server returned an invalid format.`);
     }
 
