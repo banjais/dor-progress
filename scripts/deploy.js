@@ -139,12 +139,6 @@ function handleGitSync() {
 
   // Proceed with git commit/push (Local or Authorized CI)
   try {
-    const status = execSync('git status --porcelain').toString().trim();
-    if (!status) {
-      console.log(`${colors.yellow}→ No changes to commit${colors.reset}`);
-      return { success: true };
-    }
-
     const version = JSON.parse(fs.readFileSync('package.json', 'utf8')).version;
     const timestamp = new Date().toISOString().replace('T', ' ').split('.')[0];
     const commitMsg = process.env.DEPLOY_MESSAGE || `chore(release): v${version} [${timestamp}] [skip ci]`;
@@ -161,18 +155,19 @@ function handleGitSync() {
 
     // Check if there are actually any changes staged after filtering out secrets.
     const staged = execSync('git diff --cached --name-only').toString().trim();
-    if (!staged) {
-      console.log(`${colors.yellow}→ No non-sensitive changes to commit (skipping sync)${colors.reset}`);
-      return { success: true };
-    }
-
     // 3. Verification Guard: Final check of the index. If a .env file is found, we abort immediately.
     const stagedSecrets = execSync('git diff --cached --name-only').toString().split('\n').filter(f => f.includes('.env'));
     if (stagedSecrets.length > 0 && stagedSecrets[0] !== '') {
       throw new Error(`Security Guard: Aborting commit. Sensitive files detected in git index: ${stagedSecrets.join(', ')}`);
     }
 
-    execSync(`git commit -m "${commitMsg}"`);
+    if (!staged) {
+      console.log(`${colors.yellow}→ No updates detected. Creating empty commit "all are ok"${colors.reset}`);
+      execSync(`git commit --allow-empty -m "all are ok [${timestamp}] [skip ci]"`);
+    } else {
+      execSync(`git commit -m "${commitMsg}"`);
+    }
+
     // Use -f to overwrite tag if it exists locally from a previous failed run
     execSync(`git tag -af v${version} -m "Release v${version}"`);
 
