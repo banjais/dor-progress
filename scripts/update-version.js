@@ -13,10 +13,11 @@ async function updateVersion() {
     const branch = process.env.GITHUB_REF_NAME || execSync('git rev-parse --abbrev-ref HEAD').toString().trim();
     const isCI = !!process.env.GITHUB_ACTIONS || !!process.env.CI;
 
-    // Only restrict to 'main' in CI to avoid automated tags on feature branches.
-    // Locally, we allow versioning on any branch.
-    if (isCI && branch !== 'main') {
-      console.log(`⏭️  Skipping version bump: Current branch is "${branch}", not "main" (CI mode).`);
+    // Allow versioning in CI on any branch if ALLOW_CI_PUSH is enabled, 
+    // otherwise default to 'main' only.
+    const allowCiVersioning = process.env.ALLOW_CI_PUSH === 'true' || branch === 'main';
+    if (isCI && !allowCiVersioning) {
+      console.log(`⏭️  Skipping version bump: Current branch is "${branch}" and ALLOW_CI_PUSH is not set.`);
       return;
     }
 

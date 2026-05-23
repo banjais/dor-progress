@@ -118,11 +118,10 @@ function handleGitSync() {
   }
   const allowCiPush = process.env.ALLOW_CI_PUSH === 'true';
 
-  // Guard: Only allow git sync in CI if explicitly allowed AND we are on the main branch.
-  // Also prevent syncing if this is a Pull Request build to avoid polluting main.
+  // Guard: Only allow git sync in CI if explicitly allowed via ALLOW_CI_PUSH.
+  // We still prevent syncing if this is a Pull Request build to avoid polluting the repo.
   const isPR = process.env.GITHUB_EVENT_NAME === 'pull_request';
-
-  if (IS_CI && (!allowCiPush || branch !== 'main' || isPR)) {
+  if (IS_CI && (!allowCiPush || isPR)) {
     console.log(`${colors.yellow}→ skipping git commit/push (CI: ${IS_CI}, Branch: ${branch}, PR: ${isPR}, Allowed: ${allowCiPush})${colors.reset}`);
     return { success: true };
   }
@@ -147,6 +146,8 @@ function handleGitSync() {
     }
 
     const version = JSON.parse(fs.readFileSync('package.json', 'utf8')).version;
+    const timestamp = new Date().toISOString().replace('T', ' ').split('.')[0];
+    const commitMsg = process.env.DEPLOY_MESSAGE || `chore(release): v${version} [${timestamp}] [skip ci]`;
 
     // 1. Safety Unstage: Attempt to remove any .env files from the index globally.
     // We use a try/catch because this might fail if no files match or if the repo is in a specific state.
@@ -171,7 +172,7 @@ function handleGitSync() {
       throw new Error(`Security Guard: Aborting commit. Sensitive files detected in git index: ${stagedSecrets.join(', ')}`);
     }
 
-    execSync(`git commit -m "chore(release): v${version} [skip ci] [ci skip]"`);
+    execSync(`git commit -m "${commitMsg}"`);
     // Use -f to overwrite tag if it exists locally from a previous failed run
     execSync(`git tag -af v${version} -m "Release v${version}"`);
 
