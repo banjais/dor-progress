@@ -174,6 +174,11 @@ console.log("✅ Verification passed.\n");
 console.log("🏗️ Building project...");
 run("npm", ["run", "build"]);
 
+if (!fs.existsSync("dist/index.html")) {
+  console.error(`${colors.red}❌ Build failed: dist/index.html not found!${colors.reset}`);
+  process.exit(1);
+}
+
 console.log("✅ Build completed.\n");
 
 // ─────────────────────────────────────────────────────────────
