@@ -158,6 +158,13 @@ function handleGitSync() {
     // The ':(exclude)**/.env*' pathspec is the most robust way to handle global exclusions in Git.
     execSync('git add . -- ":(exclude)**/.env*"');
 
+    // Check if there are actually any changes staged after filtering out secrets.
+    const staged = execSync('git diff --cached --name-only').toString().trim();
+    if (!staged) {
+      console.log(`${colors.yellow}→ No non-sensitive changes to commit (skipping sync)${colors.reset}`);
+      return { success: true };
+    }
+
     // 3. Verification Guard: Final check of the index. If a .env file is found, we abort immediately.
     const stagedSecrets = execSync('git diff --cached --name-only').toString().split('\n').filter(f => f.includes('.env'));
     if (stagedSecrets.length > 0 && stagedSecrets[0] !== '') {

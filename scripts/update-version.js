@@ -4,14 +4,20 @@ import path from 'path';
 import { execSync } from 'child_process';
 
 async function updateVersion() {
+  // Silence deprecation warnings in this process as well
+  process.env.NODE_NO_WARNINGS = '1';
+
   try {
     console.log('🔄 Updating version and branding...');
 
     const branch = process.env.GITHUB_REF_NAME || execSync('git rev-parse --abbrev-ref HEAD').toString().trim();
+    const isCI = !!process.env.GITHUB_ACTIONS || !!process.env.CI;
 
-    if (branch !== 'main') {
-      console.log(`⏭️  Skipping version bump: Current branch is "${branch}", not "main".`);
-      return; // Exit gracefully without updating files
+    // Only restrict to 'main' in CI to avoid automated tags on feature branches.
+    // Locally, we allow versioning on any branch.
+    if (isCI && branch !== 'main') {
+      console.log(`⏭️  Skipping version bump: Current branch is "${branch}", not "main" (CI mode).`);
+      return;
     }
 
     const packageJsonPath = path.join(process.cwd(), 'package.json');
