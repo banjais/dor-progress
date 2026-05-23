@@ -1,4 +1,4 @@
-const VERSION = "v1.0.428"; // Updated automatically by deploy.js
+const VERSION = "v1.0.429"; // Updated automatically by deploy.js
 
 // Parse environment variables passed from the registration script in PWAManager.ts
 const swUrl = new URL(self.location);
@@ -84,7 +84,7 @@ self.addEventListener("fetch", (event) => {
   if (MODE === "development") {
     // In development mode, prioritize network to ensure fresh content.
     // For API requests, we generally want network-only to avoid stale data.
-    if (isApiRequest) {
+    if (isApiRequest || request.url.includes('/api/')) {
       event.respondWith(
         fetch(request).catch(async () => {
           // If API network fails, and it's a navigation request, fallback to offline UI
@@ -119,7 +119,7 @@ self.addEventListener("fetch", (event) => {
   } else {
     // In production mode, optimize for performance and offline access.
     // Cache-first for UI assets, network-first with cache fallback for API.
-    if (isApiRequest) {
+    if (isApiRequest || request.url.includes('/api/')) {
       // Stale-while-revalidate strategy for API requests
       event.respondWith(
         caches.open(API_CACHE_NAME).then(async (cache) => {
@@ -177,10 +177,13 @@ self.addEventListener("fetch", (event) => {
       // Cache-first, then network for UI assets
       event.respondWith(
         caches.match(request).then((response) => {
-          if (response) return response;
+          // Only return cached response if it's not a navigation request or if it matches exactly
+          if (response && request.mode !== 'navigate') return response;
+
           return fetch(request).catch(() => {
-            if (request.mode === "navigate") {
-              return caches.match(OFFLINE_URL);
+            // Only fallback to index.html if it's an actual page navigation
+            if (request.mode === "navigate" || request.destination === "document") {
+              return caches.match("/");
             }
           });
         })

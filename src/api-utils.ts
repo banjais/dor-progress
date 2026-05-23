@@ -130,12 +130,13 @@ export async function authenticatedFetch(
   // WORKER_BASE is used in Worker environments, while import.meta.env is used by Vite for the client.
   const safeWorkerBase = (typeof WORKER_BASE !== 'undefined' && WORKER_BASE)
     ? WORKER_BASE
-    : (import.meta.env.VITE_WORKER_BASE || '');
+    : (import.meta.env.VITE_WORKER_BASE || "");
 
   const firebaseBase = import.meta.env.VITE_FIREBASE_URL || '';
 
-  if (!safeWorkerBase && !firebaseBase && !path.startsWith('http')) {
-    console.error(`[Network] Critical: No API base URL (VITE_WORKER_BASE) defined. Requesting relative path: ${path}. Ensure your .env or GitHub Secrets are configured.`);
+  // Improved validation: warn if we are making a relative request that likely needs an absolute worker URL
+  if (!safeWorkerBase && !path.startsWith('http') && (path.includes('/api/') || path.includes('/snapshot'))) {
+    console.warn(`[Network] Warning: VITE_WORKER_BASE is empty. API request to "${path}" will be relative to ${window.location.origin}.`);
   }
 
   const baseUrl = safeWorkerBase || firebaseBase;
