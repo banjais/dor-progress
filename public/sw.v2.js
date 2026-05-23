@@ -1,4 +1,4 @@
-const VERSION = "v1.0.431"; // Updated automatically by deploy.js
+const VERSION = "v1.0.432"; // Updated automatically by deploy.js
 
 // Parse environment variables passed from the registration script in PWAManager.ts
 const swUrl = new URL(self.location);

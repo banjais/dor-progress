@@ -35,10 +35,5 @@ export default defineConfig(({ mode }) => {
         },
       },
     },
-    // Make the variable available in the client bundle.
-    define: {
-      'import.meta.env.VITE_WORKER_BASE': JSON.stringify(env.VITE_WORKER_BASE ?? ''),
-      'import.meta.env.VITE_FIREBASE_URL': JSON.stringify(env.VITE_FIREBASE_URL ?? '')
-    },
   };
 });

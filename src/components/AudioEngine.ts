@@ -61,7 +61,13 @@ export class AudioEngine {
       const AudioContextClass = window.AudioContext ?? (window as any).webkitAudioContext;
       if (!AudioContextClass) throw new Error("Web Audio API not supported");
 
-      this.ctx = new AudioContextClass();
+      // Attempt to create the context. 
+      // If not allowed by policy, some browsers throw here; others create it in 'suspended' state.
+      try {
+        this.ctx = new AudioContextClass();
+      } catch (e) {
+        return; // Silent return: init will be re-attempted on the next playUi call
+      }
 
       // If the context is suspended, we only attempt to resume it.
       // If this is called outside a user gesture, the browser will log a warning,

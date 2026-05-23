@@ -120,30 +120,30 @@ export const clearTranslationCache = () => tCache.clear();
 /**
  * Centralized fetch helper to handle base URLs and Firebase App Check tokens.
  */
+// Capture the worker base once at module load. 
+// In Browser: uses Vite env. In Worker: uses global WORKER_BASE.
+const GLOBAL_WORKER_BASE = (typeof WORKER_BASE !== 'undefined' && WORKER_BASE)
+  ? WORKER_BASE
+  : (import.meta.env.VITE_WORKER_BASE || "");
+
 export async function authenticatedFetch(
   path: string,
   options: RequestInit = {},
   maxRetries = 3,
 ): Promise<Response> {
   const dashboard = Dashboard.getInstance();
-
-  // WORKER_BASE is used in Worker environments, while import.meta.env is used by Vite for the client.
-  const safeWorkerBase = (typeof WORKER_BASE !== 'undefined' && WORKER_BASE)
-    ? WORKER_BASE
-    : (import.meta.env.VITE_WORKER_BASE || "");
-
   const firebaseBase = import.meta.env.VITE_FIREBASE_URL || '';
 
   // Improved validation: warn if we are making a relative request that likely needs an absolute worker URL
   const isProduction = import.meta.env.PROD;
-  if (!safeWorkerBase && !path.startsWith('http') && (path.includes('/api/') || path.includes('/snapshot')) && isProduction) {
+  if (!GLOBAL_WORKER_BASE && !path.startsWith('http') && (path.includes('/api/') || path.includes('/snapshot')) && isProduction) {
     throw new Error(
       `Routing Error: VITE_WORKER_BASE is not defined. API requests cannot be made to relative paths in production. ` +
       `Check your GitHub Secrets and deployment environment.`
     );
   }
 
-  const baseUrl = safeWorkerBase || firebaseBase;
+  const baseUrl = GLOBAL_WORKER_BASE || firebaseBase;
   const url = path.startsWith('http')
     ? path
     : baseUrl
