@@ -52,10 +52,10 @@ const branch =
     .toString()
     .trim();
 
-const hash = execSync("git rev-parse HEAD")
+const hash = execSync("git rev-parse --short HEAD")
   .toString()
   .trim()
-  .slice(0, 7);
+  ;
 
 // ─────────────────────────────────────────────────────────────
 // Security Audit
@@ -94,28 +94,21 @@ run("npm", ["install", "--package-lock-only"]);
 // ─────────────────────────────────────────────────────────────
 
 [
-  "config/branding.json",
   "public/branding.json",
-  "src/branding.json",
-  "branding.json",
+  "public/sheets.config.json",
+  "public/translations.json",
 ].forEach((file) => {
   if (!fs.existsSync(file)) return;
 
   try {
     const data = JSON.parse(fs.readFileSync(file, "utf8"));
 
-    if (file.includes("config")) {
-      data.app = data.app || {};
-      data.app.lastUpdate = today;
-      data.app.lastCommitHash = hash;
-      data.app.version = newVersion;
-    } else {
-      data.version = newVersion;
-      data.lastUpdate = {
-        value: today,
-      };
-      data.lastCommitHash = hash;
-    }
+    data.version = newVersion;
+    data.lastUpdate = {
+      ...(data.lastUpdate || {}),
+      value: today,
+    };
+    data.lastCommitHash = hash;
 
     fs.writeFileSync(
       file,

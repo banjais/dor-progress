@@ -1,62 +1,56 @@
-import { defineConfig, loadEnv } from "vite";
-import path from "path";
+import { defineConfig, loadEnv } from 'vite';
+import { resolve } from 'node:path';
+import { readFileSync, writeFileSync } from 'node:fs';
+import { execSync } from 'node:child_process';
 
+/**
+ * Standard root-level Vite configuration.
+ * This file automatically picks up .env files in the same directory.
+ */
 export default defineConfig(({ mode }) => {
+  // Load env file based on `mode` in the current working directory (root).
   const env = loadEnv(mode, process.cwd(), '');
 
-  return {
-    base: "/",                    // Good for Firebase
-    publicDir: "public",
+  // Priority: 1. Env Variable, 2. Default Local Wrangler Port
+  const apiBaseUrl = env.VITE_WORKER_BASE || 'http://localhost:8787';
 
+  // --- Branding Automation ---
+  if (mode === 'production') {
+    try {
+      const brandingPath = resolve(__dirname, 'public/branding.json');
+      const branding = JSON.parse(readFileSync(brandingPath, 'utf-8'));
+
+      // Auto-update commit hash and date
+      branding.lastCommitHash = execSync('git rev-parse --short HEAD').toString().trim();
+      branding.lastUpdate.value = new Date().toISOString().split('T')[0];
+
+      writeFileSync(brandingPath, JSON.stringify(branding, null, 2) + '\n');
+      console.log(`[Build] Updated branding.json to commit ${branding.lastCommitHash}`);
+    } catch (e) {
+      console.warn('[Build] Failed to update branding.json metadata:', e);
+    }
+  }
+  // ---------------------------
+
+  return {
+    // Define global constants for build-time injection
+    define: {
+      WORKER_BASE: JSON.stringify(apiBaseUrl),
+    },
     resolve: {
       alias: {
-        "@": path.resolve(__dirname, "src"),
+        // Points '@' to the 'src' directory
+        '@': resolve(__dirname, './src'),
       },
     },
-
-    define: {
-      WORKER_BASE: JSON.stringify(env.VITE_WORKER_BASE || ""),
-      // Optional: Help with environment detection
-      __APP_VERSION__: JSON.stringify(process.env.npm_package_version || "1.0.0"),
-    },
-
-    build: {
-      outDir: "dist",
-      sourcemap: false,
-      target: "es2020",
-      chunkSizeWarningLimit: 1500,
-      minify: "terser",
-      terserOptions: {
-        compress: {
-          drop_console: true,
-          drop_debugger: true,
-        },
-      },
-      rollupOptions: {
-        output: {
-          manualChunks: {
-            firebase: ["firebase/app", "firebase/app-check"],
-            vendor: ["zod"],
-          },
-        },
-      },
-    },
-
-    assetsInclude: ["**/*.png", "**/*.jpg", "**/*.jpeg", "**/*.svg", "**/*.pdf"],
-
     server: {
-      fs: {
-        strict: false,
+      proxy: {
+        '/api': {
+          target: apiBaseUrl,
+          changeOrigin: true,
+          secure: false,
+        },
       },
-      // Optional: Better for PWA development
-      headers: {
-        "Cache-Control": "no-store, no-cache, must-revalidate",
-      },
-    },
-
-    // Optional but useful
-    preview: {
-      port: 4173,
     },
   };
 });

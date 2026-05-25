@@ -1,14 +1,22 @@
 {
     "extends": "../tsconfig.json",
     "compilerOptions": {
+        "resolveJsonModule": true,
+        "allowSyntheticDefaultImports": true,
+        "rootDir": ".",
         "lib": [
             "ESNext",
             "DOM",
             "DOM.Iterable"
+        ],
+        "types": [
+            "vite/client"
         ]
     },
     "include": [
-        "**/*.ts"
+        "**/*.ts",
+        "**/*.js",
+        "global.d.ts"
     ],
     "exclude": [
         "worker.ts",

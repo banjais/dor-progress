@@ -1,6 +1,10 @@
 {
+  "version": "1.0.436",
+  "lastUpdate": {
+    "value": "2026-05-25"
+  },
+  "lastCommitHash": "ad40e1b",
   "_comment": "Sheet Display Configuration for DoR MIS Dashboard. Add new sheets here — the app will auto-discover columns from the sheet itself, this file only controls HOW they are displayed.",
-
   "sheets": [
     {
       "id": "main",
@@ -12,7 +16,6 @@
         "en": "Main Dashboard"
       },
       "enabled": true,
-
       "columns": [
         {
           "key_ne": "सूचक",
@@ -100,7 +103,6 @@
           "width": "normal"
         }
       ],
-
       "display": {
         "progressBar": {
           "targetColumn_ne": "बार्षिक लक्ष्य",
@@ -117,10 +119,15 @@
       }
     }
   ],
-
   "_instructions": {
     "addNewSheet": "To add a new sheet: copy an object from the 'sheets' array above, change 'id', 'sheetId', 'range', and 'label'. Set 'enabled: true'. The Worker will auto-fetch its columns. Add column display rules in 'columns'. No code changes needed.",
-    "columnTypes": ["text", "number", "percent", "date", "status"],
+    "columnTypes": [
+      "text",
+      "number",
+      "percent",
+      "date",
+      "status"
+    ],
     "columnFlags": {
       "isPrimary": "Used as the row identifier/title",
       "isTarget": "Used in combined total progress calculations",

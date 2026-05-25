@@ -117,6 +117,7 @@ export class SpeechEngine {
       sourceNode.onended = () => {
         this.currentBlobAudioSource = null;
         this.resetUI();
+        this.audio.stopVisualizer();
         this.audio.unduckMusic(0.5); // Fade music back in
       };
 
@@ -163,10 +164,10 @@ export class SpeechEngine {
 
     this.utterance.onboundary = (event) => {
       if (event.name === "word" && this.container) {
-        const words = this.originalText.split(/\s+/);
+        const words = this.originalText.trim().split(/\s+/);
         let charCount = 0;
         for (let i = 0; i < words.length; i++) {
-          if (charCount + words[i].length > event.charIndex) {
+          if (charCount + words[i].length >= event.charIndex) {
             currentWordIndex = i;
             break;
           }

@@ -1,16 +1,16 @@
 // src/lib/branding.ts
-import brandingRaw from '../../public/branding.json' with { type: 'json' };
+import { BrandingEngine } from '../components/BrandingEngine.js';
 
-export const branding = {
-  ...brandingRaw,
-
+export const branding: any = {
   // Helper functions
-  getAppTitle: () => brandingRaw.app.title,
+  getAppTitle: () => BrandingEngine.getAppTitle(),
   getFullTitle: (suffix = "") => {
-    return suffix ? `${brandingRaw.app.title} | ${suffix}` : brandingRaw.app.title;
+    return BrandingEngine.getFullTitle(suffix);
   },
+  getMetaDescription: () => BrandingEngine.getMetaDescription(),
 
-  getMetaDescription: () => brandingRaw.app.subtitle || "Department of Roads Progress Monitoring",
+  // Reactive-like access to the config
+  get config() { return (BrandingEngine as any).config; }
 };
 
 export default branding;

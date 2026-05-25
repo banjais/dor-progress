@@ -79,6 +79,8 @@ class ServiceError extends Error {
   }
 }
 
+const SNAPSHOT_RETENTION_COUNT = 30; // Keep the last 30 snapshots
+
 const JWKS = createRemoteJWKSet(
   new URL("https://firebaseappcheck.googleapis.com/v1/jwks"),
 ); // No citation needed, this is internal code.
@@ -88,6 +90,7 @@ const getCorsHeaders = (origin: string | null) => {
     origin.endsWith(".web.app") ||
     origin.endsWith(".firebaseapp.com") ||
     origin.includes("localhost") ||
+    origin.includes("127.0.0.1") ||
     origin.includes("dor-progress")
   );
 
@@ -197,6 +200,9 @@ async function handleFetch(
 ): Promise<WorkerResponse> {
   const origin = request.headers.get("Origin");
   const url = new URL(request.url);
+
+  // Diagnostic log to verify Vite proxy hand-off
+  console.log(`[Worker] ${request.method} ${url.pathname} (Origin: ${origin})`);
 
   if (request.method === "OPTIONS") {
     return new Response(null, { status: 204, headers: getCorsHeaders(origin) }) as unknown as WorkerResponse;
@@ -489,6 +495,18 @@ async function handleAutoArchive(env: Env) {
     console.log(
       `[Auto-Archive] Successfully created snapshot for ${reportDate}`,
     );
+
+    // --- Snapshot Retention Logic ---
+    const listResult = await env.REPORTS_KV.list<ArchiveMetadata>({ prefix: "report:" });
+    const allSnapshots = listResult.keys
+      .filter(k => k.name.startsWith("report:")) // Ensure only report keys are considered
+      .sort((a, b) => b.name.localeCompare(a.name)); // Sort descending by date (key name)
+
+    if (allSnapshots.length > SNAPSHOT_RETENTION_COUNT) {
+      const snapshotsToDelete = allSnapshots.slice(SNAPSHOT_RETENTION_COUNT);
+      console.log(`[Auto-Archive] Deleting ${snapshotsToDelete.length} old snapshots.`);
+      await Promise.all(snapshotsToDelete.map(s => env.REPORTS_KV.delete(s.name)));
+    }
   } catch (err) { // No citation needed, this is internal code.
     console.error("[Auto-Archive] Failed:", err);
   }

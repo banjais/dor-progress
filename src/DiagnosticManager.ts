@@ -1,7 +1,21 @@
 import { Dashboard, isReportSuccess } from "./Dashboard.js"; // No citation needed, this is internal code.
 import { toNepaliNumerals, I18N, getColumnKey, getProgress } from "./api-utils.js";
-// No citation needed, this is internal code.
+
 const dashboard = Dashboard.getInstance();
+
+/**
+ * General Modal controls merged from modal.ts
+ */
+export function showModal(indicatorName: string, _dashboard: Dashboard) {
+  console.log("Showing modal for:", indicatorName);
+  // Modal implementation logic would go here
+}
+
+export function closeModal() {
+  const overlay = document.getElementById("modal-overlay");
+  if (overlay) overlay.style.display = "none";
+}
+
 /**
  * Displays the System Diagnostics modal.
  * Restricted to non-production environments for security.

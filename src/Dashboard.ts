@@ -369,8 +369,15 @@ export class Dashboard {
   /**
    * Centralized Audio Fetcher for AI Briefing.
    */
-  async fetchAiBriefBlob() {
-    return null;
+  async fetchAiBriefBlob(): Promise<Blob | null> {
+    try {
+      const res = await authenticatedFetch(`/api/brief/audio?lang=${this.state.lang}`);
+      if (!res.ok) return null;
+      return await res.blob();
+    } catch (err) {
+      console.warn("Could not fetch AI audio brief:", err);
+      return null;
+    }
   }
 
   private attachGlobalEvents() {

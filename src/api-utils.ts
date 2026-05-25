@@ -1,7 +1,6 @@
 import { getToken } from "firebase/app-check";
 import { z } from "zod";
 import { Dashboard } from "./Dashboard.js";
-import translationsDataRaw from "./locales/translations.json" with { type: "json" };
 
 interface TranslationContent {
   months?: string[];
@@ -11,9 +10,28 @@ interface TranslationContent {
 /**
  * Type-safe access to translations including metadata
  */
-export const I18N = translationsDataRaw as unknown as Record<string, TranslationContent> & {
+export let I18N: Record<string, TranslationContent> & {
   _metadata?: { syncAt: string; fingerprint: string };
-};
+} = {} as any;
+
+/**
+ * Loads translations from the public directory at runtime
+ */
+export async function loadTranslations() {
+  const response = await fetch('/translations.json');
+  if (!response.ok) throw new Error("Failed to load translations");
+  I18N = await response.json();
+}
+
+/**
+ * Global access to Sheets configuration loaded at runtime
+ */
+export let sheetsConfig: any = null;
+export async function loadSheetsConfig() {
+  const response = await fetch('/sheets.config.json');
+  if (!response.ok) throw new Error("Failed to load sheets configuration");
+  sheetsConfig = await response.json();
+}
 
 /** Cache for PluralRules to boost performance */
 const pluralRulesCache = new Map<string, Intl.PluralRules>();
@@ -45,7 +63,7 @@ function translate(key: string, count?: number): string {
   if (!key) return "";
   const dashboard = Dashboard.getInstance();
   const state = dashboard.state;
-  const currentLang = (state.lang === "_metadata" ? "en" : state.lang || "en") as string;
+  const currentLang = (state.lang === "_metadata" ? "en" : (state.lang || "en")) as string;
 
   const langData = I18N[currentLang as keyof typeof I18N] as TranslationContent | undefined;
   const dynamicCache = state.dynamicCache;
@@ -122,8 +140,8 @@ export const clearTranslationCache = () => tCache.clear();
  */
 // Capture the worker base once at module load. 
 // In Browser: uses Vite env. In Worker: uses global WORKER_BASE.
-const GLOBAL_WORKER_BASE = (typeof WORKER_BASE !== 'undefined' && WORKER_BASE)
-  ? WORKER_BASE
+const GLOBAL_WORKER_BASE = (globalThis as any).WORKER_BASE
+  ? (globalThis as any).WORKER_BASE
   : (import.meta.env.VITE_WORKER_BASE || "");
 
 export async function authenticatedFetch(
@@ -385,4 +403,19 @@ export function updateConnStrength(duration: number, lang: string) {
   badge.innerText = `${connText} ${label}`;
   badge.style.color = color;
   badge.style.display = "inline-flex";
+}
+
+/**
+ * Safely triggers a file download from a Blob (Moved from utils.ts)
+ */
+export function downloadBlob(blob: Blob, filename: string): void {
+  const url = window.URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.style.display = "none";
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  setTimeout(() => window.URL.revokeObjectURL(url), 1000);
 }

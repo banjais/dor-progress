@@ -3,14 +3,15 @@ import { initializeAppCheck, ReCaptchaEnterpriseProvider } from "firebase/app-ch
 import { Dashboard } from "./Dashboard.js";
 import { parseResponse, authenticatedFetch } from "./api-utils.js";
 import { BrandingEngine } from "./components/BrandingEngine.js";
+import { loadTranslations, loadSheetsConfig } from "./api-utils.js";
 import { ClientConfig, ClientConfigSchema } from "../shared/types.ts";
 
 export class BootstrapManager {
     static async init(dashboard: Dashboard) {
         // Apply UI branding immediately so the app looks correct during load
         // Use Vite's injected environment variables for the client application.
-        const safeWorkerBase = (typeof WORKER_BASE !== 'undefined' && WORKER_BASE)
-            ? WORKER_BASE
+        const safeWorkerBase = (globalThis as any).WORKER_BASE
+            ? (globalThis as any).WORKER_BASE
             : (import.meta.env.VITE_WORKER_BASE || '');
 
         // Diagnostic log to verify build-time injection
@@ -18,7 +19,9 @@ export class BootstrapManager {
 
         try {
             // Apply UI branding inside try-catch to prevent initialization blocks
-            try { BrandingEngine.apply(); } catch (e) { console.warn("Branding failed to apply", e); }
+            try { await BrandingEngine.apply(); } catch (e) { console.warn("Branding failed to apply", e); }
+            try { await loadTranslations(); } catch (e) { console.warn("Translations failed to load", e); }
+            try { await loadSheetsConfig(); } catch (e) { console.warn("Sheets config failed to load", e); }
 
             this.initLowData();
             this.handleSplashVideo();

@@ -10,20 +10,11 @@ import { AuraManager } from "./AuraManager.js";
 import { BriefManager } from "./BriefManager.js";
 import { HistoryManager } from "./HistoryManager.js";
 
-import { 
-  showModal, 
-  closeModal 
-} from "./modal.js";
-
-import { showSettings } from "./settings.js";
-
 import {
-  triggerDatabaseBackup,
-  triggerDatabaseRestore,
-  downloadAllOfflineData,
-  clearDataCache,
-  executeFactoryReset,
-} from "./database.js";
+  showModal,
+  closeModal,
+  showDiagnostics
+} from "./DiagnosticManager.js";
 
 import {
   requestSnapshotKey,
@@ -32,9 +23,14 @@ import {
   downloadSnapshot,
   deleteSnapshot,
   logoutSnapshotSession,
-} from "./SnapshotManager.js";
+  showSettings,
+  triggerDatabaseBackup,
+  triggerDatabaseRestore,
+  downloadAllOfflineData,
+  clearDataCache,
+  executeFactoryReset
+} from "./AdminManager.js";
 
-import { showDiagnostics } from "./DiagnosticManager.js";
 import { BootstrapManager } from "./BootstrapManager.js";
 
 // Core instance

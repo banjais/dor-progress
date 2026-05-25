@@ -20,6 +20,38 @@ export class BriefManager {
             })
         );
     }
+
+    /**
+     * Integrated Speech logic merged from SpeechEngine.ts
+     */
+    private synth = window.speechSynthesis;
+    private currentUtterance: SpeechSynthesisUtterance | null = null;
+
+    toggleReadAloud() {
+        if (this.synth.speaking) {
+            this.synth.cancel();
+            this.dashboard.addToast("info", t("readAloudOff") || "Speech stopped");
+            return;
+        }
+
+        const container = document.getElementById("ai-brief-text");
+        if (!container) return;
+
+        this.currentUtterance = new SpeechSynthesisUtterance(container.innerText);
+        this.currentUtterance.lang = this.dashboard.state.lang === "ne" ? "ne-NP" : "en-US";
+
+        this.currentUtterance.onstart = () => {
+            this.dashboard.playUi("ping");
+            document.getElementById("ai-read-btn")?.classList.add("active");
+        };
+
+        this.currentUtterance.onend = () => {
+            document.getElementById("ai-read-btn")?.classList.remove("active");
+        };
+
+        this.synth.speak(this.currentUtterance);
+    }
+
     private render(reportData: ReportState, lang: string) {
         const isLowData = localStorage.getItem("low-data") === "true";
         const briefCard = document.getElementById("ai-brief-card");
@@ -241,9 +273,5 @@ export class BriefManager {
 
     async shareAudio() {
         this.dashboard.addToast("info", "Audio sharing is not available in online mode.");
-    }
-
-    toggleReadAloud() {
-        this.dashboard.addToast("info", t("readAloudOn") || "Read-aloud started.");
     }
 }

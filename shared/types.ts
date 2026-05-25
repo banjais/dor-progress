@@ -65,8 +65,9 @@ export function getProgress(row: ProjectRow, headers: SpreadsheetHeaders): numbe
 
   if (!targetKey || !progKey) return 0;
 
-  const t_val = parseFloat(String(row[targetKey] || "0").replace(/,/g, ""));
-  const p_val = parseFloat(String(row[progKey] || "0").replace(/,/g, ""));
+  const clean = (val: any) => parseFloat(String(val || "0").replace(/[^0-9.-]/g, ""));
+  const t_val = clean(row[targetKey]);
+  const p_val = clean(row[progKey]);
 
   return t_val > 0 ? Math.round((p_val / t_val) * 100) : 0;
 }
