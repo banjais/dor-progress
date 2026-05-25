@@ -64,7 +64,9 @@ export class BootstrapManager {
             // If you are on localhost or have 'debug_app_check' in localStorage,
             // the SDK will log a debug token to the console. 
             // Copy that token and add it to the "Debug tokens" section in the Firebase Console.
-            if (import.meta.env.DEV || localStorage.getItem('debug_app_check')) {
+            const isDebug = import.meta.env.DEV || localStorage.getItem('debug_app_check');
+            if (isDebug) {
+                console.warn("[App Check] Debug mode enabled. Look for the debug token in the console below.");
                 (self as any).FIREBASE_APPCHECK_DEBUG_TOKEN = true;
             }
 

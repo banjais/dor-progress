@@ -167,15 +167,26 @@ async function verifyAppCheck(request: WorkerRequest, env: Env): Promise<void> {
   }
 
   try {
-    await jwtVerify(token, JWKS, {
-      issuer: `https://firebaseappcheck.googleapis.com/${projectNumber}`,
-      audience: [`projects/${projectNumber}`, `projects/${projectId}`],
-      // The 'sub' claim in App Check tokens corresponds to the Firebase App ID
-      subject: appId,
+    // The issuer must use the Project NUMBER, not the Project ID.
+    const issuer = `https://firebaseappcheck.googleapis.com/${projectNumber}`;
+    
+    const { payload } = await jwtVerify(token, JWKS, {
+      issuer,
+      audience: [
+        `projects/${projectNumber}`,
+        `projects/${projectId}`
+      ],
       clockTolerance: "1m",
     });
+
+    // Validate Subject (App ID)
+    if (payload.sub !== appId) {
+      console.error(`[App Check] Subject mismatch. Expected ${appId}, got ${payload.sub}`);
+      throw new Error("Invalid Subject");
+    }
+
   } catch (e: any) {
-    // Log the specific jose verification error to Cloudflare Logs
+    // Log the specific jose verification error to Cloudflare Logs for debugging
     console.error(`[App Check] Verification failed: ${e.message}`, {
       code: e.code,
       project: projectId
