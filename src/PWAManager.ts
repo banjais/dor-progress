@@ -122,8 +122,8 @@ export function initPWALogic() {
       // Pass mode and worker base to the Service Worker via query parameters.
       // This allows the static SW script to adapt to development vs production environments.
       const mode = import.meta.env.MODE;
-      const workerBase = import.meta.env.VITE_WORKER_BASE || '';
-      const swUrl = `/sw.v2.js?mode=${mode}&worker_base=${encodeURIComponent(workerBase)}`;
+      // Remove query parameters if they cause MIME issues; SW can detect environment via location.host
+      const swUrl = '/sw.v2.js';
 
       navigator.serviceWorker.register(swUrl)
         .then((reg) => {

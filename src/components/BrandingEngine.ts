@@ -11,7 +11,10 @@ const DEFAULT_BRANDING_VALUES = {
   },
   colors: {
     primary: "#1a5c3a",
-    backgroundDark: "#0b0f1a"
+    backgroundDark: "#0b0f1a",
+    good: "#4ade80",
+    stable: "#facc15",
+    critical: "#f87171"
   },
   organization: {
     government: "Government of Nepal",
@@ -39,6 +42,9 @@ const BrandingSchema = z.object({
   colors: z.object({
     primary: z.string().optional(),
     backgroundDark: z.string().optional(),
+    good: z.string().optional(),
+    stable: z.string().optional(),
+    critical: z.string().optional(),
   }).optional(),
   organization: z.object({
     government: z.string().optional(),
@@ -161,6 +167,12 @@ export class BrandingEngine {
     // 3. Theme Colors
     if (branding.colors?.primary) this.pendingThemeColor = branding.colors.primary;
     if (branding.colors?.backgroundDark) this.pendingDarkColor = branding.colors.backgroundDark;
+    
+    // Sync Chart Variables
+    const root = document.documentElement;
+    if (branding.colors?.good) root.style.setProperty('--good', branding.colors.good);
+    if (branding.colors?.stable) root.style.setProperty('--stable', branding.colors.stable);
+    if (branding.colors?.critical) root.style.setProperty('--critical', branding.colors.critical);
 
     // 4. UI Elements & Branding Strings
     this.setText('#h-govt', branding.organization?.government);

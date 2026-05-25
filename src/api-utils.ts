@@ -292,12 +292,18 @@ export async function authenticatedFetch(
     );
   }
 
-  const baseUrl = GLOBAL_WORKER_BASE || firebaseBase;
-  const url = path.startsWith('http')
-    ? path
-    : baseUrl
+  let url: string;
+  if (path.startsWith('http')) {
+    url = path;
+  } else {
+    const baseUrl = GLOBAL_WORKER_BASE || firebaseBase;
+    if (!baseUrl && isProduction) {
+      throw new Error(`Routing Error: No Base URL defined for API request to "${path}".`);
+    }
+    url = baseUrl 
       ? `${baseUrl.replace(/\/*$/, '')}/${path.replace(/^\//, '')}`
-      : `/${path.replace(/^\//, '')}`;
+      : `${window.location.origin}/${path.replace(/^\//, '')}`;
+  }
 
   // Use native Headers API for robust merging
   const headers = new Headers(options.headers);
