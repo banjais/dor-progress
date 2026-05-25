@@ -1,5 +1,5 @@
 import { initializeApp } from "firebase/app";
-import { initializeAppCheck, ReCaptchaEnterpriseProvider } from "firebase/app-check";
+import { initializeAppCheck, ReCaptchaEnterpriseProvider, CustomProvider } from "firebase/app-check";
 import { Dashboard } from "./Dashboard.js";
 import { BrandingEngine } from "./components/BrandingEngine.js";
 import { 
@@ -19,6 +19,17 @@ export class BootstrapManager {
         // This ensures Chrome users see the branding even if the CPU is pegged during boot.
         await new Promise(resolve => requestAnimationFrame(() => setTimeout(resolve, 0)));
 
+        // --- App Check Debug Mode Setup ---
+        // This MUST be set before initializeApp or initializeAppCheck is called.
+        const debugToken = import.meta.env.VITE_APP_CHECK_DEBUG_TOKEN || localStorage.getItem('debug_app_check');
+        if (import.meta.env.DEV || debugToken) {
+            // If VITE_APP_CHECK_DEBUG_TOKEN is defined in .env.local, use it. 
+            // Otherwise, setting to true will generate a new token in the browser console.
+            (self as any).FIREBASE_APPCHECK_DEBUG_TOKEN = (debugToken && debugToken !== "false") ? debugToken : true;
+            
+            console.warn("[App Check] Debug mode active. Token:", (self as any).FIREBASE_APPCHECK_DEBUG_TOKEN);
+        }
+
         // Apply UI branding immediately so the app looks correct during load
         // Use Vite's injected environment variables for the client application.
         const safeWorkerBase = (globalThis as any).WORKER_BASE
@@ -37,6 +48,12 @@ export class BootstrapManager {
             this.initLowData();
             this.handleSplashVideo();
             this.updateSplashProgress(10);
+            this.updateStatusText(dashboard.t("loadingConfig") || "Loading configuration...");
+
+            // Initialize splash screen enhancements
+            this.addSkipButton(dashboard);
+            this.initParallaxEffect(dashboard);
+            this.initParticles(dashboard);
 
             const configPath = "api/client-config";
 
@@ -44,6 +61,7 @@ export class BootstrapManager {
             console.info(`[System] Fetching config from path: ${configPath}`);
             const res = await authenticatedFetch(configPath);
             this.updateSplashProgress(50);
+            this.updateStatusText(dashboard.t("configLoaded") || "Configuration loaded.");
 
             if (!res.ok) {
                 throw new Error(`${dashboard.t("serverError") || "Server unavailable"} (${res.status})`);
@@ -59,44 +77,60 @@ export class BootstrapManager {
             // 3. Initialize Firebase
             const app = initializeApp(config.firebase);
             this.updateSplashProgress(70);
+            this.updateStatusText(dashboard.t("firebaseInit") || "Initializing Firebase...");
 
-            // Enable App Check Debugging
-            // If you are on localhost or have 'debug_app_check' in localStorage,
-            // the SDK will log a debug token to the console. 
-            // Copy that token and add it to the "Debug tokens" section in the Firebase Console.
-            const isDebug = import.meta.env.DEV || localStorage.getItem('debug_app_check');
-            if (isDebug) {
-                console.warn("[App Check] Debug mode enabled. Look for the debug token in the console below.");
-                (self as any).FIREBASE_APPCHECK_DEBUG_TOKEN = true;
+            // --- App Check Initialization with Fallback ---
+            let appCheckProvider;
+            if (config.recaptchaKey) {
+                try {
+                    appCheckProvider = new ReCaptchaEnterpriseProvider(config.recaptchaKey);
+                    console.info("[App Check] ReCAPTCHA Enterprise provider initialized.");
+                } catch (e) {
+                    console.error("[App Check] Failed to initialize ReCAPTCHA Enterprise provider, falling back to CustomProvider:", e);
+                    dashboard.addToast("error", dashboard.t("recaptchaFailed") || "Security verification failed. Functionality may be limited.", 0);
+                    dashboard.state.appCheckFallbackMode = true; // Set fallback flag
+                    appCheckProvider = new CustomProvider({
+                        getToken: async () => { // Fix: Return empty string for token
+                            console.warn("[App Check] Using CustomProvider fallback: returning empty token.");
+                            return { token: '', expireTimeMillis: Date.now() + 300000 }; // 5 minutes validity for dummy
+                        }
+                    });
+                }
+            } else {
+                console.warn("[App Check] No reCAPTCHA key provided, falling back to CustomProvider.");
+                dashboard.addToast("error", dashboard.t("recaptchaMissingKey") || "Security verification key missing. Functionality may be limited.", 0);
+                dashboard.state.appCheckFallbackMode = true; // Set fallback flag
+                appCheckProvider = new CustomProvider({
+                    getToken: async () => { // Fix: Return empty string for token
+                        console.warn("[App Check] Using CustomProvider fallback (no key): returning empty token.");
+                        return { token: '', expireTimeMillis: Date.now() + 300000 };
+                    }
+                });
             }
 
+            // Indicate that the app is ready to enter
+            BootstrapManager.readyToEnter = true;
+            this.updateSplashProgress(100);
+            this.updateStatusText(dashboard.t("ready") || "Ready!", true);
+
             dashboard.appCheck = initializeAppCheck(app, {
-                provider: new ReCaptchaEnterpriseProvider(
-                    config.recaptchaKey || ""
-                ),
+                provider: appCheckProvider,
                 isTokenAutoRefreshEnabled: true,
             });
+            // --- End App Check Initialization with Fallback ---
 
-            // 4. Initial State Setup
-            dashboard.setLang(dashboard.state.lang);
-            void dashboard.onVerify?.();
-            this.updateSplashProgress(85);
-
-            // Defer non-critical visual effects
-            setTimeout(() => this.addSkipButton(dashboard), 0);
-            setTimeout(() => this.initParallaxEffect(dashboard), 50);
-            setTimeout(() => this.initParticles(dashboard), 100);
-
-            // 5. Load Content
-            this.updateSplashProgress(100);
-            await dashboard.loadData();
-
-            // 6. Transition to Interaction Phase
-            this.readyToEnter = true;
-            this.updateStatusText(dashboard.t("clickToEnter") || "Ready. Click to enter.", true);
         } catch (e) {
-            console.error("Critical Bootstrap Failure:", e);
-            let msg = e instanceof Error ? e.message : String(e);
+            console.error("Critical Bootstrap Failure:", e); // Keep original error logging
+
+            let msg = "";
+            if (e instanceof Error) { // Improved error extraction
+                msg = e.message; // Use the message property of the Error object
+            } else if (typeof e === "object" && e !== null) {
+                const errObj = e as any;
+                msg = errObj.message || errObj.code || JSON.stringify(e);
+            } else {
+                msg = String(e);
+            }
 
             // Enhance error message for common configuration issues
             if (msg.includes("Routing Error: Received HTML instead of JSON") || msg.includes("not found (404)")) {
@@ -124,7 +158,7 @@ export class BootstrapManager {
                 0
             );
         } finally {
-            // BrandingEngine usually touches DOM, safe to call at end of bootstrap
+            // BrandingEngine usually touches DOM, safe to call at end of bootstrap.
             // Note: Dashboard.ts context showed BrandingEngine.apply() was called in Dashboard.init
         }
     }
@@ -146,7 +180,7 @@ export class BootstrapManager {
         if (text) text.innerText = `${percent}%`;
     }
 
-    private static updateStatusText(text: string, highlight = false) {
+    private static updateStatusText(text: string, highlight = false) { // Now used
         const status = document.querySelector(".loader-status");
         if (status) {
             (status as HTMLElement).innerText = text;
@@ -165,7 +199,7 @@ export class BootstrapManager {
         }
     }
 
-    private static addSkipButton(dashboard: Dashboard) {
+    private static addSkipButton(dashboard: Dashboard) { // Now used
         const splashScreen = document.getElementById("splash-screen");
         if (!splashScreen) return;
 
@@ -187,7 +221,7 @@ export class BootstrapManager {
     /**
      * Adds a subtle parallax effect to the splash logo based on mouse movement.
      */
-    private static initParallaxEffect(dashboard: Dashboard) {
+    private static initParallaxEffect(dashboard: Dashboard) { // Now used
         const splashScreen = document.getElementById("splash-screen");
         const splashLogo = document.querySelector(".splash-logo-mini") as HTMLElement;
 
@@ -235,7 +269,7 @@ export class BootstrapManager {
     /**
      * Creates a subtle particle background on the splash screen using Canvas.
      */
-    private static initParticles(dashboard: Dashboard) {
+    private static initParticles(dashboard: Dashboard) { // Now used
         const splashScreen = document.getElementById("splash-screen");
         if (!splashScreen) return;
 

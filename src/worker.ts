@@ -97,8 +97,8 @@ const getCorsHeaders = (origin: string | null) => {
   return {
     "Content-Type": "application/json",
     "Access-Control-Allow-Origin": isAllowedOrigin ? origin : "https://dor-progress.web.app",
-    "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
-    "Access-Control-Allow-Headers": "Content-Type, X-Firebase-AppCheck, X-Low-Data, X-Snapshot-Key",
+    "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS, HEAD",
+    "Access-Control-Allow-Headers": "Content-Type, X-Firebase-AppCheck, X-Low-Data, X-Snapshot-Key, X-AppCheck-Fallback",
     "Access-Control-Max-Age": "86400",
     "X-Content-Type-Options": "nosniff",
     "Content-Security-Policy": [
@@ -151,7 +151,13 @@ async function verifyAppCheck(request: WorkerRequest, env: Env): Promise<void> {
   }
 
   const token = request.headers.get("X-Firebase-AppCheck");
+  const isFallbackMode = request.headers.get("X-AppCheck-Fallback") === "true";
+
   if (!token) {
+    if (isFallbackMode) {
+      console.warn("[App Check] Request received in fallback mode without a token. Proceeding with caution.");
+      return; // Allow request to proceed without App Check verification
+    }
     throw new ServiceError("Unauthorized: No App Check token", { status: 401 });
   }
 

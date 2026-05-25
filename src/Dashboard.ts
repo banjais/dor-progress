@@ -44,6 +44,7 @@ export interface DashboardState {
   cumulativeReport: ProjectReport | null; // New property for cumulative reports
   store: ProjectReport | null; // Holds the currently active report data
   clientConfig: ClientConfig | null; // Stores system-wide feature flags
+  appCheckFallbackMode: boolean; // New: Indicates if App Check is in fallback mode
 }
 
 export type StateListener<T = any> = (val: T) => void;
@@ -101,6 +102,7 @@ export class Dashboard {
       cumulativeReport: null, // Initialize cumulative report state
       store: null, // Initialize store
       clientConfig: null,
+      appCheckFallbackMode: false, // Initialize fallback mode to false
     };
     this.state = this.makeReactive(initialState);
     this.timer = new TimerManager(this);

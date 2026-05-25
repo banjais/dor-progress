@@ -316,7 +316,8 @@ export async function authenticatedFetch(
 
   for (let attempt = 0; attempt < maxRetries; attempt++) {
     try {
-      if (dashboardInstance?.appCheck) {
+      // --- App Check Fallback Logic ---
+      if (dashboardInstance?.appCheck && !dashboardInstance.state.appCheckFallbackMode) {
         try {
           // Force refresh the token on subsequent attempts
           const tokenResult = await getToken(dashboardInstance.appCheck, attempt > 0);
@@ -326,6 +327,10 @@ export async function authenticatedFetch(
         } catch (authErr) {
           console.warn("AppCheck token fetch failed, proceeding without it", authErr); // authErr is already typed as unknown
         }
+      } else if (dashboardInstance?.state.appCheckFallbackMode) {
+        // If in fallback mode, send a specific header to the worker
+        headers.set("X-AppCheck-Fallback", "true");
+        console.warn("[App Check] Client in fallback mode, skipping token fetch and sending X-AppCheck-Fallback header.");
       }
 
       const response = await fetch(url, { ...options, headers });

@@ -49,7 +49,9 @@ const App = initApp(dashboard, historyManager) as AppGlobalFunctions;
 initPWALogic();
 
 // Bootstrap the app
-void BootstrapManager.init(dashboard);
+BootstrapManager.init(dashboard).catch((err) => {
+  console.error("[Fatal] App failed to bootstrap:", err);
+});
 
 // Subscribe to state changes
 dashboard.subscribe(render, (state) => state);
