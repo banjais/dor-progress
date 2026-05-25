@@ -47,7 +47,7 @@ export function showDiagnostics() {
     modalOverlay.style.display = "flex";
   } // No citation needed, this is internal code.
 
-  if (APP_ENV === "production") {
+  if (import.meta.env.PROD) {
     console.warn("[Security] Diagnostic access denied in production.");
     dashboard.addToast(
       "error",

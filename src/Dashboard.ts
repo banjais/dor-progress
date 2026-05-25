@@ -1,12 +1,21 @@
 import { AudioEngine } from "./components/AudioEngine.js";
-import { ProjectReport, ProjectReportSchema, ClientConfig } from "../shared/types.ts";
 import { ThemeManager } from "./ThemeManager.js";
 import { LoadingIndicatorManager } from "./LoadingIndicatorManager.js";
 import { ToastManager } from "./ToastManager.js";
 import { TimerManager } from "./TimerManager.js";
 import { TelemetryManager } from "./TelemetryManager.js";
 import { AppCheck } from "firebase/app-check";
-import { t, authenticatedFetch, typeText, parseResponse, clearTranslationCache } from "./api-utils.js";
+import { 
+  t, 
+  authenticatedFetch, 
+  typeText, 
+  parseResponse, 
+  clearTranslationCache, 
+  registerDashboard,
+  type ProjectReport, 
+  ProjectReportSchema, 
+  type ClientConfig 
+} from "./api-utils.js";
 
 export type ReportState =
   | { type: 'idle' }
@@ -68,6 +77,7 @@ export class Dashboard {
   constructor() {
     if (Dashboard._instance) return Dashboard._instance;
     Dashboard._instance = this;
+    registerDashboard(this);
 
     this.audio = new AudioEngine();
     this.theme = new ThemeManager(this);

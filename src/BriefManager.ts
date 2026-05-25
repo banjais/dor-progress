@@ -1,6 +1,12 @@
 import { Dashboard, DashboardState, isReportSuccess, isReportLoading, isReportError, isReportIdle, ReportState } from "./Dashboard.js";
-import { authenticatedFetch, parseResponse, t, toNepaliNumerals } from "./api-utils.js";
-import { ProjectReport, ProjectReportSchema } from "../shared/types.ts";
+import { 
+    authenticatedFetch, 
+    parseResponse, 
+    t, 
+    toNepaliNumerals, 
+    type ProjectReport, 
+    ProjectReportSchema 
+} from "./api-utils.js";
 
 // No citation needed, this is internal code.
 export class BriefManager {

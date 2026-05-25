@@ -328,6 +328,19 @@ body[data-theme="dark"]::after {
   text-transform: uppercase;
   letter-spacing: 0.1em;
   opacity: 0.4;
+  transition: opacity 0.3s ease;
+}
+
+.loader-status.ready {
+  opacity: 1 !important;
+  animation: status-pulse 2s infinite ease-in-out;
+  font-weight: 800;
+  color: #fff;
+}
+
+@keyframes status-pulse {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50% { opacity: 0.6; transform: scale(1.05); }
 }
 
 @keyframes pulse-glow {

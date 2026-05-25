@@ -1,6 +1,100 @@
 import { getToken } from "firebase/app-check";
 import { z } from "zod";
-import { Dashboard } from "./Dashboard.js";
+
+/** 
+ * Unified Core & API Utilities
+ * Consolidated from shared/types.ts to reduce file count.
+ */
+
+export interface Env {
+  UPSTASH_REDIS_REST_URL?: string;
+  UPSTASH_REDIS_REST_TOKEN?: string;
+  GEMINI_API_KEY?: string;
+  GOOGLE_GENAI_API_KEY?: string;
+  FIREBASE_PROJECT_ID?: string;
+  FIREBASE_PROJECT_NUMBER?: string;
+  FIREBASE_APP_ID?: string;
+  FIREBASE_API_KEY?: string;
+  FIREBASE_AUTH_DOMAIN?: string;
+  FIREBASE_STORAGE_BUCKET?: string;
+  FIREBASE_MESSAGING_SENDER_ID?: string;
+  FIREBASE_MEASUREMENT_ID?: string;
+  PUBLISHED_SHEET_ID?: string;
+  SNAPSHOT_KEY?: string;
+  APP_ENV?: string;
+  DIGITAL_SIGNATURE?: string;
+  RECAPTCHA_SITE_KEY?: string;
+}
+
+export const SpreadsheetHeadersSchema = z.array(z.string());
+export type SpreadsheetHeaders = z.infer<typeof SpreadsheetHeadersSchema>;
+
+export const ProjectRowSchema = z.object({
+  _status: z.enum(["good", "moderate", "critical", "stable"]).optional(),
+  _insight: z.string().optional(),
+}).catchall(z.any());
+export type ProjectRow = z.infer<typeof ProjectRowSchema>;
+
+export const AiSummarySchema = z.object({
+  brief: z.string(),
+  overallHealth: z.enum(["good", "moderate", "critical"]).optional(),
+  criticalProjects: z.array(z.string()).optional().nullable(),
+  exceedingProjects: z.array(z.string()).optional().nullable(),
+  discrepancies: z.array(z.object({
+    text: z.string().min(1),
+    severity: z.enum(["low", "medium", "high"]).default("medium")
+  })).optional().nullable(),
+  extractedData: z.object({
+    headers: SpreadsheetHeadersSchema,
+    rows: z.array(ProjectRowSchema),
+    date: z.string().optional()
+  }).optional().nullable()
+});
+export type AiSummary = z.infer<typeof AiSummarySchema>;
+
+export const ProjectReportSchema = z.object({
+  created: z.string().optional(),
+  headers: SpreadsheetHeadersSchema,
+  rows: z.array(ProjectRowSchema),
+  lastUpdate: z.string(),
+  aiSummary: AiSummarySchema.nullable(),
+  adminMessage: z.string().optional()
+});
+export type ProjectReport = z.infer<typeof ProjectReportSchema>;
+
+export const ArchiveMetadataSchema = z.object({
+  date: z.string(),
+  summary: z.string().optional(),
+  created: z.string(),
+  bsDate: z.string().optional(),
+  recordCount: z.number(),
+});
+export type ArchiveMetadata = z.infer<typeof ArchiveMetadataSchema>;
+
+export const SnapshotRequestSchema = z.object({
+  headers: SpreadsheetHeadersSchema.optional(),
+  records: z.array(ProjectRowSchema),
+  meta: z.object({ lastUpdate: z.string(), total: z.number() })
+});
+
+export const ClientConfigSchema = z.object({
+  firebase: z.object({
+    apiKey: z.string(),
+    authDomain: z.string(),
+    projectId: z.string(),
+    storageBucket: z.string(),
+    messagingSenderId: z.string(),
+    appId: z.string(),
+    measurementId: z.string().optional(),
+  }),
+  recaptchaKey: z.string().optional(),
+  digitalSignatureEnabled: z.boolean().optional(),
+});
+export type ClientConfig = z.infer<typeof ClientConfigSchema>;
+
+/** Weak reference to Dashboard to avoid Worker-incompatible imports */
+let dashboardInstance: any = null;
+export const registerDashboard = (instance: any) => { dashboardInstance = instance; };
 
 interface TranslationContent {
   months?: string[];
@@ -57,16 +151,55 @@ export function toArabicNumerals(str: string | null | undefined): string {
 }
 
 /**
+ * Robustly finds a column header based on known aliases.
+ */
+export function getColumnKey(
+  headers: SpreadsheetHeaders,
+  field: "indicator" | "annualTarget" | "annualProgress" | "totalTarget" | "totalProgress",
+): string | undefined {
+  const aliases: Record<string, string[]> = {
+    indicator: ["Indicator", "सूचक", "विवरण", "Indicator Name"],
+    annualTarget: ["Annual Target", "बार्षिक लक्ष्य", "Yearly Target", "Target (Annual)"],
+    annualProgress: ["Annual Progress", "हाल सम्म को बार्षिक प्रगति", "Yearly Progress", "Achievement"],
+    totalTarget: ["Total Target", "कुल लक्ष्य", "Overall Target"],
+    totalProgress: ["Total Progress", "कुल प्रगति", "Overall Progress"],
+  };
+  const searchTerms = aliases[field] || [];
+  return headers.find((h: string) =>
+    searchTerms.some((term) => h.toLowerCase().includes(term.toLowerCase())),
+  );
+}
+
+/**
+ * Calculates progress percentage based on row data.
+ */
+export function getProgress(row: ProjectRow, headers: SpreadsheetHeaders): number {
+  const targetKey = getColumnKey(headers, "annualTarget");
+  const progKey = getColumnKey(headers, "annualProgress");
+  if (!targetKey || !progKey) return 0;
+  const clean = (val: any) => parseFloat(String(val || "0").replace(/[^0-9.-]/g, ""));
+  const t_val = clean(row[targetKey]);
+  const p_val = clean(row[progKey]);
+  return t_val > 0 ? Math.round((p_val / t_val) * 100) : 0;
+}
+
+export function arrayBufferToBase64(buffer: ArrayBuffer): string {
+  const bytes = new Uint8Array(buffer);
+  let binary = "";
+  for (let i = 0; i < bytes.byteLength; i++) binary += String.fromCharCode(bytes[i]);
+  return btoa(binary);
+}
+
+/**
  * Internal translation logic without memoization.
  */
 function translate(key: string, count?: number): string {
   if (!key) return "";
-  const dashboard = Dashboard.getInstance();
-  const state = dashboard.state;
-  const currentLang = (state.lang === "_metadata" ? "en" : (state.lang || "en")) as string;
+  const state = dashboardInstance?.state;
+  const currentLang = (state?.lang === "_metadata" ? "en" : (state?.lang || "en")) as string;
 
   const langData = I18N[currentLang as keyof typeof I18N] as TranslationContent | undefined;
-  const dynamicCache = state.dynamicCache;
+  const dynamicCache = state?.dynamicCache || {};
 
   let finalKey = key;
 
@@ -118,8 +251,7 @@ export const t = (key: string, count?: number): string => {
   // Pluralized translations or those with counts are dynamic; bypass memoization
   if (count !== undefined) return translate(key, count);
 
-  const dashboard = Dashboard.getInstance();
-  const currentLang = (dashboard.state.lang === "_metadata" ? "en" : dashboard.state.lang || "en") as string;
+  const currentLang = (dashboardInstance?.state?.lang === "_metadata" ? "en" : dashboardInstance?.state?.lang || "en") as string;
   const cacheKey = `${currentLang}:${key}`;
 
   const cached = tCache.get(cacheKey);
@@ -149,7 +281,6 @@ export async function authenticatedFetch(
   options: RequestInit = {},
   maxRetries = 3,
 ): Promise<Response> {
-  const dashboard = Dashboard.getInstance();
   const firebaseBase = import.meta.env.VITE_FIREBASE_URL || '';
 
   // Improved validation: warn if we are making a relative request that likely needs an absolute worker URL
@@ -179,10 +310,10 @@ export async function authenticatedFetch(
 
   for (let attempt = 0; attempt < maxRetries; attempt++) {
     try {
-      if (dashboard.appCheck) {
+      if (dashboardInstance?.appCheck) {
         try {
           // Force refresh the token on subsequent attempts
-          const tokenResult = await getToken(dashboard.appCheck, attempt > 0);
+          const tokenResult = await getToken(dashboardInstance.appCheck, attempt > 0);
           if (tokenResult?.token) {
             headers.set("X-Firebase-AppCheck", tokenResult.token);
           }
@@ -200,7 +331,7 @@ export async function authenticatedFetch(
 
       // Handle terminal 401
       if (response.status === 401) {
-        if (isLastAttempt) dashboard.logout();
+        if (isLastAttempt) dashboardInstance?.logout();
         // If it's a 401, we only want to retry once with a fresh token
         if (attempt > 0) throw new Error(errorMsg);
       }
@@ -214,7 +345,15 @@ export async function authenticatedFetch(
       // If we are here, we are going to retry. Fall through to catch block logic.
       throw new Error("Retriable status received");
     } catch (err) {
-      if (attempt === maxRetries - 1 || (err instanceof Error && err.message !== "Retriable status received" && !err.message.includes("fetch"))) throw err; // err is already typed as unknown
+      const error = toError(err);
+      const isNetworkError = error.message.toLowerCase().includes("fetch");
+
+      if (attempt === maxRetries - 1 || (error.message !== "Retriable status received" && !isNetworkError)) {
+        if (isNetworkError && (url.includes("localhost") || url.includes("127.0.0.1"))) {
+          throw new Error(`Connection Refused: Ensure your local worker is running (npm run dev) and accessible at ${url}`);
+        }
+        throw error;
+      }
 
       // Exponential backoff with jitter
       const delay = Math.pow(2, attempt) * 1000 + Math.random() * 1000;
@@ -274,12 +413,14 @@ export async function parseResponse<T>(response: Response, schema: z.ZodSchema<T
  */
 export function toError(err: unknown): Error {
   if (err instanceof Error) return err;
-  if (typeof err === "string") return new Error(err);
-  try {
-    return new Error(JSON.stringify(err));
-  } catch {
-    return new Error(String(err));
+  if (err && typeof err === 'object') {
+    const e = err as any;
+    // Extract message from Firebase/App Check error objects (e.g., name: 'n', code: 403)
+    const msg = e.message || e.statusText || (e.code ? `Security Error (Code: ${e.code})` : null);
+    if (msg) return new Error(msg);
   }
+  const stringified = String(err);
+  return new Error(stringified === "[object Object]" ? "An unexpected error occurred" : stringified);
 }
 
 /**
@@ -380,9 +521,6 @@ export function typeText(element: TextElement, text: string, playSound?: (pitch?
   };
   process();
 }
-
-// Re-export moved logic from shared types to avoid duplication
-export { getColumnKey, getProgress } from "../shared/types.ts";
 
 /**
  * Updates the connection strength badge in the UI.

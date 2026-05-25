@@ -89,7 +89,7 @@ Access snapshot management from the Settings panel:
 
 ### Storage
 
-- **KV Namespace**: TRANSLATION_KV
+- **KV Namespace**: REPORTS_KV
 - **Keys**:
   - snapshot:pdf:YYYY-MM-DD - PDF binary
   - snapshot:meta:YYYY-MM-DD - JSON metadata
@@ -132,9 +132,24 @@ pm run deploy - Deploy to production
 - 
 pm run lint - Type check
 
-## Documentation
+## Historical Snapshots (Technical Details)
 
-- [KV Snapshot System](KV_SNAPSHOT_SYSTEM.md) - Detailed documentation of the PDF snapshot feature
+The snapshot system utilizes Cloudflare KV to store point-in-time versions of the road network status.
+
+### Data Lifecycle
+1. **Capture**: Triggered manually via `AdminManager` or automatically via a scheduled Worker task.
+2. **Extraction**: The Gemini AI processes the published PDF to extract structured project rows.
+3. **Verification**: Data is validated against Zod schemas.
+4. **Storage**: Binary PDF and JSON metadata are stored in `REPORTS_KV` with a 30-day retention policy.
+
+### Manual Controls
+Access the Snapshot Management panel in Settings to:
+- **Create**: Manually force a new archive entry.
+- **Download**: Retrieve historical PDF versions with Devanagari font support.
+- **Maintenance**: Delete specific snapshots or trigger metadata migrations.
+
+### Authentication
+All administrative actions require a `X-Snapshot-Key`. In production, this key is validated against the environment secret; in development, a "dev-bypass" is allowed if not configured.
 
 ## License
 

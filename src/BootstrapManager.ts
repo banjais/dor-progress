@@ -1,13 +1,24 @@
 import { initializeApp } from "firebase/app";
 import { initializeAppCheck, ReCaptchaEnterpriseProvider } from "firebase/app-check";
 import { Dashboard } from "./Dashboard.js";
-import { parseResponse, authenticatedFetch } from "./api-utils.js";
 import { BrandingEngine } from "./components/BrandingEngine.js";
-import { loadTranslations, loadSheetsConfig } from "./api-utils.js";
-import { ClientConfig, ClientConfigSchema } from "../shared/types.ts";
+import { 
+    parseResponse,
+    authenticatedFetch,
+    type ClientConfig, 
+    ClientConfigSchema, 
+    loadTranslations, 
+    loadSheetsConfig
+} from "./api-utils.js";
 
 export class BootstrapManager {
+    private static readyToEnter = false;
+
     static async init(dashboard: Dashboard) {
+        // Force a browser paint of the splash screen before starting heavy initialization
+        // This ensures Chrome users see the branding even if the CPU is pegged during boot.
+        await new Promise(resolve => requestAnimationFrame(() => setTimeout(resolve, 0)));
+
         // Apply UI branding immediately so the app looks correct during load
         // Use Vite's injected environment variables for the client application.
         const safeWorkerBase = (globalThis as any).WORKER_BASE
@@ -48,6 +59,15 @@ export class BootstrapManager {
             // 3. Initialize Firebase
             const app = initializeApp(config.firebase);
             this.updateSplashProgress(70);
+
+            // Enable App Check Debugging
+            // If you are on localhost or have 'debug_app_check' in localStorage,
+            // the SDK will log a debug token to the console. 
+            // Copy that token and add it to the "Debug tokens" section in the Firebase Console.
+            if (import.meta.env.DEV || localStorage.getItem('debug_app_check')) {
+                (self as any).FIREBASE_APPCHECK_DEBUG_TOKEN = true;
+            }
+
             dashboard.appCheck = initializeAppCheck(app, {
                 provider: new ReCaptchaEnterpriseProvider(
                     config.recaptchaKey || ""
@@ -65,14 +85,13 @@ export class BootstrapManager {
             setTimeout(() => this.initParallaxEffect(dashboard), 50);
             setTimeout(() => this.initParticles(dashboard), 100);
 
-            // 4. Reveal App Early
-            // We hide splash here so the user sees the dashboard skeleton/loading state
-            // instead of a static splash screen while waiting for the actual report data.
-            setTimeout(() => this.hideSplash(), 500);
-
             // 5. Load Content
             this.updateSplashProgress(100);
             await dashboard.loadData();
+
+            // 6. Transition to Interaction Phase
+            this.readyToEnter = true;
+            this.updateStatusText(dashboard.t("clickToEnter") || "Ready. Click to enter.", true);
         } catch (e) {
             console.error("Critical Bootstrap Failure:", e);
             let msg = e instanceof Error ? e.message : String(e);
@@ -81,12 +100,25 @@ export class BootstrapManager {
             if (msg.includes("Routing Error: Received HTML instead of JSON") || msg.includes("not found (404)")) {
                 msg += " Please ensure WORKER_BASE is correctly configured to your Cloudflare Worker URL and that the worker is deployed and routing requests properly.";
                 console.error("ACTION REQUIRED: Check WORKER_BASE configuration and Cloudflare Worker deployment.");
+            } else if (msg.includes("403") || msg.includes("App Check")) {
+                msg += " (App Check/Security verification failed. Check ReCAPTCHA configuration and authorized domains in Firebase Console.)";
+                console.error("DEBUG: Firebase App Check 403. Verify ReCAPTCHA Enterprise keys and domain whitelisting.");
+            } else if (msg.includes("Connection Refused") || msg.includes("Failed to fetch")) {
+                msg += " (Local API connection failed. Is your local worker running?)";
+                console.error("DEBUG: Failed to connect to local API. Ensure wrangler is active on port 8787.");
             }
 
             setTimeout(() => this.hideSplash(), 500); // Ensure splash is hidden so user can see the error toast
+
+            let bootErrorLabel = "System failed to initialize";
+            try {
+                // Safely attempt translation, fallback to English
+                bootErrorLabel = dashboard.t("bootError") || bootErrorLabel;
+            } catch { /* ignored */ }
+
             dashboard.addToast(
                 "error",
-                `${dashboard.t("bootError") || "System failed to initialize"}: ${msg.split(" (Status:")[0]}`, // Trim status for toast
+                `${bootErrorLabel}: ${msg.split(" (Status:")[0]}`,
                 0
             );
         } finally {
@@ -112,6 +144,14 @@ export class BootstrapManager {
         if (text) text.innerText = `${percent}%`;
     }
 
+    private static updateStatusText(text: string, highlight = false) {
+        const status = document.querySelector(".loader-status");
+        if (status) {
+            (status as HTMLElement).innerText = text;
+            if (highlight) (status as HTMLElement).classList.add("ready");
+        }
+    }
+
     private static handleSplashVideo() {
         const video = document.querySelector(".splash-video") as HTMLVideoElement;
         if (video) {
@@ -133,7 +173,8 @@ export class BootstrapManager {
         skipButton.innerText = dashboard.t("skip") || "Skip"; // Use translation for "Skip"
         splashScreen.appendChild(skipButton);
 
-        skipButton.addEventListener("click", () => {
+        skipButton.addEventListener("click", (e) => {
+            e.stopPropagation(); // Prevent triggering the global splash click
             dashboard.startHum(); // Resume AudioContext on user gesture
             this.hideSplash(true); // Pass true to indicate immediate hide
             // The dashboard.loadData() call in BootstrapManager.init() will still proceed,
@@ -203,14 +244,20 @@ export class BootstrapManager {
         const ctx = canvas.getContext("2d");
         if (!ctx) return;
 
-        // Pre-render a white glowing particle sprite on an offscreen canvas for performance
+        // 1. Pre-render Sprites (Circle and Triangle)
         const offscreen = document.createElement("canvas");
         offscreen.width = 32;
         offscreen.height = 32;
         const octx = offscreen.getContext("2d");
 
+        const offscreenTri = document.createElement("canvas");
+        offscreenTri.width = 32;
+        offscreenTri.height = 32;
+        const octxTri = offscreenTri.getContext("2d");
+
         const updateSpriteShape = () => {
-            if (!octx) return;
+            if (!octx || !octxTri) return;
+            // Circle Sprite
             octx.clearRect(0, 0, 32, 32);
             octx.shadowBlur = 10;
             octx.shadowColor = "rgba(255, 255, 255, 1)";
@@ -218,6 +265,18 @@ export class BootstrapManager {
             octx.beginPath();
             octx.arc(16, 16, 5, 0, Math.PI * 2);
             octx.fill();
+
+            // Triangle Sprite (for Critical State)
+            octxTri.clearRect(0, 0, 32, 32);
+            octxTri.shadowBlur = 10;
+            octxTri.shadowColor = "rgba(255, 255, 255, 1)";
+            octxTri.fillStyle = "rgba(255, 255, 255, 1)";
+            octxTri.beginPath();
+            octxTri.moveTo(16, 8);
+            octxTri.lineTo(26, 24);
+            octxTri.lineTo(6, 24);
+            octxTri.closePath();
+            octxTri.fill();
         };
         updateSpriteShape();
 
@@ -262,10 +321,19 @@ export class BootstrapManager {
             });
             // Use the pop sound for the tactile impact
             dashboard.playUi("pop");
+
+            // Finalize entry if loading is complete
+            if (BootstrapManager.readyToEnter) {
+                BootstrapManager.hideSplash();
+            }
         });
 
         const animate = () => {
             ctx.clearRect(0, 0, canvas.width, canvas.height);
+            
+            // 2. Sync with CSS Variables
+            const computedStyle = getComputedStyle(document.documentElement);
+            const primaryColor = computedStyle.getPropertyValue('--primary').trim();
 
             const risk = dashboard.state.riskLevel; // 0 to 1
             const speedMultiplier = 1 + risk * 4; // Move up to 5x faster as risk increases
@@ -281,22 +349,24 @@ export class BootstrapManager {
             }
 
 
-            // Draw subtle connecting lines between nearby particles
-            // The effect becomes more visible as risk increases
+            // 3. Optimized Connection Logic (Distance Squared)
             if (risk > 0.1) {
                 ctx.lineWidth = 0.5;
+                const limitSq = 14400; // 120 * 120
                 for (let i = 0; i < particles.length; i++) {
                     for (let j = i + 1; j < particles.length; j++) {
                         const p1 = particles[i];
                         const p2 = particles[j];
                         const dx = p1.x - p2.x;
                         const dy = p1.y - p2.y;
-                        const dist = Math.sqrt(dx * dx + dy * dy);
+                        const distSq = dx * dx + dy * dy;
 
-                        // Only draw lines if particles are within 120 pixels
-                        if (dist < 120) {
-                            const opacity = (1 - dist / 120) * 0.2 * risk;
-                            ctx.strokeStyle = `rgba(255, 255, 255, ${opacity})`;
+                        if (distSq < limitSq) {
+                            const opacity = (1 - Math.sqrt(distSq) / 120) * 0.2 * risk;
+                            // Use the primary theme color for lines
+                            ctx.strokeStyle = primaryColor.replace('rgb', 'rgba').replace(')', `, ${opacity})`);
+                            if (!ctx.strokeStyle.includes('rgba')) ctx.strokeStyle = `rgba(255,255,255,${opacity})`;
+                            
                             ctx.beginPath();
                             ctx.moveTo(p1.x, p1.y);
                             ctx.lineTo(p2.x, p2.y);
@@ -306,6 +376,7 @@ export class BootstrapManager {
                 }
             }
 
+            // 4. Hoist Base Color Calculation
             const baseR = Math.floor(255 - (255 - 239) * risk);
             const baseG = Math.floor(255 - (255 - 68) * risk);
             const baseB = Math.floor(255 - (255 - 68) * risk);
@@ -386,6 +457,8 @@ export class BootstrapManager {
         if (splash) {
             Dashboard.getInstance().stopHum(); // Stop the hum synth
             splash.style.opacity = "0"; // Always fade out
+            BrandingEngine.finalizeFavicon();
+            BrandingEngine.finalizeThemeColor();
             setTimeout(() => (splash.style.display = "none"), immediate ? 100 : 800); // Shorter timeout for immediate hide
         }
     }

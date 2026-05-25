@@ -1,6 +1,5 @@
 import { Dashboard, DashboardState } from "./Dashboard.js";
-import { getColumnKey } from "./api-utils.js";
-import { ProjectReport, ProjectRow } from "../shared/types.ts";
+import { getColumnKey, type ProjectReport, type ProjectRow } from "./api-utils.js";
 
 // No citation needed, this is internal code.
 export class SearchManager {

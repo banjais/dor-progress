@@ -4,7 +4,7 @@ import {
   ProjectReport as BaseProjectReport,
   SpreadsheetHeaders as BaseHeaders,
   Env as BaseEnv
-} from "../shared/types.ts";
+} from "./api-utils.js";
 
 /**
  * Global type definitions for vendor-prefixed APIs.
@@ -58,7 +58,16 @@ declare global {
     I18N: any; // If I18N is truly global, declare it here. Otherwise, it should be imported.
   }
 
+  const WORKER_BASE: string;
+  const VITE_WORKER_BASE: string;
+  const VITE_FIREBASE_URL: string;
+  const BUILD_ID: string;
+  const COMMIT_SHA: string;
+  const APP_ENV: "development" | "production" | "test";
+  const APP_VERSION: string;
+
   interface Window extends AppGlobalFunctions {
+    readonly APP_ENV: "development" | "production" | "test";
     App: AppGlobalFunctions;
   }
 

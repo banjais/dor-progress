@@ -42,11 +42,3 @@ declare module "*/branding.json" {
   const value: Branding;
   export default value;
 }
-
-declare const WORKER_BASE: string;
-declare const VITE_WORKER_BASE: string;
-declare const VITE_FIREBASE_URL: string;
-declare const BUILD_ID: string;
-declare const COMMIT_SHA: string;
-declare const APP_ENV: "development" | "production" | "test";
-declare const APP_VERSION: string;

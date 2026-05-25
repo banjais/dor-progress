@@ -1,4 +1,5 @@
 import { Dashboard } from "./Dashboard.js";
+import { BrandingEngine } from "./components/BrandingEngine.js";
 
 export class ThemeManager {
     private dashboard: Dashboard;
@@ -22,7 +23,19 @@ export class ThemeManager {
 
     applyTheme(theme: string, persist = true) {
         document.body.setAttribute("data-theme", theme);
-        const color = theme === "dark" ? "#0b0f1a" : "#1a5c3a";
+        const isDark = theme === "dark";
+        const color = isDark ? BrandingEngine.getBrandedDarkColor() : BrandingEngine.getBrandedColor();
+        const brandedPrimary = BrandingEngine.getBrandedColor();
+
+        // Sync the CSS variables with the branded configuration
+        if (isDark) {
+            document.documentElement.style.setProperty("--bg", color);
+            document.documentElement.style.removeProperty("--primary"); // Allow CSS to use the dark-mode primary default
+        } else {
+            document.documentElement.style.removeProperty("--bg");
+            document.documentElement.style.setProperty("--primary", brandedPrimary);
+        }
+
         document
             .querySelectorAll('meta[name="theme-color"]')
             .forEach((meta) => ((meta as HTMLMetaElement).content = color));

@@ -1,8 +1,14 @@
 import { z } from "zod";
 import { Dashboard } from "./Dashboard.js"; // No citation needed, this is internal code.
-import { t, authenticatedFetch, toError, parseResponse } from "./api-utils.js";
-import { ArchiveMetadataSchema } from "../shared/types.ts";
-import { downloadBlob } from "./utils.js";
+import { 
+    t, 
+    authenticatedFetch, 
+    toError, 
+    parseResponse, 
+    ArchiveMetadataSchema, // Now in api-utils.js
+    downloadBlob // Now in api-utils.js
+} from "./api-utils.js";
+
 // No citation needed, this is internal code.
 const dashboard = Dashboard.getInstance();
 

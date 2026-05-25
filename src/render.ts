@@ -1,7 +1,6 @@
 import { Dashboard, DashboardState } from "./Dashboard.js";
-import { getProgress, t, toNepaliNumerals, toArabicNumerals, getColumnKey } from "./api-utils.js";
+import { getProgress, t, toNepaliNumerals, toArabicNumerals, getColumnKey, type ProjectReport, type ProjectRow } from "./api-utils.js";
 import { renderMiniChart, renderSparkline } from "./utils.js"; // Import I18N directly
-import { ProjectReport, ProjectRow } from "../shared/types.ts";
 
 /**
  * Core render function that updates the UI based on the project state.

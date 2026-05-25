@@ -10,16 +10,16 @@ import type {
   KVNamespace,
   ExportedHandler,
 } from "@cloudflare/workers-types";
-import {
-  Env as BaseEnv,
-  AiSummary,
+import { 
+  type Env as BaseEnv, 
+  type AiSummary, 
   AiSummarySchema,
-  ProjectReport,
+  type ProjectReport, 
   ProjectReportSchema,
   SnapshotRequestSchema,
-  ArchiveMetadata,
-  arrayBufferToBase64,
-} from "../shared/types.ts"; // This path is correct as is
+  type ArchiveMetadata,
+  arrayBufferToBase64 
+} from "./api-utils.js";
 
 interface Env extends BaseEnv {
   REPORTS_KV: KVNamespace;
@@ -82,14 +82,14 @@ class ServiceError extends Error {
 const SNAPSHOT_RETENTION_COUNT = 30; // Keep the last 30 snapshots
 
 const JWKS = createRemoteJWKSet(
-  new URL("https://firebaseappcheck.googleapis.com/v1/jwks"),
-); // No citation needed, this is internal code.
+  new URL("https://firebaseappcheck.googleapis.com/v1/jwks")
+);
 
 const getCorsHeaders = (origin: string | null) => {
   const isAllowedOrigin = origin && (
-    origin.endsWith(".web.app") ||
-    origin.endsWith(".firebaseapp.com") ||
-    origin.includes("localhost") ||
+    origin === "https://dor-progress.web.app" ||
+    origin === "https://dor-progress.firebaseapp.com" ||
+    origin.includes("localhost:") ||
     origin.includes("127.0.0.1") ||
     origin.includes("dor-progress")
   );
@@ -174,8 +174,13 @@ async function verifyAppCheck(request: WorkerRequest, env: Env): Promise<void> {
       subject: appId,
       clockTolerance: "1m",
     });
-  } catch (e) {
-    throw new ServiceError("Invalid App Check Token", {
+  } catch (e: any) {
+    // Log the specific jose verification error to Cloudflare Logs
+    console.error(`[App Check] Verification failed: ${e.message}`, {
+      code: e.code,
+      project: projectId
+    });
+    throw new ServiceError(`Unauthorized: ${e.code === 'ERR_JWT_EXPIRED' ? 'Token Expired' : 'Invalid App Check Token'}`, {
       status: 401,
       cause: e,
     });
@@ -497,7 +502,7 @@ async function handleAutoArchive(env: Env) {
     );
 
     // --- Snapshot Retention Logic ---
-    const listResult = await env.REPORTS_KV.list<ArchiveMetadata>({ prefix: "report:" });
+    const listResult = await env.REPORTS_KV.list<ArchiveMetadata>({ prefix: "report:", limit: 100 });
     const allSnapshots = listResult.keys
       .filter(k => k.name.startsWith("report:")) // Ensure only report keys are considered
       .sort((a, b) => b.name.localeCompare(a.name)); // Sort descending by date (key name)

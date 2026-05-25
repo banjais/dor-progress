@@ -1,32 +1,25 @@
 {
   "compilerOptions": {
     "target": "ESNext",
+    "useDefineForClassFields": true,
     "module": "ESNext",
-    "moduleResolution": "Bundler",
-    "strict": true,
-    "esModuleInterop": true,
+    "lib": ["ESNext", "DOM", "DOM.Iterable"],
     "skipLibCheck": true,
-    "forceConsistentCasingInFileNames": true,
+
+    /* Bundler mode */
+    "moduleResolution": "bundler",
     "allowImportingTsExtensions": true,
     "resolveJsonModule": true,
-    "types": [],
     "isolatedModules": true,
-    "noEmit": false,
-    "emitDeclarationOnly": true,
-    "composite": true,
-    "declaration": true,
-    "declarationMap": true
+    "noEmit": true,
+
+    /* Linting */
+    "strict": true,
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
+    "noFallthroughCasesInSwitch": true,
+
+    "types": ["vite/client", "@cloudflare/workers-types"]
   },
-  "files": [],
-  "references": [
-    {
-      "path": "./shared"
-    },
-    {
-      "path": "./src"
-    },
-    {
-      "path": "./src/tsconfig.worker.json"
-    }
-  ]
+  "include": ["src", "vite.config.ts"]
 }

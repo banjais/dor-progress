@@ -6,9 +6,12 @@ import {
     t,
     toNepaliNumerals,
     I18N,
+    type ProjectReport,
+    ProjectReportSchema,
+    type ArchiveMetadata,
+    ArchiveMetadataSchema,
+    downloadBlob
 } from "./api-utils.js";
-import { ProjectReport, ProjectReportSchema, ArchiveMetadata, ArchiveMetadataSchema } from "../shared/types.ts";
-import { downloadBlob } from "./utils.js";
 
 export class HistoryManager { // No citation needed, this is internal code.
     private dashboard: Dashboard;

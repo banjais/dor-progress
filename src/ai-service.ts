@@ -1,7 +1,13 @@
 import { GoogleGenerativeAI, HarmCategory, HarmBlockThreshold, SchemaType, GenerationConfig, Part } from "@google/generative-ai";
 import { z } from "zod";
-import { AiSummary, AiSummarySchema } from "../shared/types.ts";
-import aiPromptsData from "./ai-prompts.json" with { type: "json" };
+import { type AiSummary, AiSummarySchema } from "./api-utils.js";
+
+const AI_PROMPTS = {
+    generateAiSummary: {
+        en: "You are a world-class senior infrastructure analyst for the Department of Roads (DoR), Nepal...",
+        ne: "You are a world-class senior infrastructure analyst for the Department of Roads (DoR), Nepal..."
+    }
+};
 
 let aiInstance: GoogleGenerativeAI | null = null;
 
@@ -122,7 +128,7 @@ export async function runProjectSummary(apiKey: string, input: { rows?: any[], l
   const projectData = input.rows ? JSON.stringify(input.rows.slice(0, 40)) : "Raw PDF data provided";
   const lang = input.lang || "en";
 
-  const promptTemplate = (aiPromptsData.generateAiSummary as Record<string, string>)[lang] || aiPromptsData.generateAiSummary.en;
+  const promptTemplate = (AI_PROMPTS.generateAiSummary as Record<string, string>)[lang] || AI_PROMPTS.generateAiSummary.en;
   const prompt = promptTemplate.replace("{{projectData}}", projectData);
 
   const finalPrompt = input.mainSheet
