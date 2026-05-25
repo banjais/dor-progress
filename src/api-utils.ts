@@ -476,7 +476,12 @@ export async function getApiErrorMessage(response: Response, fallback = "Unknown
     const parsed = json ? ApiErrorSchema.safeParse(json) : null;
     if (parsed?.success) {
       const data = parsed.data;
-      const serverMessage = data.error || data.message || (typeof data.details === 'string' ? data.details : data.details?.message);
+      let serverMessage = data.error || data.message;
+      
+      if (!serverMessage && data.details) {
+        serverMessage = typeof data.details === 'string' ? data.details : (data.details.message || JSON.stringify(data.details));
+      }
+      
       return serverMessage ? `${serverMessage} (${status})` : `${statusFallback} (${status})`;
     }
     return `${statusFallback} (${status})`;

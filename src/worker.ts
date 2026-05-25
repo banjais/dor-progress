@@ -453,7 +453,11 @@ async function handleFetch(
     }) as unknown as WorkerResponse;
   } catch (e) {
     const err = e instanceof ServiceError ? e : new ServiceError((e as Error).message || "Internal Server Error", { status: 500, cause: e });
-    return jsonResponse({ error: err.message }, err.status, origin) as unknown as WorkerResponse;
+    // Surface the cause (e.g., Zod validation errors or PDF export errors) to the client
+    return jsonResponse({ 
+      error: err.message,
+      details: err.cause 
+    }, err.status, origin) as unknown as WorkerResponse;
   }
 }
 
