@@ -57,20 +57,31 @@ export class BootstrapManager {
 
     try {
       // Apply UI branding inside try-catch to prevent initialization blocks
-      try {
-        await BrandingEngine.apply();
-      } catch (e) {
-        console.warn("Branding failed to apply", e);
-      }
-      try {
-        await loadTranslations();
-      } catch (e) {
-        console.warn("Translations failed to load", e);
-      }
-      try {
-        await loadSheetsConfig();
-      } catch (e) {
-        console.warn("Sheets config failed to load", e);
+      // Run non-dependent initialization tasks in parallel to speed up boot time
+      const results = await Promise.allSettled([
+        BrandingEngine.apply(),
+        loadTranslations(),
+        loadSheetsConfig(),
+      ]);
+
+      let criticalInitFailure = false;
+      results.forEach((result, index) => {
+        if (result.status === "rejected") {
+          const tasks = ["Branding", "Translations", "Sheets Config"];
+          console.warn(`${tasks[index]} failed to load`, result.reason);
+          // If translations or sheets config fail, it's a critical error for the app to function.
+          if (
+            tasks[index] === "Translations" ||
+            tasks[index] === "Sheets Config"
+          ) {
+            criticalInitFailure = true;
+          }
+        }
+      });
+      if (criticalInitFailure) {
+        throw new Error(
+          "Critical initialization tasks failed (Translations or Sheets Config).",
+        );
       }
 
       this.initLowData();
@@ -199,7 +210,7 @@ export class BootstrapManager {
 
       // Enhance error message for common configuration issues
       if (
-        msg.includes("Routing Error: Received HTML instead of JSON") ||
+        msg.includes("Expected JSON configuration but received HTML") ||
         msg.includes("not found (404)")
       ) {
         msg +=

@@ -380,6 +380,7 @@ export function initPWALogic() {
   window.addEventListener("beforeinstallprompt", (e) => {
     e.preventDefault();
     deferredPrompt = e as BeforeInstallPromptEvent;
+    updateInstallButtonUI(); // Try to show the button immediately when the event fires
   });
 
   window.addEventListener("appinstalled", () => {
@@ -568,6 +569,25 @@ export function initPWALogic() {
   const isInstallableBrowser =
     "BeforeInstallPromptEvent" in window || isIosDevice;
 
+  let qualificationComplete = false;
+
+  function updateInstallButtonUI() {
+    // Only show the button if the user has "qualified" (waited 3s) AND the browser is ready
+    const btn = document.getElementById(
+      "install-btn",
+    ) as HTMLButtonElement | null;
+    if (!btn || !qualificationComplete) return;
+
+    if (deferredPrompt || isIosDevice) {
+      btn.style.display = "block";
+      btn.disabled = false;
+      btn.innerHTML = t("install");
+      btn.classList.add("install-ready-animate"); // Add class for animation
+    } else {
+      btn.style.display = "none";
+    }
+  }
+
   if (isInstallableBrowser) {
     const btn = document.getElementById(
       "install-btn",
@@ -586,17 +606,9 @@ export function initPWALogic() {
   }
 
   setTimeout(() => {
-    const btn = document.getElementById(
-      "install-btn",
-    ) as HTMLButtonElement | null;
-    if (!btn) return;
-    if (deferredPrompt || isIosDevice) {
-      btn.disabled = false;
-      btn.innerHTML = t("install");
-      btn.classList.add("install-ready-animate"); // Add class for animation
-    } else {
-      btn.style.display = "none";
-    }
+    qualificationComplete = true;
+    updateInstallButtonUI();
+
     // Show the update button once qualification is over
     const updateBtn = document.getElementById("pwa-update-btn");
     if (updateBtn) updateBtn.style.display = "flex";
@@ -612,13 +624,18 @@ export function initPWALogic() {
 
     if (deferredPrompt) {
       deferredPrompt.prompt();
-      deferredPrompt.userChoice.then((choice) => {
-        if (choice.outcome === "accepted") {
-          triggerInstallCelebration(installBtn);
-          dashboard.playUi("ping"); // Play a rewarding sound
-        }
-        deferredPrompt = null;
-      });
+      deferredPrompt.userChoice
+        .then((choice) => {
+          if (choice.outcome === "accepted") {
+            triggerInstallCelebration(installBtn);
+            dashboard.playUi("ping"); // Play a rewarding sound
+          }
+          deferredPrompt = null; // Clear the deferred prompt regardless of outcome
+        })
+        .catch((e) => {
+          console.error("[PWA] Deferred prompt user choice failed:", e);
+          deferredPrompt = null; // Ensure prompt is cleared even on error
+        });
       if ("vibrate" in navigator) navigator.vibrate(50); // Vibrate on user click
     } else if (isIos()) {
       showIosInstallInstructions();
@@ -646,9 +663,13 @@ export function initPWALogic() {
             `[PWA] Service Worker registered in ${mode} mode:`,
             reg.scope,
           );
-          void reg.update();
+          reg
+            .update()
+            .catch((e: any) =>
+              console.error("[PWA] Service Worker update failed:", e),
+            );
           updateUpdateButtonState(); // Update button state after initial registration
-          void registerPeriodicUpdate(reg);
+          registerPeriodicUpdate(reg);
         })
         .catch((err) => {
           console.error("[PWA] Service Worker registration failed:", err);

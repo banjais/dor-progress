@@ -29,15 +29,7 @@ import { reportMachine } from "./reportMachine.js";
 export class Dashboard {
   private static _instance: Dashboard | null = null;
   public audio!: AudioEngine;
-  private reportService = interpret(reportMachine).onTransition((xstate) => {
-    // Initialize XState service
-    // Map XState's state to your reactive DashboardState
-    this.state.reportData = {
-      type: xstate.value as ReportState["type"],
-      report: xstate.context.report,
-      message: xstate.context.error,
-    } as ReportState; // Cast to ensure type compatibility
-  });
+  private reportService!: any;
   private theme!: ThemeManager;
   private loading!: LoadingIndicatorManager;
   private toast!: ToastManager;
@@ -71,6 +63,15 @@ export class Dashboard {
     if (Dashboard._instance) return Dashboard._instance;
     Dashboard._instance = this;
     registerDashboard(this);
+
+    // Move initialization inside the constructor body to ensure it only runs once
+    this.reportService = interpret(reportMachine).onTransition((xstate) => {
+      this.state.reportData = {
+        type: xstate.value as ReportState["type"],
+        report: xstate.context.report,
+        message: xstate.context.error,
+      } as ReportState;
+    });
 
     this.audio = new AudioEngine();
     this.theme = new ThemeManager(this);
@@ -185,12 +186,16 @@ export class Dashboard {
    * @param useVariation If true, applies random pitch shifting (useful for typing effects).
    */
   playUi(sound: string, useVariation = false, pitch?: number) {
-    this.audio.playUi(sound, useVariation, pitch);
+    void this.audio
+      .playUi(sound, useVariation, pitch)
+      .catch((e) => console.error("[Audio] Error playing UI sound:", e));
   }
 
   // Hum synth controls
   startHum() {
-    void this.audio.startHum();
+    void this.audio
+      .startHum()
+      .catch((e) => console.error("[Audio] Error starting hum:", e));
   }
   updateHum(risk: number) {
     this.audio.updateHum(risk);
@@ -200,7 +205,9 @@ export class Dashboard {
   } // Keep hum controls for other uses if needed
   // Music track controls
   startMusic(url: string) {
-    void this.audio.startMusic(url);
+    void this.audio
+      .startMusic(url)
+      .catch((e) => console.error("[Audio] Error starting music:", e));
   }
   stopMusic() {
     this.audio.stopMusic();
@@ -385,6 +392,14 @@ export class Dashboard {
       // After attempting to resume, update the reactive state based on the AudioEngine's current status
       this.state.isAudioContextSuspended = this.audio.isContextSuspended;
       this.state.isAudioEngineBroken = this.audio.isBroken;
+
+      // If successfully resumed, re-trigger the current view to start background music
+      if (
+        !this.state.isAudioContextSuspended &&
+        !this.state.isAudioEngineBroken
+      ) {
+        this.setView(this.state.view);
+      }
     } catch (e) {
       console.warn("[Audio] Context resumption failed:", e);
       this.state.isAudioEngineBroken = true; // Mark as broken if resume fails critically

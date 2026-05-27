@@ -202,7 +202,9 @@ export async function authenticatedFetch(
   // Relaxed to support Firebase Hosting rewrites where the API is hosted on the same domain as the app.
   const isProduction = (import.meta as any).env.PROD;
   if (!GLOBAL_WORKER_BASE && !path.startsWith("http") && isProduction) {
-    console.debug(`[API] Fetching via relative URL: ${path}`);
+    console.warn(
+      `[API] VITE_WORKER_BASE is missing. Fetching via relative URL: ${path}. This will fail if not using a proxy.`,
+    );
   }
 
   let url: string;

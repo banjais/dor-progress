@@ -274,7 +274,6 @@ export class AudioEngine {
   /** Loads an audio track into an AudioBuffer. */
   private async loadMusicBuffer(url: string): Promise<AudioBuffer | null> {
     if (this.musicBuffers.has(url)) return this.musicBuffers.get(url)!;
-    if (!this.ctx) await this.init();
     if (!this.ctx) return null;
 
     try {
@@ -379,12 +378,12 @@ export class AudioEngine {
     checkMute = true,
     pitchOverride?: number,
   ): Promise<void> {
-    if (!this.ctx) await this.init();
+    // Only play if the engine is functional and the context is running.
+    // This avoids creating the context (and the associated warning) before a user gesture.
+    if (this._isBroken || !this.ctx || this.ctx.state !== "running") return;
 
-    // We do NOT call resume() here. If the context is suspended,
-    // the sound simply won't play, avoiding the browser warning. If the engine is broken, also return.
     const vol = this.uiVolume;
-    if (this._isBroken || (checkMute && vol === 0)) return;
+    if (checkMute && vol === 0) return;
     const pack = localStorage.getItem("sound-pack") ?? "modern";
     const buffer = this.bufferPool.get(`${pack}:${id}`);
     if (!buffer) return;

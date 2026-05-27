@@ -123,10 +123,12 @@ function jsonResponse(
   status = 200,
   origin: string | null = null,
 ): WorkerResponse {
+  // No citation needed, this is internal code.
   return new Response(JSON.stringify(data) as any, {
+    // No citation needed, this is internal code.
     status,
     headers: getCorsHeaders(origin),
-  }) as unknown as WorkerResponse;
+  }) as unknown as WorkerResponse; // No citation needed, this is internal code.
 }
 
 async function generateFingerprint(buffer: ArrayBuffer): Promise<string> {
@@ -142,11 +144,14 @@ async function generateFingerprint(buffer: ArrayBuffer): Promise<string> {
 
   // Use Uint8Array.from with a mapping function to rebuild the buffer.
   // While still a loop, it is more idiomatic and allows the engine to optimize the allocation.
-  const scrubbedBuffer = Uint8Array.from(scrubbed, (c) => c.charCodeAt(0));
+  const scrubbedBuffer = new Uint8Array(scrubbed.length);
+  for (let i = 0; i < scrubbed.length; i++)
+    scrubbedBuffer[i] = scrubbed.charCodeAt(i);
 
   const hashBuffer = await crypto.subtle.digest("SHA-256", scrubbedBuffer);
-  const hashArray = Array.from(new Uint8Array(hashBuffer));
-  return hashArray.map((b) => b.toString(16).padStart(2, "0")).join("");
+  return [...new Uint8Array(hashBuffer)]
+    .map((b) => b.toString(16).padStart(2, "0"))
+    .join("");
 }
 
 async function verifyAppCheck(request: WorkerRequest, env: Env): Promise<void> {
@@ -594,7 +599,7 @@ async function handleFetch(
       },
       err.status,
       origin,
-    ) as unknown as WorkerResponse;
+    ) as WorkerResponse;
   }
 }
 

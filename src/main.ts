@@ -266,9 +266,13 @@ Object.assign(App, {
 // Autoplay Policy Fix: Resume AudioContext on the first user interaction.
 // This addresses the "AudioContext was not allowed to start" warning/error.
 const unlockAudio = async () => {
-  await dashboard.resumeAudioContext();
-  window.removeEventListener("mousedown", unlockAudio);
-  window.removeEventListener("keydown", unlockAudio);
+  try {
+    await dashboard.resumeAudioContext();
+    window.removeEventListener("mousedown", unlockAudio);
+    window.removeEventListener("keydown", unlockAudio);
+  } catch (e) {
+    console.error("[Audio] Failed to unlock audio context:", e);
+  }
 };
 window.addEventListener("mousedown", unlockAudio);
 window.addEventListener("keydown", unlockAudio);
