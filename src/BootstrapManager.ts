@@ -76,11 +76,11 @@ export class BootstrapManager {
       this.initLowData();
       this.initAccessibilitySettings();
 
+      SplashScreen.init(dashboard);
       // Provide a localized time-of-day greeting as the system wakes up
       SplashScreen.updateStatusText(dashboard.t(SplashScreen.getGreetingKey()));
       await new Promise((r) => setTimeout(r, 1200)); // Pause briefly to allow the greeting to be read
 
-      SplashScreen.init(dashboard);
       SplashScreen.updateSplashProgress(10);
       SplashScreen.updateStatusText(
         dashboard.t("loadingConfig") || "Loading configuration...",

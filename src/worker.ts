@@ -669,7 +669,7 @@ async function handleAutoArchive(env: Env) {
     // --- Snapshot Retention Logic ---
     const listResult = await env.REPORTS_KV.list<ArchiveMetadata>({
       prefix: "report:",
-      limit: 100,
+      limit: 1000,
     });
     const allSnapshots = listResult.keys
       .filter((k) => k.name.startsWith("report:")) // Ensure only report keys are considered
@@ -698,9 +698,12 @@ async function fetchProjectPdf(env: Env): Promise<ArrayBuffer> {
     });
 
   const publishedUrl = `https://docs.google.com/spreadsheets/d/e/${sheetId}/pub?output=pdf`;
-  const cache = await caches.open("google-sheet-cache");
 
-  let response = await cache.match(publishedUrl);
+  // Named caches (caches.open) are not supported in Cloudflare Workers.
+  // We use caches.default and check for its existence as it is unavailable in 'scheduled' events.
+  const cache = typeof caches !== "undefined" ? (caches as any).default : null;
+
+  let response = cache ? await cache.match(publishedUrl) : null;
   if (!response) {
     response = await fetch(publishedUrl);
     // Explicitly check for content type to prevent HTML error pages from being treated as PDFs
@@ -716,7 +719,7 @@ async function fetchProjectPdf(env: Env): Promise<ArrayBuffer> {
         { status: 400 },
       );
     }
-    if (response?.ok) {
+    if (response?.ok && cache) {
       const headers = new Headers(response.headers);
       headers.set("Cache-Control", "public, max-age=300");
       // Use 'any' for the body to satisfy DOM vs Worker stream type differences
