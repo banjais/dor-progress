@@ -45,11 +45,13 @@ jobs:
           FB_SA: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
           AI_KEY: ${{ secrets.GOOGLE_GENAI_API_KEY }}
           SNAP_KEY: ${{ secrets.SNAPSHOT_KEY }}
+          FB_ID: ${{ secrets.FIREBASE_PROJECT_ID }}
         run: |
           echo "Checking required GitHub Secrets..."
           test -n "$CF_TOKEN" || (echo "❌ Missing CLOUDFLARE_API_TOKEN" && exit 1)
           test -n "$CF_ID" || (echo "❌ Missing CLOUDFLARE_ACCOUNT_ID" && exit 1)
           test -n "$FB_SA" || (echo "❌ Missing FIREBASE_SERVICE_ACCOUNT" && exit 1)
+          test -n "$FB_ID" || (echo "❌ Missing FIREBASE_PROJECT_ID" && exit 1)
           test -n "$AI_KEY" || (echo "❌ Missing GOOGLE_GENAI_API_KEY" && exit 1)
           test -n "$SNAP_KEY" || (echo "❌ Missing SNAPSHOT_KEY" && exit 1)
           echo "✅ All required secrets exist"

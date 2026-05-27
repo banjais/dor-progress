@@ -1,5 +1,6 @@
 {
   "hosting": {
+    "site": "dor-progress",
     "public": "dist",
     "ignore": [
       "firebase.json",
