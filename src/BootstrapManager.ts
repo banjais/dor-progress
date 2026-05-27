@@ -100,8 +100,21 @@ export class BootstrapManager {
       const configPath = "api/client-config";
 
       // 1. Fetch Configuration & Init System Shell
-      console.info(`[System] Fetching config from path: ${configPath}`);
       const res = await authenticatedFetch(configPath);
+
+      // Diagnostic log: check the response URL to see if it was redirected or handled by Hosting
+      console.info(`[System] Config fetched from: ${res.url}`);
+
+      if (
+        res.url.includes(window.location.hostname) &&
+        (import.meta as any).env.PROD
+      ) {
+        console.warn(
+          "[Diagnostic] API request resolved to the Hosting domain. " +
+            "This usually indicates VITE_WORKER_BASE was not injected during the build process.",
+        );
+      }
+
       SplashScreen.updateSplashProgress(50);
       SplashScreen.updateStatusText(
         dashboard.t("configLoaded") || "Configuration loaded.",

@@ -278,6 +278,20 @@ export class AudioEngine {
 
     try {
       const response = await fetch(url);
+      if (!response.ok) {
+        throw new Error(
+          `Server returned ${response.status} ${response.statusText}`,
+        );
+      }
+
+      // Check if we received HTML instead of audio (common on 404 rewrites)
+      const contentType = response.headers.get("Content-Type");
+      if (contentType?.includes("text/html")) {
+        throw new Error(
+          "Expected audio data but received HTML. Ensure the file exists in your public/audio folder.",
+        );
+      }
+
       const arrayBuffer = await response.arrayBuffer();
       const buffer = await this.ctx.decodeAudioData(arrayBuffer);
       this.musicBuffers.set(url, buffer);

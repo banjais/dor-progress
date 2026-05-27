@@ -197,14 +197,27 @@ export async function authenticatedFetch(
   maxRetries = 3,
 ): Promise<Response> {
   const firebaseBase = (import.meta as any).env.VITE_FIREBASE_URL || "";
-
-  // Improved validation: warn if we are making a relative request that likely needs an absolute worker URL
-  // Relaxed to support Firebase Hosting rewrites where the API is hosted on the same domain as the app.
   const isProduction = (import.meta as any).env.PROD;
+
+  // Diagnostic check: If we are in production and have no Worker Base,
+  // relative fetches will almost certainly fail on Firebase Hosting Spark plan.
   if (!GLOBAL_WORKER_BASE && !path.startsWith("http") && isProduction) {
-    console.warn(
-      `[API] VITE_WORKER_BASE is missing. Fetching via relative URL: ${path}. This will fail if not using a proxy.`,
-    );
+    const currentOrigin =
+      typeof window !== "undefined" ? window.location.origin : "";
+    if (
+      currentOrigin.includes("web.app") ||
+      currentOrigin.includes("firebaseapp.com")
+    ) {
+      console.error(
+        `[CRITICAL] VITE_WORKER_BASE is missing in production. ` +
+          `API calls to "${path}" are defaulting to Firebase Hosting, which will return HTML instead of JSON. ` +
+          `Action Required: Set VITE_WORKER_BASE in your deployment environment.`,
+      );
+    } else {
+      console.warn(
+        `[API] VITE_WORKER_BASE is missing. Fetching via relative URL: ${path}. This will fail if not using a proxy.`,
+      );
+    }
   }
 
   let url: string;
@@ -212,14 +225,16 @@ export async function authenticatedFetch(
     url = path;
   } else {
     const baseUrl = GLOBAL_WORKER_BASE || firebaseBase;
-    if (!baseUrl && isProduction) {
-      throw new Error(
-        `Routing Error: No Base URL defined for API request to "${path}".`,
-      );
-    }
-    url = baseUrl
+    const resolvedUrl = baseUrl
       ? `${baseUrl.replace(/\/*$/, "")}/${path.replace(/^\//, "")}`
       : `${window.location.origin}/${path.replace(/^\//, "")}`;
+
+    if (!baseUrl && isProduction) {
+      throw new Error(
+        `Routing Error: No Base URL (VITE_WORKER_BASE) defined. Defaulting to relative path "${resolvedUrl}".`,
+      );
+    }
+    url = resolvedUrl;
   }
 
   // Use native Headers API for robust merging
@@ -366,14 +381,16 @@ export async function parseResponse<T>(
         ) {
           // Ensure window is defined for SSR safety
           hint +=
-            " If this is an API call, ensure WORKER_BASE is set to your absolute Cloudflare URL, or that Cloudflare is configured as a reverse proxy.";
+            " This usually means VITE_WORKER_BASE is missing in your build environment.";
         }
       }
 
       console.error(
         `[API Error] Expected JSON but got ${isHtml ? "HTML" : "Text"}. URL: ${response.url}`,
       );
-      throw new Error(`${hint} (Status: ${response.status})`);
+      throw new Error(
+        `${hint} (URL: ${response.url}, Status: ${response.status})`,
+      );
     }
 
     const json = await response.json();

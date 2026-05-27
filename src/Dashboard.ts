@@ -550,6 +550,7 @@ export class Dashboard {
 
     try {
       const endpoint = `/api/report?lang=${this.state.lang}${isForced ? "&force=true" : ""}`;
+      console.debug(`[Dashboard] Loading data from ${endpoint}`);
       const res = await authenticatedFetch(
         endpoint,
         isForced ? { cache: "no-store" } : {},
