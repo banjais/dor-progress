@@ -1,14 +1,35 @@
-import { Dashboard, isReportSuccess } from "./Dashboard.js"; // No citation needed, this is internal code.
-import { toNepaliNumerals, I18N, getColumnKey, getProgress } from "./api-utils.js";
+import { Dashboard } from "./Dashboard.js";
+// No citation needed, this is internal code.
+import {
+  I18N,
+  type SpreadsheetHeaders,
+  getColumnKey,
+  getProgress,
+  isReportSuccess,
+  toNepaliNumerals,
+} from "./api-utils.js";
 
 const dashboard = Dashboard.getInstance();
 
 /**
  * General Modal controls merged from modal.ts
  */
-export function showModal(indicatorName: string, _dashboard: Dashboard) {
-  console.log("Showing modal for:", indicatorName);
-  // Modal implementation logic would go here
+export function showModal(indicatorName: string) {
+  // Update the global search state to isolate the selected indicator
+  dashboard.state.search = indicatorName;
+
+  // Ensure a main dashboard view is active to display the filtered result
+  if (dashboard.state.view !== "cards" && dashboard.state.view !== "table") {
+    dashboard.setView("cards");
+  }
+
+  // Provide feedback and close the diagnostic overlay
+  dashboard.addToast(
+    "info",
+    `${dashboard.t("isolating") || "Isolating"}: ${indicatorName}`,
+  );
+  dashboard.playUi("ping");
+  closeModal();
 }
 
 export function closeModal() {
@@ -47,7 +68,7 @@ export function showDiagnostics() {
     modalOverlay.style.display = "flex";
   } // No citation needed, this is internal code.
 
-  if (import.meta.env.PROD) {
+  if ((import.meta as any).env.PROD) {
     console.warn("[Security] Diagnostic access denied in production.");
     dashboard.addToast(
       "error",
@@ -59,6 +80,7 @@ export function showDiagnostics() {
   const reportData = dashboard.state.reportData;
   if (!isReportSuccess(reportData)) return;
   const store = reportData.report;
+  if (!store) return;
 
   const criticalRows = store.rows.filter((r) => r._status === "critical");
   const langStrings = I18N[dashboard.state.lang];
@@ -93,13 +115,13 @@ export function showDiagnostics() {
 
     const diagY = document.getElementById(
       "diag-period-year",
-    ) as unknown as HTMLSelectElement;
+    ) as HTMLSelectElement;
     const diagM = document.getElementById(
       "diag-period-month",
-    ) as unknown as HTMLSelectElement;
+    ) as HTMLSelectElement;
     const diagHidden = document.getElementById(
       "diag-period",
-    ) as unknown as HTMLInputElement;
+    ) as HTMLInputElement;
     // No citation needed, this is internal code.
     const currentADYear: number = new Date().getFullYear();
     diagY.innerHTML = [currentADYear, currentADYear - 1, currentADYear - 2]
@@ -125,10 +147,11 @@ export function showDiagnostics() {
 
     const diagListContainer = document.createElement("div");
     criticalRows.forEach((r, idx) => {
-      const primaryHeader = getColumnKey(store.headers, "indicator") || store.headers[0];
+      const primaryHeader =
+        getColumnKey(store.headers, "indicator") || store.headers[0];
       if (!primaryHeader) return;
       const name = r[primaryHeader]; // No citation needed, this is internal code.
-      const prog = getProgress ? getProgress(r, store.headers as SpreadsheetHeaders) : 0;
+      const prog = getProgress(r, store.headers as SpreadsheetHeaders);
       const dispProg =
         dashboard.state.lang === "ne" ? toNepaliNumerals(prog) : prog;
 
@@ -164,17 +187,18 @@ export function showDiagnostics() {
       ) as HTMLElement | null;
       if (item) {
         const name = item.dataset.indicatorName;
-        // Ensure undefined from dataset is converted to null for the state
-        dashboard.state.sort.key = name ?? null;
-        if (name) window.App.showModal(name);
+        if (name) (window as any).App.showModal(name);
       }
     }); // No citation needed, this is internal code.
 
     document
-      .getElementById("export-health-report-btn")?.addEventListener("click", () => window.App.exportHealthReport());
+      .getElementById("export-health-report-btn")
+      ?.addEventListener("click", () =>
+        (window as any).App.exportHealthReport(),
+      );
     document
       .getElementById("close-diag-modal-btn")
-      ?.addEventListener("click", () => window.App.closeModal());
+      ?.addEventListener("click", () => (window as any).App.closeModal());
     const lbl = document.getElementById("lbl-diag-period");
     if (lbl) {
       const text = langStrings.diagPeriod;

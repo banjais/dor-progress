@@ -1,19 +1,26 @@
 {
   "name": "dor-progress",
-  "version": "1.0.449",
+  "version": "1.0.463",
   "private": true,
   "type": "module",
   "scripts": {
     "dev": "vite",
+    "dev:worker": "wrangler dev --port 8787",
     "build": "vite build",
     "preview": "vite preview",
-    "lint": "eslint . --ext .js,.ts --max-warnings 0",
-    "typecheck": "tsc --noEmit",
-    "typecheck:worker": "node scripts/typecheck-worker.js",
-    "verify": "npm run lint && npm run typecheck",
-    "clean": "rimraf dist node_modules/.vite",
+    "serve:hosting": "npm run build && firebase emulators:start --only hosting",
+    "cf-typegen": "wrangler types src/worker-configuration.d.ts",
+    "lint": "eslint . --max-warnings 0",
+    "typecheck": "tsc -b tsconfig.app.json",
+    "typecheck:worker": "tsc -p src/tsconfig.worker.json",
+    "verify": "npm run lint && tsc -b",
+    "audit:check": "npm audit --audit-level=high",
+    "audit:fix": "npm audit fix",
+    "prebuild": "npm run clean",
+    "clean": "rimraf dist node_modules/.vite .tsbuildinfo",
     "deploy": "node scripts/deploy.js",
     "deploy:hosting": "firebase deploy --only hosting --non-interactive",
+    "check-updates": "npx npm-check-updates",
     "test": "echo \"No tests specified\" && exit 0",
     "reinstall": "rimraf node_modules package-lock.json && npm install",
     "upgrade:firebase": "npm i firebase-tools@latest firebase@latest"
@@ -22,6 +29,8 @@
     "@cloudflare/workers-types": "^4.20260521.1",
     "@eslint/js": "^9.39.1",
     "@google/generative-ai": "^0.22.0",
+    "@trivago/prettier-plugin-sort-imports": "^5.2.2",
+    "@types/node": "^22.10.1",
     "@vitejs/plugin-legacy": "^7.2.1",
     "dotenv": "^17.4.2",
     "env-cmd": "^11.0.0",
@@ -31,11 +40,14 @@
     "firebase": "^12.13.0",
     "firebase-tools": "^13.22.0",
     "globals": "^17.6.0",
+    "husky": "^9.1.7",
     "jose": "^5.10.0",
     "jspdf": "^4.2.1",
     "jspdf-autotable": "^5.0.8",
+    "lint-staged": "^15.4.3",
     "prettier": "^3.6.2",
     "rimraf": "^6.1.3",
+    "rollup-plugin-visualizer": "^5.12.0",
     "terser": "^5.43.1",
     "typescript": "^5.9.3",
     "typescript-eslint": "^8.39.1",
@@ -43,6 +55,7 @@
     "vite-plugin-pwa": "^1.3.0",
     "vite-plugin-singlefile": "^2.3.3",
     "wrangler": "^4.93.0",
+    "xstate": "^4.38.3",
     "zod": "^3.25.76"
   },
   "overrides": {
@@ -56,7 +69,23 @@
     "teeny-request": "^10.0.0"
   },
   "lint-staged": {
-    "*.{js,ts}": "eslint --max-warnings 0"
+    "*.{js,ts}": [
+      "eslint --fix --max-warnings 0",
+      "prettier --write"
+    ]
+  },
+  "prettier": {
+    "plugins": [
+      "@trivago/prettier-plugin-sort-imports"
+    ],
+    "importOrder": [
+      "^react",
+      "<THIRD_PARTY_MODULES>",
+      "^@/(.*)$",
+      "^[./]"
+    ],
+    "importOrderSeparation": true,
+    "importOrderSortSpecifiers": true
   },
   "engines": {
     "node": ">=22"

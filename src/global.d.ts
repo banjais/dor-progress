@@ -1,9 +1,11 @@
+import "jspdf";
+
 import {
-  ProjectRow as BaseProjectRow,
   AiSummary as BaseAiSummary,
-  ProjectReport as BaseProjectReport,
+  Env as BaseEnv,
   SpreadsheetHeaders as BaseHeaders,
-  Env as BaseEnv
+  ProjectReport as BaseProjectReport,
+  ProjectRow as BaseProjectRow,
 } from "./api-utils.js";
 
 /**
@@ -52,7 +54,7 @@ declare global {
     webkitAudioContext: typeof AudioContext;
     /** Prefix for older WebKit browsers */
     webkitSpeechRecognition: {
-      new(): SpeechRecognition;
+      new (): SpeechRecognition;
     };
     PDFLib: any; // Assuming PDFLib is a global object from a library
     I18N: any; // If I18N is truly global, declare it here. Otherwise, it should be imported.
@@ -84,10 +86,15 @@ declare global {
     clearSearch: () => void;
     printAiBrief: () => void;
     shareAiBrief: () => Promise<void>;
+    copyAiBrief: () => Promise<void>;
+    shareAiBriefLink: () => Promise<void>;
+    shareAiBriefEmail: () => Promise<void>;
+    downloadBriefAsPdf: () => Promise<void>;
+    downloadChangelogAsPdf: () => Promise<void>;
     translateAiBrief: () => Promise<void>;
     downloadAiBriefAudio: () => Promise<void>;
     shareAiBriefAudio: () => Promise<void>;
-    toggleReadAloud: () => void;
+    toggleReadAloud: () => Promise<void>;
     applyTranslations: () => void;
     exportHealthReport: () => void;
     closeModal: () => void;
@@ -112,6 +119,8 @@ declare global {
     handleSearch: (term?: string) => void;
     sortData: (key: string) => void;
     shareApp: () => void;
+    checkForPWAUpdate: () => Promise<void>;
+    installUpdate: () => Promise<void>;
     getProgress: (row: ProjectRow, headers: SpreadsheetHeaders) => number;
     renderMiniChart: (percent: number, showTrend?: boolean) => string;
     renderSparkline: (annPerc: number, totPerc: number) => string;
@@ -143,6 +152,7 @@ declare global {
     generateClientPDF: () => Promise<void>;
     setSoundPack: (pack: string) => void;
     updateVolume: (volume: number) => void;
+    setMusicVolume: (volume: number) => void;
     toggleMute: () => void;
     resetAudioToDefault: () => void;
     getRelativeTimeString: () => string;
@@ -161,4 +171,13 @@ declare global {
   type AiSummary = BaseAiSummary;
   type ProjectReport = BaseProjectReport;
   type SpreadsheetHeaders = BaseHeaders;
+}
+
+// Extend jsPDF type to include properties added by jspdf-autotable
+declare module "jspdf" {
+  interface jsPDF {
+    lastAutoTable: {
+      finalY: number;
+    };
+  }
 }

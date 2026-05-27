@@ -1,55 +1,11 @@
-# Logs
-logs
-*.log
-npm-debug.log*
-yarn-debug.log*
-yarn-error.log*
-firebase-debug.log*
-
-# Firebase cache
-.firebase/
-
-# Runtime data
-pids
-*.pid
-*.seed
-*.pid.lock
-
-# Coverage
-coverage
-.nyc_output
-
-# Dependency directories
 node_modules/
-
-# Optional caches
-.npm
-.eslintcache
-
-# Build output
 dist/
-.wrangler/
-
-# TypeScript build info (generated, do not commit)
-*.tsbuildinfo
-
-# dotenv / local secrets (NEVER commit)
 .env
-.env.production
-.dev.vars
-.dev.vars.backup
-.env.simple
-.env.test
+.env.*
+!.env.example
 
-# Firebase service account keys (NEVER commit)
-*-firebase-adminsdk-*.json
-firebase-adminsdk-*.json
-firebase-service-account.json
-
-# Generated assets
-.generated-icons/
-
-# Temporary/Noise files
-temp_check/
-list/
-.qwen/
+# Firebase/Build leftovers
+.firebase/
+.netlify/
+firebaselog.log
+*.local

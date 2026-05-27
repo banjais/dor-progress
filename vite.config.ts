@@ -1,7 +1,8 @@
-import { defineConfig, loadEnv } from 'vite';
-import { resolve } from 'node:path';
-import { readFileSync, writeFileSync } from 'node:fs';
-import { execSync } from 'node:child_process';
+import { execSync } from "node:child_process";
+import { readFileSync, writeFileSync } from "node:fs";
+import { resolve } from "node:path";
+import { visualizer } from "rollup-plugin-visualizer";
+import { defineConfig, loadEnv } from "vite";
 
 /**
  * Standard root-level Vite configuration.
@@ -9,25 +10,29 @@ import { execSync } from 'node:child_process';
  */
 export default defineConfig(({ mode }) => {
   // Load env file based on `mode` in the current working directory (root).
-  const env = loadEnv(mode, process.cwd(), '');
+  const env = loadEnv(mode, process.cwd(), "");
 
   // Priority: 1. Env Variable, 2. Default Local Wrangler Port
-  const apiBaseUrl = env.VITE_WORKER_BASE || 'http://localhost:8787';
+  const apiBaseUrl = env.VITE_WORKER_BASE || "http://localhost:8787";
 
   // --- Branding Automation ---
-  if (mode === 'production') {
+  if (mode === "production") {
     try {
-      const brandingPath = resolve(__dirname, 'public/branding.json');
-      const branding = JSON.parse(readFileSync(brandingPath, 'utf-8'));
+      const brandingPath = resolve(__dirname, "public/branding.json");
+      const branding = JSON.parse(readFileSync(brandingPath, "utf-8"));
 
       // Auto-update commit hash and date
-      branding.lastCommitHash = execSync('git rev-parse --short HEAD').toString().trim();
-      branding.lastUpdate.value = new Date().toISOString().split('T')[0];
+      branding.lastCommitHash = execSync("git rev-parse --short HEAD")
+        .toString()
+        .trim();
+      branding.lastUpdate.value = new Date().toISOString().split("T")[0];
 
-      writeFileSync(brandingPath, JSON.stringify(branding, null, 2) + '\n');
-      console.log(`[Build] Updated branding.json to commit ${branding.lastCommitHash}`);
+      writeFileSync(brandingPath, JSON.stringify(branding, null, 2) + "\n");
+      console.log(
+        `[Build] Updated branding.json to commit ${branding.lastCommitHash}`,
+      );
     } catch (e) {
-      console.warn('[Build] Failed to update branding.json metadata:', e);
+      console.warn("[Build] Failed to update branding.json metadata:", e);
     }
   }
   // ---------------------------
@@ -38,15 +43,32 @@ export default defineConfig(({ mode }) => {
       WORKER_BASE: JSON.stringify(apiBaseUrl),
       APP_ENV: JSON.stringify(mode),
     },
+    plugins: [
+      visualizer({
+        open: true, // Automatically open the report in your default browser
+        filename: "dist/stats.html", // Where to save the report
+        gzipSize: true, // Show sizes after gzip compression
+        brotliSize: true, // Show sizes after brotli compression
+      }),
+    ],
     resolve: {
       alias: {
         // Points '@' to the 'src' directory
-        '@': resolve(__dirname, './src'),
+        "@": resolve(__dirname, "./src"),
+      },
+    },
+    build: {
+      rollupOptions: {
+        output: {
+          manualChunks: {
+            "vendor-jspdf": ["jspdf", "jspdf-autotable"],
+          },
+        },
       },
     },
     server: {
       proxy: {
-        '/api': {
+        "/api": {
           target: apiBaseUrl,
           changeOrigin: true,
           secure: false,

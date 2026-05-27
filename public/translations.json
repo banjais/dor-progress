@@ -5,9 +5,9 @@
     "syncAt": "2026-05-02T13:47:13.950Z",
     "fingerprint": "c98fe1b55434f507ba8c429b4f2011aee0e2a9f1385711172eb39f7f7255c0cf"
   },
-  "version": "1.0.449",
+  "version": "1.0.463",
   "lastUpdate": {
-    "value": "2026-05-26"
+    "value": "2026-05-27"
   },
-  "lastCommitHash": "866f94b"
+  "lastCommitHash": "9519d44"
 }

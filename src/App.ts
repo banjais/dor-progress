@@ -1,22 +1,17 @@
 import type { Dashboard } from "./Dashboard.js";
 import type { HistoryManager } from "./HistoryManager.js";
-import { t, getProgress } from "./api-utils.js";
-import {
-  showInChartView,
-  showInCardView,
-  copyDeepLink,
-  checkDeepLink,
-  shareApp,
-  renderMiniChart,
-  renderSparkline,
-} from "./utils.js";
-import { generateClientPDF } from "./pdf-utils.js";
+import { getProgress, t } from "./api-utils.js";
+import { renderMiniChart, renderSparkline } from "./utils.js";
 
-export function initApp(dashboard: Dashboard, historyManager: HistoryManager): Partial<AppGlobalFunctions> {
-  const App: Partial<AppGlobalFunctions> = {
+export function initApp(
+  dashboard: Dashboard,
+  historyManager: HistoryManager,
+): any {
+  const App: any = {
     toggleFabMenu: () => dashboard.toggleFabMenu(),
     setLang: (l: string) => dashboard.setLang(l),
-    setTheme: (theme: string, persist = true) => dashboard.applyTheme(theme, persist),
+    setTheme: (theme: string, persist = true) =>
+      dashboard.applyTheme(theme, persist),
     revertTheme: () => dashboard.revertTheme(),
     resetThemeToSystem: () => dashboard.resetThemeToSystem(),
     toggleTheme: () => dashboard.toggleTheme(),
@@ -36,9 +31,14 @@ export function initApp(dashboard: Dashboard, historyManager: HistoryManager): P
     // Audio Controls
     setSoundPack: (pack: string) => {
       localStorage.setItem("sound-pack", pack);
-      document.querySelectorAll("#sound-pack-selector .pack-opt").forEach(opt => {
-        opt.classList.toggle("active", (opt as HTMLElement).dataset.pack === pack);
-      });
+      document
+        .querySelectorAll("#sound-pack-selector .pack-opt")
+        .forEach((opt) => {
+          opt.classList.toggle(
+            "active",
+            (opt as HTMLElement).dataset.pack === pack,
+          );
+        });
       dashboard.playUi("click");
     },
     updateVolume: (volume: number) => {
@@ -46,7 +46,8 @@ export function initApp(dashboard: Dashboard, historyManager: HistoryManager): P
       const muteBtn = document.getElementById("mute-toggle-btn");
       if (muteBtn) muteBtn.innerText = volume === 0 ? "🔇" : "🔊";
       const muteAllActive = document.getElementById("mute-all-active");
-      if (muteAllActive) muteAllActive.style.display = volume === 0 ? "flex" : "none";
+      if (muteAllActive)
+        muteAllActive.style.display = volume === 0 ? "flex" : "none";
     },
     toggleMute: () => {
       const currentVolume = dashboard.state.uiVolume;
@@ -54,7 +55,9 @@ export function initApp(dashboard: Dashboard, historyManager: HistoryManager): P
         localStorage.setItem("prev-ui-volume", currentVolume.toString());
         App.updateVolume?.(0);
       } else {
-        const prevVolume = parseFloat(localStorage.getItem("prev-ui-volume") || "0.5");
+        const prevVolume = parseFloat(
+          localStorage.getItem("prev-ui-volume") || "0.5",
+        );
         App.updateVolume?.(prevVolume);
       }
     },
@@ -67,7 +70,7 @@ export function initApp(dashboard: Dashboard, historyManager: HistoryManager): P
       localStorage.removeItem("tts-pitch");
       dashboard.setUiVolume(0.5);
       dashboard.addToast("info", t("audioReset"));
-      if (window.App?.showSettings) window.App.showSettings();
+      if ((window as any).App?.showSettings) (window as any).App.showSettings();
     },
 
     getRelativeTimeString: () => dashboard.getRelativeTimeString(),
@@ -85,12 +88,6 @@ export function initApp(dashboard: Dashboard, historyManager: HistoryManager): P
     getProgress,
     renderMiniChart,
     renderSparkline,
-    showInChartView,
-    showInCardView,
-    copyDeepLink,
-    checkDeepLink,
-    shareApp,
-    generateClientPDF,
     // Add more as needed
   };
 

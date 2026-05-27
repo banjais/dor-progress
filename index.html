@@ -9,6 +9,15 @@
     <meta
       name="theme-color"
       content="#1a5c3a"
+    />
+    <meta
+      name="description"
+      content="Official Department of Roads Weekly Progress & Statistics Dashboard."
+    />
+
+    <meta
+      name="theme-color"
+      content="#1a5c3a"
       media="(prefers-color-scheme: light)"
     />
     <meta
@@ -16,6 +25,10 @@
       content="#0b0f1a"
       media="(prefers-color-scheme: dark)"
     />
+    <meta name="apple-mobile-web-app-title" content="DoR" />
+    <meta name="application-name" content="DoR Progress Dashboard" />
+    <meta name="msapplication-TileColor" content="#1a5c3a" />
+    <meta name="msapplication-TileImage" content="/logo.png" />
     
     <title>DoR – सडक विभाग</title>
     
@@ -47,38 +60,6 @@
     <meta
       name="apple-mobile-web-app-status-bar-style"
       content="black-translucent"
-    />
-
-    <!-- iOS Splash Screens -->
-    <link
-      rel="apple-touch-startup-image"
-      href="/logo.png"
-      media="(device-width: 430px) and (device-height: 932px) and (-webkit-device-pixel-ratio: 3)"
-    />
-    <link
-      rel="apple-touch-startup-image"
-      href="/logo.png"
-      media="(device-width: 393px) and (device-height: 852px) and (-webkit-device-pixel-ratio: 3)"
-    />
-    <link
-      rel="apple-touch-startup-image"
-      href="/logo.png"
-      media="(device-width: 428px) and (device-height: 926px) and (-webkit-device-pixel-ratio: 3)"
-    />
-    <link
-      rel="apple-touch-startup-image"
-      href="/logo.png"
-      media="(device-width: 390px) and (device-height: 844px) and (-webkit-device-pixel-ratio: 3)"
-    />
-    <link
-      rel="apple-touch-startup-image"
-      href="/logo.png"
-      media="(device-width: 375px) and (device-height: 812px) and (-webkit-device-pixel-ratio: 3)"
-    />
-    <link
-      rel="apple-touch-startup-image"
-      href="/logo.png"
-      media="(device-width: 414px) and (device-height: 896px) and (-webkit-device-pixel-ratio: 3)"
     />
 
     <!-- Social Meta Tags -->
@@ -136,13 +117,15 @@
       const savedMultiplier = localStorage.getItem("font-multiplier") || "1";
       document.documentElement.style.setProperty("--font-multiplier", savedMultiplier);
 
-      if (localStorage.getItem("high-contrast") === "true") document.body.setAttribute("data-contrast", "high");
-      if (localStorage.getItem("grayscale") === "true") document.body.setAttribute("data-grayscale", "true");
-      if (localStorage.getItem("blue-light") === "true") document.body.setAttribute("data-sepia", "true");
-     </script>
+      if (localStorage.getItem("high-contrast") === "true") document.body.classList.add("high-contrast");
+      if (localStorage.getItem("grayscale") === "true") document.body.classList.add("grayscale");
+      if (localStorage.getItem("sepia") === "true") document.body.classList.add("sepia");
+      if (localStorage.getItem("system-font") === "true") document.body.classList.add("system-font");
+    </script>
+    <div id="device-debug">Device: </div>
 
 
-    <div id="admin-banner" style="display: none; background: #fff7ed; color: #9a3412; padding: 12px 5%; text-align: center; font-size: 0.85rem; font-weight: 800; border-bottom: 1px solid #ffedd5; line-height: 1.4;">
+    <div id="admin-banner" class="admin-banner">
       <span id="admin-message-text"></span>
     </div>
 
@@ -152,7 +135,7 @@
     </div>
 
     <div id="ai-aura">
-      <div style="position: relative; display: flex; align-items: center; justify-content: center;">
+      <div class="aura-container">
         <div class="aura-halo"></div>
         <div class="aura-glow"></div>
       </div>
@@ -160,22 +143,22 @@
     </div>
 
     <!-- Print Branding -->
-    <div id="print-stamp" style="display: none"></div>
+    <div id="print-stamp"></div>
     <div id="print-header">
       <div class="header-text">
-        <img src="/logo.png" style="width: 50px; height: auto; margin-bottom: 5px; filter: grayscale(1) contrast(1.2);" alt="Logo" />
+        <img src="/logo.png" class="print-logo" alt="Logo" />
         <h4 id="h-govt">Government of Nepal</h4>
         <h4 id="h-min">Ministry of Physical Infrastructure and Transport</h4>
         <h4 id="h-city">Chakupat, Lalitpur</h4>
-        <h4 id="h-report" style="margin-top: 10px; text-decoration: underline; font-weight: 800">DoR Progress Report (Weekly)</h4>
-        <div id="h-risk-summary" style="display: none; margin-top: 8px; font-size: 11pt; font-weight: 900; color: #ef4444;"></div>
+        <h4 id="h-report" class="print-report-title">DoR Progress Report (Weekly)</h4>
+        <div id="h-risk-summary" class="print-risk-summary"></div>
       </div>
       <img id="print-qr" src="https://api.qrserver.com/v1/create-qr-code/?size=150x150&data=https://dor-progress.web.app" alt="QR" />
     </div>
 
     <div id="print-footer">
       <div>
-        Official Portal: 
+        Official Portal:
         <a href="https://dor-progress.web.app" id="app-link">https://dor-progress.web.app</a>
       </div>
       <div>&copy; 2026 Department of Roads (DoR). All rights Reserved.</div>
@@ -193,9 +176,9 @@
     </div>
 
     <!-- Splash Screen -->
-    <div id="splash-screen" style="background: #000 !important; inset: 0 !important; z-index: 100000 !important;">
+    <div id="splash-screen">
       <div class="splash-center">
-        <img src="/logo.png" alt="Logo" class="splash-logo-mini" style="height: 50px !important" />
+        <img src="/logo.png" alt="Logo" class="splash-logo-mini" />
       </div>
       <div class="splash-bottom">
         <div class="splash-brand">
@@ -203,7 +186,7 @@
           <span class="dept-text" id="splash-dept-text">Department of Roads</span>
         </div>
         <div class="modern-loader">
-          <div id="loader-bar-fill" style="width: 0%; height: 100%; position: absolute; left: 0; top: 0; background: white;"></div>
+          <div id="loader-bar-fill"></div>
           <div id="loader-percentage">0%</div>
         </div>
         <div class="loader-status">Initializing...</div>
@@ -211,47 +194,47 @@
     </div>
 
     <!-- Loader -->
-    <div id="loader" style="display: none">
-      <div style="text-align: center">
-        <div class="chart-container" style="width: 60px; height: 60px; margin: 0 auto 15px">
+    <div id="loader">
+      <div class="loader-content">
+        <div class="chart-container loader-chart">
           <svg viewBox="0 0 36 36">
             <path d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831" fill="none" stroke="var(--border)" stroke-width="2"/>
             <path class="spinning" d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831" fill="none" stroke="var(--primary)" stroke-width="2" stroke-linecap="round"/>
           </svg>
         </div>
-        <img src="/logo.png" style="height: 30px; margin-bottom: 10px; opacity: 0.8" alt="logo"/>
+        <img src="/logo.png" class="loader-logo" alt="logo"/>
         <div id="loading-msg">डेटा लोड हुँदैछ...</div>
       </div>
     </div>
 
     <!-- Offline Overlay -->
-    <div id="offline-overlay" style="display: none; position: fixed; inset: 0; z-index: 100001; background: var(--bg); flex-direction: column; align-items: center; justify-content: center; text-align: center; padding: 20px;">
-      <div style="background: var(--surface); padding: 40px 30px; border-radius: 24px; box-shadow: 0 10px 40px rgba(0,0,0,0.1); max-width: 400px; width: 100%; border: 1px solid var(--border);">
-        <div style="background: var(--primary); height: 4px; width: 100%; position: absolute; top: 0; left: 0; border-radius: 24px 24px 0 0;"></div>
-        <img src="/logo.png" alt="Logo" style="width: 60px; height: auto; margin-bottom: 20px" />
-        <div style="display: inline-block; background: #fff5f5; color: var(--primary); padding: 6px 16px; border-radius: 20px; font-size: 0.75rem; font-weight: 800; margin-bottom: 15px; border: 1px solid rgba(141,27,27,0.1);">OFFLINE / अफलाइन</div>
-        <h2 id="offline-title" style="margin: 0 0 10px; color: var(--primary)">No Internet Connection</h2>
-        <p id="offline-msg" style="font-size: 0.9rem; color: var(--text-light); line-height: 1.6; margin-bottom: 25px;">You are currently offline. Please check your network connection and try again.</p>
-        <button onclick="window.location.reload()" style="background: var(--primary); color: white; border: none; padding: 14px 30px; border-radius: 12px; font-weight: 800; cursor: pointer; width: 100%;">RETRY / पुनः प्रयास गर्नुहोस्</button>
+    <div id="offline-overlay">
+      <div class="offline-card">
+        <div class="offline-top-bar"></div>
+        <img src="/logo.png" class="offline-logo" alt="Logo" />
+        <div class="offline-tag">OFFLINE / अफलाइन</div>
+        <h2 id="offline-title">No Internet Connection</h2>
+        <p id="offline-msg">You are currently offline. Please check your network connection and try again.</p>
+        <button onclick="window.location.reload()" class="offline-btn">RETRY / पुनः प्रयास गर्नुहोस्</button>
       </div>
     </div>
 
     <header>
       <div class="header-top">
         <div class="header-logo-group">
-          <img src="/icons/logo.png" alt="Logo" style="height: 28px !important; width: auto !important" />
+          <img src="/icons/logo.png" alt="Logo" class="header-logo" />
           <span class="header-app-name">DoR Progress Dashboard</span>
         </div>
-        <div style="display: flex; align-items: center; gap: 15px">
-          <div style="display: flex; flex-direction: column; align-items: flex-end; gap: 2px;">
-            <div style="display: flex; align-items: center; gap: 8px">
-              <span id="data-sync-icon" style="display: none; font-size: 0.7rem; color: white; opacity: 0.8;" title="Syncing Data">🔄</span>
-              <div id="status" style="font-size: 0.75rem; font-weight: 700;">Connecting...</div>
+        <div class="header-controls-group">
+          <div class="conn-group">
+            <div class="conn-status-row">
+              <span id="data-sync-icon" class="data-sync-icon" title="Syncing Data">🔄</span>
+              <div id="status" class="status-text">Connecting...</div>
               <button class="status-btn" id="status-refresh-btn" onclick="checkStatus()" title="Check Connection">🔄</button>
             </div>
             <div id="conn-strength" class="conn-badge"></div>
           </div>
-          <button id="install-btn"></button>
+          <button id="install-btn" aria-label="Install App"></button>
 
           <div class="lang-btn-group" onclick="toggleLang()">
             <i class="lang-globe-icon">
@@ -277,8 +260,8 @@
     </div>
 
     <div id="info-bar">
-      <div id="last-update" style="font-size: 0.8rem; font-weight: 800; color: var(--primary); letter-spacing: 0.02em;"></div>
-      <div id="refresh-timer" style="font-size: 0.55rem; font-weight: 700; opacity: 0.6; margin-top: 2px;"></div>
+      <div id="last-update" class="info-last-update"></div>
+      <div id="refresh-timer" class="info-refresh-timer"></div>
     </div>
 
     <main>

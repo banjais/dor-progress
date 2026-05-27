@@ -1,12 +1,20 @@
-import { GoogleGenerativeAI, HarmCategory, HarmBlockThreshold, SchemaType, GenerationConfig, Part } from "@google/generative-ai";
+import {
+  GenerationConfig,
+  GoogleGenerativeAI,
+  HarmBlockThreshold,
+  HarmCategory,
+  Part,
+  SchemaType,
+} from "@google/generative-ai";
 import { z } from "zod";
-import { type AiSummary, AiSummarySchema } from "./api-utils.js";
+
+import { type AiSummary, AiSummarySchema } from "./api-shared.js";
 
 const AI_PROMPTS = {
-    generateAiSummary: {
-        en: "You are a world-class senior infrastructure analyst for the Department of Roads (DoR), Nepal...",
-        ne: "You are a world-class senior infrastructure analyst for the Department of Roads (DoR), Nepal..."
-    }
+  generateAiSummary: {
+    en: "You are a world-class senior infrastructure analyst for the Department of Roads (DoR), Nepal...",
+    ne: "You are a world-class senior infrastructure analyst for the Department of Roads (DoR), Nepal...",
+  },
 };
 
 let aiInstance: GoogleGenerativeAI | null = null;
@@ -14,15 +22,27 @@ let aiInstance: GoogleGenerativeAI | null = null;
 const FALLBACK_MODELS = [
   "gemini-1.5-flash",
   "gemini-1.5-pro",
-  "gemini-1.0-pro",
+  "gemini-1.5-flash-8b",
 ];
 
 const STRICT_SAFETY_SETTINGS = {
   safetySettings: [
-    { category: HarmCategory.HARM_CATEGORY_HARASSMENT, threshold: HarmBlockThreshold.BLOCK_LOW_AND_ABOVE },
-    { category: HarmCategory.HARM_CATEGORY_HATE_SPEECH, threshold: HarmBlockThreshold.BLOCK_LOW_AND_ABOVE },
-    { category: HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT, threshold: HarmBlockThreshold.BLOCK_LOW_AND_ABOVE },
-    { category: HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT, threshold: HarmBlockThreshold.BLOCK_LOW_AND_ABOVE },
+    {
+      category: HarmCategory.HARM_CATEGORY_HARASSMENT,
+      threshold: HarmBlockThreshold.BLOCK_LOW_AND_ABOVE,
+    },
+    {
+      category: HarmCategory.HARM_CATEGORY_HATE_SPEECH,
+      threshold: HarmBlockThreshold.BLOCK_LOW_AND_ABOVE,
+    },
+    {
+      category: HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT,
+      threshold: HarmBlockThreshold.BLOCK_LOW_AND_ABOVE,
+    },
+    {
+      category: HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT,
+      threshold: HarmBlockThreshold.BLOCK_LOW_AND_ABOVE,
+    },
   ],
 };
 
@@ -33,7 +53,15 @@ export function getAi(apiKey: string) {
   return aiInstance;
 }
 
-async function generateWithFallback(ai: GoogleGenerativeAI, options: { parts?: (string | Part)[], prompt?: string, generationConfig?: GenerationConfig }) {
+async function generateWithFallback(
+  ai: GoogleGenerativeAI,
+  options: {
+    parts?: (string | Part)[];
+    prompt?: string;
+    generationConfig?: GenerationConfig;
+    systemInstruction?: string;
+  },
+) {
   const content = options.parts || options.prompt;
   if (!content) throw new Error("No content provided for AI generation");
 
@@ -44,6 +72,7 @@ async function generateWithFallback(ai: GoogleGenerativeAI, options: { parts?: (
         model: modelId,
         generationConfig: options.generationConfig,
         safetySettings: STRICT_SAFETY_SETTINGS.safetySettings as any,
+        systemInstruction: options.systemInstruction,
       });
       const result = await model.generateContent(content);
       const text = result.response.text();
@@ -70,23 +99,37 @@ function zodToGeminiSchema(schema: z.ZodTypeAny): any {
     const required: string[] = [];
     for (const [key, subSchema] of Object.entries(schema.shape)) {
       properties[key] = zodToGeminiSchema(subSchema as z.ZodTypeAny);
-      const isOptional = subSchema instanceof z.ZodOptional || subSchema instanceof z.ZodNullable;
+      const isOptional =
+        subSchema instanceof z.ZodOptional ||
+        subSchema instanceof z.ZodNullable;
       if (!isOptional) required.push(key);
     }
-    return { ...result, type: SchemaType.OBJECT, properties, required: required.length ? required : undefined };
+    return {
+      ...result,
+      type: SchemaType.OBJECT,
+      properties,
+      required: required.length ? required : undefined,
+    };
   }
 
   if (schema instanceof z.ZodArray) {
-    return { ...result, type: SchemaType.ARRAY, items: zodToGeminiSchema(schema.element) };
+    return {
+      ...result,
+      type: SchemaType.ARRAY,
+      items: zodToGeminiSchema(schema.element),
+    };
   }
 
   if (schema instanceof z.ZodEnum) {
     return { ...result, type: SchemaType.STRING, enum: def.values };
   }
 
-  if (schema instanceof z.ZodString) return { ...result, type: SchemaType.STRING };
-  if (schema instanceof z.ZodNumber) return { ...result, type: SchemaType.NUMBER };
-  if (schema instanceof z.ZodBoolean) return { ...result, type: SchemaType.BOOLEAN };
+  if (schema instanceof z.ZodString)
+    return { ...result, type: SchemaType.STRING };
+  if (schema instanceof z.ZodNumber)
+    return { ...result, type: SchemaType.NUMBER };
+  if (schema instanceof z.ZodBoolean)
+    return { ...result, type: SchemaType.BOOLEAN };
   if (schema instanceof z.ZodOptional || schema instanceof z.ZodNullable) {
     return zodToGeminiSchema(def.innerType);
   }
@@ -96,7 +139,7 @@ function zodToGeminiSchema(schema: z.ZodTypeAny): any {
 }
 
 /**
- * Generates a human-readable explanation of the schema to help the AI 
+ * Generates a human-readable explanation of the schema to help the AI
  * understand the business logic and expectations for each field.
  */
 function generateSchemaInstructions(schema: any, path = ""): string {
@@ -106,9 +149,16 @@ function generateSchemaInstructions(schema: any, path = ""): string {
         const fullPath = path ? `${path}.${key}` : key;
         let line = `- ${fullPath}: ${sub.description || "No description provided."}`;
         if (sub.enum) line += ` (Must be one of: ${sub.enum.join(", ")})`;
-        if (sub.type === SchemaType.OBJECT || (sub.type === SchemaType.ARRAY && sub.items?.type === SchemaType.OBJECT)) {
+        if (
+          sub.type === SchemaType.OBJECT ||
+          (sub.type === SchemaType.ARRAY &&
+            sub.items?.type === SchemaType.OBJECT)
+        ) {
           const nextSchema = sub.type === SchemaType.ARRAY ? sub.items : sub;
-          const subInstructions = generateSchemaInstructions(nextSchema, fullPath);
+          const subInstructions = generateSchemaInstructions(
+            nextSchema,
+            fullPath,
+          );
           if (subInstructions) line += `\n${subInstructions}`;
         }
         return line;
@@ -119,46 +169,55 @@ function generateSchemaInstructions(schema: any, path = ""): string {
 }
 
 const summaryResponseSchema = zodToGeminiSchema(AiSummarySchema);
-summaryResponseSchema.description = "Structure for project progress summary and data extraction";
+summaryResponseSchema.description =
+  "Structure for project progress summary and data extraction";
 
-export async function runProjectSummary(apiKey: string, input: { rows?: any[], lang?: string, mainSheet?: any, pdfBase64?: string }): Promise<AiSummary> {
+export async function runProjectSummary(
+  apiKey: string,
+  input: { rows?: any[]; lang?: string; mainSheet?: any; pdfBase64?: string },
+): Promise<AiSummary> {
   const ai = getAi(apiKey);
   if (!ai) throw new Error("AI not initialized");
 
-  const projectData = input.rows ? JSON.stringify(input.rows.slice(0, 40)) : "Raw PDF data provided";
+  const projectData = input.rows
+    ? JSON.stringify(input.rows.slice(0, 40))
+    : "Raw PDF data provided";
   const lang = input.lang || "en";
 
-  const promptTemplate = (AI_PROMPTS.generateAiSummary as Record<string, string>)[lang] || AI_PROMPTS.generateAiSummary.en;
-  const prompt = promptTemplate.replace("{{projectData}}", projectData);
-
-  const finalPrompt = input.mainSheet
-    ? `Context: ${JSON.stringify(input.mainSheet)}\n\n${prompt}`
-    : prompt;
+  const promptTemplate =
+    (AI_PROMPTS.generateAiSummary as Record<string, string>)[lang] ||
+    AI_PROMPTS.generateAiSummary.en;
+  const userPrompt = promptTemplate.replace("{{projectData}}", projectData);
 
   const schemaInstructions = generateSchemaInstructions(summaryResponseSchema);
-  const instructionBlock = `
-FIELD REQUIREMENTS AND DEFINITIONS:
-${schemaInstructions}
+  const systemInstruction = `Return strictly valid JSON matching the provided schema.
+  
+FIELD DEFINITIONS:
+${schemaInstructions}`;
 
-Return the result as a raw JSON object matching the schema.`;
+  const contentParts: any[] = [
+    {
+      text: input.mainSheet
+        ? `System Context: ${JSON.stringify(input.mainSheet)}\n\nTask: ${userPrompt}`
+        : userPrompt,
+    },
+  ];
 
-  const contentParts: any[] = [{ text: `${finalPrompt}\n${instructionBlock}` }];
-
-  // Support Multimodal input from worker.ts
   if (input.pdfBase64) {
     contentParts.push({
       inlineData: {
         data: input.pdfBase64,
-        mimeType: "application/pdf"
-      }
+        mimeType: "application/pdf",
+      },
     });
   }
 
   const response = await generateWithFallback(ai, {
     parts: contentParts,
+    systemInstruction,
     generationConfig: {
       responseMimeType: "application/json",
-      responseSchema: summaryResponseSchema
+      responseSchema: summaryResponseSchema,
     },
   });
 
@@ -166,7 +225,11 @@ Return the result as a raw JSON object matching the schema.`;
   return AiSummarySchema.parse(parsed);
 }
 
-export async function runTranslation(apiKey: string, text: string, targetLang: string) {
+export async function runTranslation(
+  apiKey: string,
+  text: string,
+  targetLang: string,
+) {
   const ai = getAi(apiKey);
   if (!ai) throw new Error("AI not initialized");
 

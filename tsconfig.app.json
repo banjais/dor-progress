@@ -1,30 +1,9 @@
 {
-    "extends": "../tsconfig.json",
-    "compilerOptions": {
-        "resolveJsonModule": true,
-        "allowSyntheticDefaultImports": true,
-        "rootDir": ".",
-        "lib": [
-            "ESNext",
-            "DOM",
-            "DOM.Iterable"
-        ],
-        "types": [
-            "vite/client"
-        ]
-    },
-    "include": [
-        "**/*.ts",
-        "**/*.js",
-        "global.d.ts"
-    ],
-    "exclude": [
-        "worker.ts",
-        "ai-service.ts"
-    ],
-    "references": [
-        {
-            "path": "../shared"
-        }
-    ]
+  "extends": "./tsconfig.base.json",
+  "compilerOptions": {
+    "lib": ["ESNext", "DOM", "DOM.Iterable"],
+    "types": ["vite/client", "node"]
+  },
+  "include": ["src", "vite.config.ts"],
+  "exclude": ["src/worker.ts", "src/tsconfig.worker.json"]
 }

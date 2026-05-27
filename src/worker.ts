@@ -1,25 +1,27 @@
-import { runProjectSummary } from "./ai-service.ts";
-import { jwtVerify, createRemoteJWKSet } from "jose";
+import type {
+  ExecutionContext,
+  ExportedHandler,
+  KVNamespace,
+  KVNamespaceListKey,
+} from "@cloudflare/workers-types";
+import { createRemoteJWKSet, jwtVerify } from "jose";
 import { jsPDF } from "jspdf";
 import autoTable from "jspdf-autotable";
 import { z } from "zod";
-import { devanagariFontBase64 } from "./fonts.ts";
-import type {
-  KVNamespaceListKey,
-  ExecutionContext,
-  KVNamespace,
-  ExportedHandler,
-} from "@cloudflare/workers-types";
-import { 
-  type Env as BaseEnv, 
-  type AiSummary, 
+
+import { runProjectSummary } from "./ai-service.ts";
+import {
+  type AiSummary,
   AiSummarySchema,
-  type ProjectReport, 
+  type ArchiveMetadata,
+  type BaseEnv,
+  BaseEnvSchema,
+  type ProjectReport,
   ProjectReportSchema,
   SnapshotRequestSchema,
-  type ArchiveMetadata,
-  arrayBufferToBase64 
-} from "./api-utils.js";
+  arrayBufferToBase64,
+} from "./api-shared.js";
+import { devanagariFontBase64 } from "./fonts.js";
 
 interface Env extends BaseEnv {
   REPORTS_KV: KVNamespace;
@@ -49,11 +51,11 @@ function generatePdfFromReport(report: ProjectReport): ArrayBuffer {
   doc.setFontSize(10);
   doc.setTextColor(100);
   doc.text(`Report Date: ${report.lastUpdate}`, 14, 30);
-  doc.text(`Generated on: ${new Date().toISOString().split('T')[0]}`, 14, 36);
+  doc.text(`Generated on: ${new Date().toISOString().split("T")[0]}`, 14, 36);
 
   // Prepare table data (excluding internal status fields)
   const tableData = report.rows.map((row) =>
-    report.headers.map((header) => String(row[header] || ""))
+    report.headers.map((header) => String(row[header] || "")),
   );
 
   autoTable(doc, {
@@ -82,23 +84,26 @@ class ServiceError extends Error {
 const SNAPSHOT_RETENTION_COUNT = 30; // Keep the last 30 snapshots
 
 const JWKS = createRemoteJWKSet(
-  new URL("https://firebaseappcheck.googleapis.com/v1/jwks")
+  new URL("https://firebaseappcheck.googleapis.com/v1/jwks"),
 );
 
 const getCorsHeaders = (origin: string | null) => {
-  const isAllowedOrigin = origin && (
-    origin === "https://dor-progress.web.app" ||
-    origin === "https://dor-progress.firebaseapp.com" ||
-    origin.includes("localhost:") ||
-    origin.includes("127.0.0.1") ||
-    origin.includes("dor-progress")
-  );
+  const isAllowedOrigin =
+    origin &&
+    (origin === "https://dor-progress.web.app" ||
+      origin === "https://dor-progress.firebaseapp.com" ||
+      origin.includes("localhost:") ||
+      origin.includes("127.0.0.1") ||
+      origin.includes("dor-progress"));
 
   return {
     "Content-Type": "application/json",
-    "Access-Control-Allow-Origin": isAllowedOrigin ? origin : "https://dor-progress.web.app",
+    "Access-Control-Allow-Origin": isAllowedOrigin
+      ? origin
+      : "https://dor-progress.web.app",
     "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS, HEAD",
-    "Access-Control-Allow-Headers": "Content-Type, X-Firebase-AppCheck, X-Low-Data, X-Snapshot-Key, X-AppCheck-Fallback",
+    "Access-Control-Allow-Headers":
+      "Content-Type, X-Firebase-AppCheck, X-Low-Data, X-Snapshot-Key, X-AppCheck-Fallback",
     "Access-Control-Max-Age": "86400",
     "X-Content-Type-Options": "nosniff",
     "Content-Security-Policy": [
@@ -108,12 +113,16 @@ const getCorsHeaders = (origin: string | null) => {
       "img-src 'self' data: https://api.qrserver.com https://*.googleusercontent.com;",
       "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://unpkg.com;",
       "script-src 'self' 'unsafe-inline' 'unsafe-eval' https://unpkg.com https://www.gstatic.com;",
-      "worker-src 'self' blob:;"
-    ].join(" ")
+      "worker-src 'self' blob:;",
+    ].join(" "),
   };
 };
 
-function jsonResponse(data: unknown, status = 200, origin: string | null = null): WorkerResponse {
+function jsonResponse(
+  data: unknown,
+  status = 200,
+  origin: string | null = null,
+): WorkerResponse {
   return new Response(JSON.stringify(data) as any, {
     status,
     headers: getCorsHeaders(origin),
@@ -131,11 +140,9 @@ async function generateFingerprint(buffer: ArrayBuffer): Promise<string> {
     // Remove PDF Trailer IDs which are often randomized on every export
     .replace(/\/ID\s*\[<[0-9A-F]+>\s*<[0-9A-F]+>\]/gi, "");
 
-  // Convert back to bytes for hashing
-  const scrubbedBuffer = new Uint8Array(scrubbed.length); // No citation needed, this is internal code.
-  for (let i = 0; i < scrubbed.length; i++) {
-    scrubbedBuffer[i] = scrubbed.charCodeAt(i) & 0xff;
-  }
+  // Use Uint8Array.from with a mapping function to rebuild the buffer.
+  // While still a loop, it is more idiomatic and allows the engine to optimize the allocation.
+  const scrubbedBuffer = Uint8Array.from(scrubbed, (c) => c.charCodeAt(0));
 
   const hashBuffer = await crypto.subtle.digest("SHA-256", scrubbedBuffer);
   const hashArray = Array.from(new Uint8Array(hashBuffer));
@@ -155,7 +162,9 @@ async function verifyAppCheck(request: WorkerRequest, env: Env): Promise<void> {
 
   if (!token) {
     if (isFallbackMode) {
-      console.warn("[App Check] Request received in fallback mode without a token. Proceeding with caution.");
+      console.warn(
+        "[App Check] Request received in fallback mode without a token. Proceeding with caution.",
+      );
       return; // Allow request to proceed without App Check verification
     }
     throw new ServiceError("Unauthorized: No App Check token", { status: 401 });
@@ -175,32 +184,33 @@ async function verifyAppCheck(request: WorkerRequest, env: Env): Promise<void> {
   try {
     // The issuer must use the Project NUMBER, not the Project ID.
     const issuer = `https://firebaseappcheck.googleapis.com/${projectNumber}`;
-    
+
     const { payload } = await jwtVerify(token, JWKS, {
       issuer,
-      audience: [
-        `projects/${projectNumber}`,
-        `projects/${projectId}`
-      ],
+      audience: [`projects/${projectNumber}`, `projects/${projectId}`],
       clockTolerance: "1m",
     });
 
     // Validate Subject (App ID)
     if (payload.sub !== appId) {
-      console.error(`[App Check] Subject mismatch. Expected ${appId}, got ${payload.sub}`);
+      console.error(
+        `[App Check] Subject mismatch. Expected ${appId}, got ${payload.sub}`,
+      );
       throw new Error("Invalid Subject");
     }
-
   } catch (e: any) {
     // Log the specific jose verification error to Cloudflare Logs for debugging
     console.error(`[App Check] Verification failed: ${e.message}`, {
       code: e.code,
-      project: projectId
+      project: projectId,
     });
-    throw new ServiceError(`Unauthorized: ${e.code === 'ERR_JWT_EXPIRED' ? 'Token Expired' : 'Invalid App Check Token'}`, {
-      status: 401,
-      cause: e,
-    });
+    throw new ServiceError(
+      `Unauthorized: ${e.code === "ERR_JWT_EXPIRED" ? "Token Expired" : "Invalid App Check Token"}`,
+      {
+        status: 401,
+        cause: e,
+      },
+    );
   }
 }
 
@@ -211,7 +221,9 @@ const ReportRequestSchema = z.object({
     .string()
     .regex(/^\d{4}-\d{2}-\d{2}$/)
     .optional(),
-  force: z.preprocess((val: unknown) => val === "true", z.boolean()).default(false),
+  force: z
+    .preprocess((val: unknown) => val === "true", z.boolean())
+    .default(false),
   isLowData: z.boolean().default(false),
 });
 
@@ -223,11 +235,33 @@ async function handleFetch(
   const origin = request.headers.get("Origin");
   const url = new URL(request.url);
 
+  // Validate environment at the entry point
+  const envValidation = BaseEnvSchema.safeParse(env);
+  if (!envValidation.success) {
+    console.error(
+      "❌ Environment configuration mismatch:",
+      envValidation.error.format(),
+    );
+    // Optionally return an error response in development
+    if (env.APP_ENV === "development")
+      return jsonResponse(
+        {
+          error: "Environment Configuration Mismatch",
+          details: envValidation.error.format(),
+        },
+        500,
+        origin,
+      );
+  }
+
   // Diagnostic log to verify Vite proxy hand-off
   console.log(`[Worker] ${request.method} ${url.pathname} (Origin: ${origin})`);
 
   if (request.method === "OPTIONS") {
-    return new Response(null, { status: 204, headers: getCorsHeaders(origin) }) as unknown as WorkerResponse;
+    return new Response(null, {
+      status: 204,
+      headers: getCorsHeaders(origin),
+    }) as unknown as WorkerResponse;
   }
 
   try {
@@ -235,34 +269,58 @@ async function handleFetch(
       return jsonResponse({ status: "ok", time: Date.now() }, 200, origin);
     }
 
+    if (url.pathname === "/api/hello-worker") {
+      return jsonResponse(
+        { message: "Hello from Cloudflare Worker!" },
+        200,
+        origin,
+      );
+    }
+
     if (url.pathname === "/api/client-config") {
-      return jsonResponse({
-        firebase: {
-          apiKey: env.FIREBASE_API_KEY,
-          authDomain: env.FIREBASE_AUTH_DOMAIN || `${env.FIREBASE_PROJECT_ID}.firebaseapp.com`,
-          projectId: env.FIREBASE_PROJECT_ID,
-          storageBucket: env.FIREBASE_STORAGE_BUCKET || `${env.FIREBASE_PROJECT_ID}.appspot.com`,
-          messagingSenderId: env.FIREBASE_MESSAGING_SENDER_ID || env.FIREBASE_PROJECT_NUMBER,
-          appId: env.FIREBASE_APP_ID || `1:${env.FIREBASE_PROJECT_NUMBER}:web:dynamic`,
-          measurementId: env.FIREBASE_MEASUREMENT_ID,
+      return jsonResponse(
+        {
+          firebase: {
+            apiKey: env.FIREBASE_API_KEY,
+            authDomain:
+              env.FIREBASE_AUTH_DOMAIN ||
+              `${env.FIREBASE_PROJECT_ID}.firebaseapp.com`,
+            projectId: env.FIREBASE_PROJECT_ID,
+            storageBucket:
+              env.FIREBASE_STORAGE_BUCKET ||
+              `${env.FIREBASE_PROJECT_ID}.appspot.com`,
+            messagingSenderId:
+              env.FIREBASE_MESSAGING_SENDER_ID || env.FIREBASE_PROJECT_NUMBER,
+            appId:
+              env.FIREBASE_APP_ID ||
+              `1:${env.FIREBASE_PROJECT_NUMBER}:web:dynamic`,
+            measurementId: env.FIREBASE_MEASUREMENT_ID,
+          },
+          recaptchaKey: env.RECAPTCHA_SITE_KEY,
+          digitalSignatureEnabled: env.DIGITAL_SIGNATURE === "true",
         },
-        recaptchaKey: env.RECAPTCHA_SITE_KEY,
-        digitalSignatureEnabled: env.DIGITAL_SIGNATURE === "true",
-      }, 200, origin);
+        200,
+        origin,
+      );
     }
 
     if (url.pathname === "/api/reports") {
       await verifyAppCheck(request, env);
-      const list = await env.REPORTS_KV.list<ArchiveMetadata>({ prefix: "report:", limit: 50 });
+      const list = await env.REPORTS_KV.list<ArchiveMetadata>({
+        prefix: "report:",
+        limit: 50,
+      });
       const archives: ArchiveMetadata[] = list.keys
         .map((k: KVNamespaceListKey<ArchiveMetadata>) => ({
           date: k.name.replace("report:", ""),
           summary: k.metadata?.summary || "Weekly progress snapshot.",
           created: k.metadata?.created || "",
           bsDate: k.metadata?.bsDate,
-          recordCount: k.metadata?.recordCount ?? 0
+          recordCount: k.metadata?.recordCount ?? 0,
         }))
-        .sort((a: ArchiveMetadata, b: ArchiveMetadata) => b.date.localeCompare(a.date));
+        .sort((a: ArchiveMetadata, b: ArchiveMetadata) =>
+          b.date.localeCompare(a.date),
+        );
       return jsonResponse(archives, 200, origin);
     }
 
@@ -274,7 +332,10 @@ async function handleFetch(
         isLowData: request.headers.get("X-Low-Data") === "true",
       });
       if (!validation.success) {
-        throw new ServiceError("Validation Failed", { status: 400, cause: validation.error.format() });
+        throw new ServiceError("Validation Failed", {
+          status: 400,
+          cause: validation.error.format(),
+        });
       }
       const { lang, date, force: forceRefresh, isLowData } = validation.data;
       await verifyAppCheck(request, env);
@@ -284,20 +345,37 @@ async function handleFetch(
       let pdfBuffer: ArrayBuffer | undefined;
 
       if (date) {
-        const rawData = await env.REPORTS_KV.get(`report:${date}`, { type: "json" });
-        if (!rawData) throw new ServiceError(`Archived report for ${date} not found.`, { status: 404 });
+        const rawData = await env.REPORTS_KV.get(`report:${date}`, {
+          type: "json",
+        });
+        if (!rawData)
+          throw new ServiceError(`Archived report for ${date} not found.`, {
+            status: 404,
+          });
         const archiveValidation = ProjectReportSchema.safeParse(rawData);
-        if (!archiveValidation.success) throw new ServiceError(`Corrupted archive data for ${date}`, { status: 500 });
+        if (!archiveValidation.success)
+          throw new ServiceError(`Corrupted archive data for ${date}`, {
+            status: 500,
+          });
         report = archiveValidation.data;
       } else {
         pdfBuffer = await fetchProjectPdf(env);
         fingerprint = await generateFingerprint(pdfBuffer);
-        report = { headers: [], rows: [], lastUpdate: new Date().toISOString().split("T")[0], aiSummary: null, created: new Date().toISOString(), adminMessage: undefined };
+        report = {
+          headers: [],
+          rows: [],
+          lastUpdate: new Date().toISOString().split("T")[0],
+          aiSummary: null,
+          created: new Date().toISOString(),
+          adminMessage: undefined,
+        };
       }
 
       if (!isLowData && !report.aiSummary && fingerprint && pdfBuffer) {
         const cacheKey = `ai_summary_${lang}_${fingerprint}`;
-        const cachedRaw = forceRefresh ? null : await env.REPORTS_KV.get(cacheKey, { type: "json" });
+        const cachedRaw = forceRefresh
+          ? null
+          : await env.REPORTS_KV.get(cacheKey, { type: "json" });
         let aiResult: AiSummary | null = null;
         if (cachedRaw) {
           const parsed = AiSummarySchema.safeParse(cachedRaw);
@@ -308,10 +386,17 @@ async function handleFetch(
           for (let i = 0; i < 2; i++) {
             try {
               const apiKey = env.GOOGLE_GENAI_API_KEY;
-              if (!apiKey) throw new ServiceError("GOOGLE_GENAI_API_KEY not configured", { status: 500 });
+              if (!apiKey)
+                throw new ServiceError("GOOGLE_GENAI_API_KEY not configured", {
+                  status: 500,
+                });
               aiResult = await runProjectSummary(apiKey, { pdfBase64, lang });
               if (aiResult?.brief) {
-                ctx.waitUntil(env.REPORTS_KV.put(cacheKey, JSON.stringify(aiResult), { expirationTtl: 604800 }));
+                ctx.waitUntil(
+                  env.REPORTS_KV.put(cacheKey, JSON.stringify(aiResult), {
+                    expirationTtl: 604800,
+                  }),
+                );
               }
               break;
             } catch (aiError) {
@@ -333,14 +418,23 @@ async function handleFetch(
       await verifyAppCheck(request, env);
       const year = url.searchParams.get("year");
       const month = url.searchParams.get("month");
-      if (!year || !month) throw new ServiceError("Year and month are required", { status: 400 });
+      if (!year || !month)
+        throw new ServiceError("Year and month are required", { status: 400 });
       const prefix = `report:${year}-${month}`;
-      const snapshotListResult = await env.REPORTS_KV.list<ArchiveMetadata>({ prefix, limit: 10 });
+      const snapshotListResult = await env.REPORTS_KV.list<ArchiveMetadata>({
+        prefix,
+        limit: 10,
+      });
       if (snapshotListResult.keys.length === 0) {
-        throw new ServiceError(`No snapshots found for ${year}-${month}.`, { status: 404 });
+        throw new ServiceError(`No snapshots found for ${year}-${month}.`, {
+          status: 404,
+        });
       }
       const latestKey = snapshotListResult.keys.sort(
-        (a: KVNamespaceListKey<ArchiveMetadata>, b: KVNamespaceListKey<ArchiveMetadata>) => b.name.localeCompare(a.name),
+        (
+          a: KVNamespaceListKey<ArchiveMetadata>,
+          b: KVNamespaceListKey<ArchiveMetadata>,
+        ) => b.name.localeCompare(a.name),
       )[0].name;
       const report = await env.REPORTS_KV.get(latestKey, { type: "json" });
       return jsonResponse(report, 200, origin);
@@ -355,9 +449,13 @@ async function handleFetch(
 
       if (request.method === "GET") {
         const date = url.searchParams.get("date");
-        if (!date) throw new ServiceError("Missing date parameter", { status: 400 });
-        const report = await env.REPORTS_KV.get(`report:${date}`, { type: "json" });
-        if (!report) throw new ServiceError("Snapshot not found", { status: 404 });
+        if (!date)
+          throw new ServiceError("Missing date parameter", { status: 400 });
+        const report = await env.REPORTS_KV.get(`report:${date}`, {
+          type: "json",
+        });
+        if (!report)
+          throw new ServiceError("Snapshot not found", { status: 404 });
 
         const pdfBuffer = generatePdfFromReport(report as ProjectReport);
 
@@ -365,15 +463,20 @@ async function handleFetch(
           headers: {
             ...getCorsHeaders(origin),
             "Content-Type": "application/pdf",
-            "Content-Disposition": `attachment; filename="DoR_Snapshot_${date}.pdf"`
-          }
+            "Content-Disposition": `attachment; filename="DoR_Snapshot_${date}.pdf"`,
+          },
         }) as unknown as WorkerResponse;
       }
 
       if (request.method === "POST") {
-        const bodyResult = SnapshotRequestSchema.safeParse(await request.json());
+        const bodyResult = SnapshotRequestSchema.safeParse(
+          await request.json(),
+        );
         if (!bodyResult.success) {
-          throw new ServiceError("Invalid snapshot data", { status: 400, cause: bodyResult.error.format() });
+          throw new ServiceError("Invalid snapshot data", {
+            status: 400,
+            cause: bodyResult.error.format(),
+          });
         }
         const body = bodyResult.data;
         const date = body.meta.lastUpdate;
@@ -387,7 +490,9 @@ async function handleFetch(
           metadata: {
             date,
             recordCount: body.meta.total,
-            summary: report.aiSummary?.brief ? report.aiSummary.brief.substring(0, 200) : undefined,
+            summary: report.aiSummary?.brief
+              ? report.aiSummary.brief.substring(0, 200)
+              : undefined,
             created: new Date().toISOString(),
           },
         });
@@ -396,7 +501,8 @@ async function handleFetch(
 
       if (request.method === "DELETE") {
         const date = url.searchParams.get("date");
-        if (!date) throw new ServiceError("Missing date parameter", { status: 400 });
+        if (!date)
+          throw new ServiceError("Missing date parameter", { status: 400 });
         await env.REPORTS_KV.delete(`report:${date}`);
         return jsonResponse({ success: true }, 200, origin);
       }
@@ -409,20 +515,35 @@ async function handleFetch(
       if (!snapshotKey) throw new ServiceError("Unauthorized", { status: 401 });
 
       const dryRun = url.searchParams.get("dryRun") === "true";
-      const listResult = await env.REPORTS_KV.list<ArchiveMetadata>({ prefix: "report:", limit: 1000 });
-      const results = { total: listResult.keys.length, migrated: 0, skipped: 0, dryRun, migratedKeys: [] as string[], errors: [] as string[] };
+      const listResult = await env.REPORTS_KV.list<ArchiveMetadata>({
+        prefix: "report:",
+        limit: 1000,
+      });
+      const results = {
+        total: listResult.keys.length,
+        migrated: 0,
+        skipped: 0,
+        dryRun,
+        migratedKeys: [] as string[],
+        errors: [] as string[],
+      };
 
       for (const key of listResult.keys) {
         try {
           const currentMetadata = key.metadata;
           const dateFromKey = key.name.replace("report:", "");
-          if (currentMetadata?.date && typeof currentMetadata?.recordCount === "number") {
+          if (
+            currentMetadata?.date &&
+            typeof currentMetadata?.recordCount === "number"
+          ) {
             results.skipped++;
             continue;
           }
           let recordCount = currentMetadata?.recordCount ?? 0;
           if (recordCount === 0) {
-            const val = await env.REPORTS_KV.get<ProjectReport>(key.name, { type: "json" });
+            const val = await env.REPORTS_KV.get<ProjectReport>(key.name, {
+              type: "json",
+            });
             recordCount = val?.rows?.length ?? 0;
           }
           const updatedMetadata: ArchiveMetadata = {
@@ -435,7 +556,9 @@ async function handleFetch(
           const value = await env.REPORTS_KV.get(key.name);
           if (value) {
             if (!dryRun) {
-              await env.REPORTS_KV.put(key.name, value, { metadata: updatedMetadata });
+              await env.REPORTS_KV.put(key.name, value, {
+                metadata: updatedMetadata,
+              });
             }
             results.migrated++;
             results.migratedKeys.push(key.name);
@@ -444,20 +567,34 @@ async function handleFetch(
           results.errors.push(`Key ${key.name}: ${(itemErr as Error).message}`);
         }
       }
-      return jsonResponse({ message: "Migration Complete", results }, 200, origin);
+      return jsonResponse(
+        { message: "Migration Complete", results },
+        200,
+        origin,
+      );
     }
 
     return new Response(`Not Found: ${url.pathname}`, {
       status: 404,
-      headers: getCorsHeaders(origin)
+      headers: getCorsHeaders(origin),
     }) as unknown as WorkerResponse;
   } catch (e) {
-    const err = e instanceof ServiceError ? e : new ServiceError((e as Error).message || "Internal Server Error", { status: 500, cause: e });
+    const err =
+      e instanceof ServiceError
+        ? e
+        : new ServiceError((e as Error).message || "Internal Server Error", {
+            status: 500,
+            cause: e,
+          });
     // Surface the cause (e.g., Zod validation errors or PDF export errors) to the client
-    return jsonResponse({ 
-      error: err.message,
-      details: err.cause 
-    }, err.status, origin) as unknown as WorkerResponse;
+    return jsonResponse(
+      {
+        error: err.message,
+        details: err.cause,
+      },
+      err.status,
+      origin,
+    ) as unknown as WorkerResponse;
   }
 }
 
@@ -470,14 +607,16 @@ async function handleAutoArchive(env: Env) {
     const alreadyArchived = await env.REPORTS_KV.get(cacheKey);
 
     if (alreadyArchived) {
-      console.log( // No citation needed, this is internal code.
+      console.log(
+        // No citation needed, this is internal code.
         `[Auto-Archive] Snapshot for fingerprint ${fingerprint} already exists. Skipping.`,
       );
       return;
     }
 
     const apiKey = env.GOOGLE_GENAI_API_KEY;
-    if (!apiKey) throw new Error("GOOGLE_GENAI_API_KEY not configured for auto-archive");
+    if (!apiKey)
+      throw new Error("GOOGLE_GENAI_API_KEY not configured for auto-archive");
 
     // Convert PDF to Base64 for Gemini processing
     const pdfBase64 = arrayBufferToBase64(pdfBuffer);
@@ -489,7 +628,9 @@ async function handleAutoArchive(env: Env) {
     });
 
     if (!aiResult?.extractedData || !aiResult.extractedData.rows.length) {
-      console.error("[Auto-Archive] AI extraction returned no data. Aborting archive.");
+      console.error(
+        "[Auto-Archive] AI extraction returned no data. Aborting archive.",
+      );
       return;
     }
 
@@ -509,31 +650,42 @@ async function handleAutoArchive(env: Env) {
         recordCount: report.rows.length,
         // Truncate the AI summary brief to ensure it fits within KV metadata limits (1024 bytes)
         // The full brief is available when the report is fetched.
-        summary: report.aiSummary?.brief ? report.aiSummary.brief.substring(0, 200) : undefined,
+        summary: report.aiSummary?.brief
+          ? report.aiSummary.brief.substring(0, 200)
+          : undefined,
         created: new Date().toISOString(),
       }, // No citation needed, this is internal code.
     });
 
     // Update fingerprint cache to prevent duplicate archiving.
     // If the report is 'good', we can safely skip re-processing this specific content for 30 days.
-    const archiveTtl = report.aiSummary?.overallHealth === "good" ? 2592000 : 604800;
+    const archiveTtl =
+      report.aiSummary?.overallHealth === "good" ? 2592000 : 604800;
     await env.REPORTS_KV.put(cacheKey, "true", { expirationTtl: archiveTtl });
     console.log(
       `[Auto-Archive] Successfully created snapshot for ${reportDate}`,
     );
 
     // --- Snapshot Retention Logic ---
-    const listResult = await env.REPORTS_KV.list<ArchiveMetadata>({ prefix: "report:", limit: 100 });
+    const listResult = await env.REPORTS_KV.list<ArchiveMetadata>({
+      prefix: "report:",
+      limit: 100,
+    });
     const allSnapshots = listResult.keys
-      .filter(k => k.name.startsWith("report:")) // Ensure only report keys are considered
+      .filter((k) => k.name.startsWith("report:")) // Ensure only report keys are considered
       .sort((a, b) => b.name.localeCompare(a.name)); // Sort descending by date (key name)
 
     if (allSnapshots.length > SNAPSHOT_RETENTION_COUNT) {
       const snapshotsToDelete = allSnapshots.slice(SNAPSHOT_RETENTION_COUNT);
-      console.log(`[Auto-Archive] Deleting ${snapshotsToDelete.length} old snapshots.`);
-      await Promise.all(snapshotsToDelete.map(s => env.REPORTS_KV.delete(s.name)));
+      console.log(
+        `[Auto-Archive] Deleting ${snapshotsToDelete.length} old snapshots.`,
+      );
+      await Promise.all(
+        snapshotsToDelete.map((s) => env.REPORTS_KV.delete(s.name)),
+      );
     }
-  } catch (err) { // No citation needed, this is internal code.
+  } catch (err) {
+    // No citation needed, this is internal code.
     console.error("[Auto-Archive] Failed:", err);
   }
 }
@@ -553,9 +705,16 @@ async function fetchProjectPdf(env: Env): Promise<ArrayBuffer> {
     response = await fetch(publishedUrl);
     // Explicitly check for content type to prevent HTML error pages from being treated as PDFs
     const contentType = response.headers.get("Content-Type");
-    if (response.ok && contentType && !contentType.includes("application/pdf")) {
+    if (
+      response.ok &&
+      contentType &&
+      !contentType.includes("application/pdf")
+    ) {
       const text = await response.text(); // Read the body to log it
-      throw new ServiceError(`Expected PDF but received ${contentType}. Content: ${text.substring(0, 200)}...`, { status: 400 });
+      throw new ServiceError(
+        `Expected PDF but received ${contentType}. Content: ${text.substring(0, 200)}...`,
+        { status: 400 },
+      );
     }
     if (response?.ok) {
       const headers = new Headers(response.headers);
@@ -564,7 +723,7 @@ async function fetchProjectPdf(env: Env): Promise<ArrayBuffer> {
       const cacheResponse = new Response(response.clone().body as any, {
         status: response.status,
         statusText: response.statusText,
-        headers
+        headers,
       });
       await cache.put(publishedUrl, cacheResponse as any);
     }
