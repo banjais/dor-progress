@@ -19,6 +19,7 @@ interface ParticleState {
 let particles: ParticleState[] = [];
 let width = 0;
 let height = 0;
+let offscreenCanvas: OffscreenCanvas | null = null;
 let ctx: OffscreenCanvasRenderingContext2D | null = null;
 let mouseX = -1000;
 let mouseY = -1000;
@@ -97,7 +98,8 @@ self.onmessage = (e: MessageEvent) => {
     height = data.height;
     generateSwarmTargets();
     if (data.canvas) {
-      ctx = data.canvas.getContext("2d");
+      offscreenCanvas = data.canvas;
+      ctx = offscreenCanvas!.getContext("2d");
     }
     particles = [];
     for (let i = 0; i < 50; i++) {
@@ -119,6 +121,11 @@ self.onmessage = (e: MessageEvent) => {
   if (type === "RESIZE") {
     width = data.width;
     height = data.height;
+    // Resize the actual drawing buffer of the offscreen canvas
+    if (offscreenCanvas) {
+      offscreenCanvas.width = width;
+      offscreenCanvas.height = height;
+    }
     generateSwarmTargets();
   }
 

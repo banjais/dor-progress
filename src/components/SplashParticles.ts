@@ -26,6 +26,11 @@ export class SplashParticles {
     this.canvas.className = "splash-particles";
     this.splashScreenElement.appendChild(this.canvas);
 
+    // Set initial dimensions BEFORE transferring control to offscreen.
+    // The width and height properties cannot be modified on the DOM element after transfer.
+    this.canvas.width = window.innerWidth;
+    this.canvas.height = window.innerHeight;
+
     // Transfer Control to OffscreenCanvas for Worker-side rendering
     const offscreen = this.canvas.transferControlToOffscreen();
 
@@ -153,11 +158,13 @@ export class SplashParticles {
   };
 
   private resize = () => {
-    this.canvas.width = window.innerWidth;
-    this.canvas.height = window.innerHeight;
+    // Use local constants to calculate current window size.
+    // We only update the worker; the CSS (100% width/height) handles the element's layout.
+    const width = window.innerWidth;
+    const height = window.innerHeight;
     this.worker.postMessage({
       type: "RESIZE",
-      data: { width: this.canvas.width, height: this.canvas.height },
+      data: { width, height },
     });
   };
 
