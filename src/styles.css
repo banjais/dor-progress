@@ -661,6 +661,29 @@ body[data-theme="dark"]::after {
   font-weight: 700;
   font-family: monospace;
   opacity: var(--splash-brand-text-opacity);
+  transition: opacity 0.3s ease, --num 0.8s cubic-bezier(0.4, 0, 0.2, 1);
+  counter-reset: num var(--num);
+}
+
+#loader-percentage:empty::after {
+  content: counter(num) "%";
+}
+
+#loader-percentage.ready-pulse {
+  color: var(--good); /* Change color to green */
+  animation: percentage-ready-pulse 2s infinite ease-in-out; /* Apply pulse animation */
+  text-shadow: 0 0 8px rgba(var(--good-rgb), 0.4); /* Add a subtle glow */
+}
+
+@keyframes percentage-ready-pulse {
+  0%, 100% {
+    transform: scale(1);
+    opacity: 1;
+  }
+  50% {
+    transform: scale(1.1); /* Slightly larger */
+    opacity: 0.8; /* Slightly fade */
+  }
 }
 
 .loader-status {

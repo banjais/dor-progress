@@ -1,4 +1,5 @@
 import { Dashboard } from "../Dashboard.js";
+import { animateCounter } from "../api-utils.js";
 import { BrandingEngine } from "./BrandingEngine.js";
 
 export class SplashScreen {
@@ -30,8 +31,18 @@ export class SplashScreen {
   static updateSplashProgress(percent: number) {
     const fill = document.getElementById("loader-bar-fill");
     const text = document.getElementById("loader-percentage");
-    if (fill) fill.style.height = `${percent}%`;
-    if (text) text.innerText = `${percent}%`;
+    if (fill) {
+      fill.style.transition = "height 0.8s cubic-bezier(0.4, 0, 0.2, 1)";
+      fill.style.height = `${percent}%`;
+    }
+    if (text) {
+      animateCounter(text, percent, true);
+      if (percent === 100) {
+        text.classList.add("ready-pulse");
+      } else {
+        text.classList.remove("ready-pulse");
+      }
+    }
   }
 
   static updateStatusText(text: string, highlight = false) {
