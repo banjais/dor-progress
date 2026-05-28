@@ -187,9 +187,10 @@ export const clearTranslationCache = () => tCache.clear();
  */
 // Capture the worker base once at module load.
 // In Browser: uses Vite env. In Worker: uses global WORKER_BASE.
-const GLOBAL_WORKER_BASE = (globalThis as any).WORKER_BASE
-  ? (globalThis as any).WORKER_BASE
-  : (import.meta as any).env.VITE_WORKER_BASE || "";
+const RESOLVED_WORKER_BASE =
+  typeof WORKER_BASE !== "undefined"
+    ? WORKER_BASE
+    : (import.meta as any).env.VITE_WORKER_BASE || "";
 
 export async function authenticatedFetch(
   path: string,
@@ -201,7 +202,7 @@ export async function authenticatedFetch(
 
   // Diagnostic check: If we are in production and have no Worker Base,
   // relative fetches will almost certainly fail on Firebase Hosting Spark plan.
-  if (!GLOBAL_WORKER_BASE && !path.startsWith("http") && isProduction) {
+  if (!RESOLVED_WORKER_BASE && !path.startsWith("http") && isProduction) {
     const currentOrigin =
       typeof window !== "undefined" ? window.location.origin : "";
     if (
@@ -224,7 +225,7 @@ export async function authenticatedFetch(
   if (path.startsWith("http")) {
     url = path;
   } else {
-    const baseUrl = GLOBAL_WORKER_BASE || firebaseBase;
+    const baseUrl = RESOLVED_WORKER_BASE || firebaseBase;
     const resolvedUrl = baseUrl
       ? `${baseUrl.replace(/\/*$/, "")}/${path.replace(/^\//, "")}`
       : `${window.location.origin}/${path.replace(/^\//, "")}`;

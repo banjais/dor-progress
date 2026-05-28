@@ -11,6 +11,7 @@ import {
   toError,
   toNepaliNumerals,
 } from "./api-utils.js";
+import { BrandingEngine } from "./components/BrandingEngine.js";
 
 const dashboard = Dashboard.getInstance();
 
@@ -19,7 +20,8 @@ const dashboard = Dashboard.getInstance();
  */
 
 export async function requestSnapshotKey(): Promise<string | null> {
-  if ((globalThis as any).APP_ENV !== "production") return "dev-bypass";
+  if ((import.meta as any).env.VITE_APP_ENV !== "production")
+    return "dev-bypass";
   const cached = sessionStorage.getItem("_snapshot_key");
   if (cached) return cached;
 
@@ -198,7 +200,7 @@ export const showSettings = async () => {
         <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; padding: 15px; background: var(--bg); border-radius: 16px; border: 1px solid var(--border);">
             <div>
                 <b style="font-size: 0.65rem; color: var(--text-light); text-transform: uppercase; letter-spacing: 0.05em;">Application Version</b>
-                <div style="font-size: 1.1rem; font-weight: 800; color: var(--primary);">v1.0.454</div>
+                <div style="font-size: 1.1rem; font-weight: 800; color: var(--primary);">v${BrandingEngine.config.version || "1.0.0"}</div>
             </div>
             <button id="settings-check-update" class="retry-btn" style="margin: 0; padding: 10px 20px; font-size: 0.8rem; border-radius: 10px;">
                 🔄 ${t("checkForUpdates") || "Check for Updates"}

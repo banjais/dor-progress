@@ -27,12 +27,12 @@ export class BootstrapManager {
 
     // --- App Check Debug Mode Setup ---
     // This MUST be set before initializeApp or initializeAppCheck is called.
-    // In production, import.meta.env.DEV will be false, so this block should only activate if a debug token is explicitly provided.
-    const isDevMode = (import.meta as any).env.DEV;
+    // Debug mode is activated if we are explicitly in development AND a token is provided.
+    const appEnv = (import.meta as any).env.VITE_APP_ENV;
     const viteDebugToken = (import.meta as any).env.VITE_APP_CHECK_DEBUG_TOKEN;
     const storedDebugToken = localStorage.getItem("debug_app_check");
 
-    if (isDevMode || viteDebugToken || storedDebugToken) {
+    if (appEnv === "development" && (viteDebugToken || storedDebugToken)) {
       // Prioritize VITE_APP_CHECK_DEBUG_TOKEN, then stored, otherwise generate new (by setting to true)
       (self as any).FIREBASE_APPCHECK_DEBUG_TOKEN =
         viteDebugToken && viteDebugToken !== "false"
@@ -62,7 +62,17 @@ export class BootstrapManager {
     }
 
     // Diagnostic log to verify build-time injection
-    console.info(`[System] Initializing with WORKER_BASE: "${safeWorkerBase}"`);
+    if (!safeWorkerBase || safeWorkerBase === "/") {
+      console.error(
+        "%c[System] VITE_WORKER_BASE is MISSING!",
+        "color: white; background: red; padding: 4px; font-weight: bold;",
+      );
+    } else {
+      console.info(
+        `%c[System] Routing API to: ${safeWorkerBase}`,
+        "color: #0099da; font-weight: bold;",
+      );
+    }
 
     try {
       // Apply UI branding inside try-catch to prevent initialization blocks
@@ -238,9 +248,19 @@ export class BootstrapManager {
         msg.includes("not found (404)")
       ) {
         msg +=
-          " Please ensure WORKER_BASE is correctly configured to your Cloudflare Worker URL and that the worker is deployed and routing requests properly.";
+          " (Network Error: VITE_WORKER_BASE is likely misconfigured or the Cloudflare Worker is not responding. Please check your .env files and Worker deployment status.)";
         console.error(
-          "ACTION REQUIRED: Check WORKER_BASE configuration and Cloudflare Worker deployment.",
+          "ACTION REQUIRED: Check VITE_WORKER_BASE configuration and Cloudflare Worker deployment.",
+        );
+      } else if (
+        msg.includes("exchangeDebugToken") ||
+        (msg.includes("403") &&
+          (import.meta as any).env.VITE_APP_ENV === "development")
+      ) {
+        msg +=
+          " (App Check 403: Debug token unregistered. Find the 'App Check debug token' in the console logs above and add it to Firebase Console -> App Check -> Apps -> Manage Debug Tokens.)";
+        console.error(
+          "DEBUG: App Check Debug Token mismatch. You must register the generated token in your Firebase project settings.",
         );
       } else if (msg.includes("403") || msg.includes("App Check")) {
         msg +=

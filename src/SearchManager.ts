@@ -63,8 +63,7 @@ export class SearchManager {
   async startVoiceSearch() {
     // No citation needed, this is internal code.
     const SpeechRecognition =
-      (window as any).SpeechRecognition ||
-      (window as any).webkitSpeechRecognition;
+      window.SpeechRecognition || window.webkitSpeechRecognition;
     if (!SpeechRecognition) {
       this.dashboard.addToast(
         "error",

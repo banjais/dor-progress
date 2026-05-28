@@ -66,10 +66,12 @@ jobs:
   # JOB 3: Frontend Deployment (Firebase Hosting)
   frontend-deploy:
     name: Build & Deploy Frontend
-    needs: [validate-secrets]
+    needs: [validate-secrets, backend-deploy]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # Required to allow the workflow to push new commits (version bump)
       - uses: actions/setup-node@v4
         with:
           node-version: ${{ env.NODE_VERSION }}
@@ -84,9 +86,17 @@ jobs:
       - name: Run npm audit
         run: npm audit --audit-level=high
 
+      # Run the automated deployment script to bump versions in package.json, branding.json, etc.
+      # This script is expected to commit and push changes.
+      - name: Run Automated Deployment Script (Version Bump)
+        run: npm run deploy
+        env:
+          GIT_AUTHOR_NAME: 'github-actions[bot]' # Attribute the commit to the bot
+          GIT_AUTHOR_EMAIL: 'github-actions[bot]@users.noreply.github.com' # Bot's email
       - name: Build Frontend Project
         env:
           VITE_WORKER_BASE: ${{ secrets.VITE_WORKER_BASE }}
+          VITE_APP_ENV: production # Explicitly set APP_ENV for production build
           VITE_FIREBASE_URL: ${{ secrets.VITE_FIREBASE_URL }}
         run: npm run build
 

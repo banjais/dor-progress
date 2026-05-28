@@ -1,183 +1,65 @@
-import "jspdf";
+declare const WORKER_BASE: string | undefined;
 
-import {
-  AiSummary as BaseAiSummary,
-  Env as BaseEnv,
-  SpreadsheetHeaders as BaseHeaders,
-  ProjectReport as BaseProjectReport,
-  ProjectRow as BaseProjectRow,
-} from "./api-utils.js";
-
-/**
- * Global type definitions for vendor-prefixed APIs.
- */
-
-declare global {
-  interface SpeechRecognitionAlternative {
-    readonly transcript: string;
-    readonly confidence: number;
-  }
-
-  interface SpeechRecognitionResult {
-    readonly length: number;
-    item(index: number): SpeechRecognitionAlternative;
-    [index: number]: SpeechRecognitionAlternative;
-    readonly isFinal: boolean;
-  }
-
-  interface SpeechRecognitionResultList {
-    readonly length: number;
-    item(index: number): SpeechRecognitionResult;
-    [index: number]: SpeechRecognitionResult;
-  }
-
-  interface SpeechRecognitionEvent extends Event {
-    readonly resultIndex: number;
-    readonly results: SpeechRecognitionResultList;
-  }
-
-  interface SpeechRecognition extends EventTarget {
-    lang: string;
-    interimResults: boolean;
-    maxAlternatives: number;
-    continuous: boolean;
-    start(): void;
-    stop(): void;
-    abort(): void;
-    onresult: (event: SpeechRecognitionEvent) => void;
-    onerror: (event: any) => void;
-    onspeechend: () => void;
-  }
-
-  interface Window {
-    /** Prefix for older WebKit browsers */
-    webkitAudioContext: typeof AudioContext;
-    /** Prefix for older WebKit browsers */
-    webkitSpeechRecognition: {
-      new (): SpeechRecognition;
-    };
-    PDFLib: any; // Assuming PDFLib is a global object from a library
-    I18N: any; // If I18N is truly global, declare it here. Otherwise, it should be imported.
-  }
-
-  const WORKER_BASE: string;
-  const VITE_WORKER_BASE: string;
-  const VITE_FIREBASE_URL: string;
-  const BUILD_ID: string;
-  const COMMIT_SHA: string;
-  const APP_ENV: "development" | "production" | "test";
-  const APP_VERSION: string;
-
-  interface Window extends AppGlobalFunctions {
-    readonly APP_ENV: "development" | "production" | "test";
-    App: AppGlobalFunctions;
-  }
-
-  /**
-   * Global App object to avoid polluting the window namespace directly.
-   * All globally accessible functions should be attached to this object.
-   */
-  interface AppGlobalFunctions {
-    toggleFabMenu: () => void;
-    setLang: (l: string) => void;
-    logoutSnapshotSession: () => void;
-    checkStatus: () => Promise<void>;
-    startVoiceSearch: () => Promise<void>;
-    clearSearch: () => void;
-    printAiBrief: () => void;
-    shareAiBrief: () => Promise<void>;
-    copyAiBrief: () => Promise<void>;
-    shareAiBriefLink: () => Promise<void>;
-    shareAiBriefEmail: () => Promise<void>;
-    downloadBriefAsPdf: () => Promise<void>;
-    downloadChangelogAsPdf: () => Promise<void>;
-    translateAiBrief: () => Promise<void>;
-    downloadAiBriefAudio: () => Promise<void>;
-    shareAiBriefAudio: () => Promise<void>;
-    toggleReadAloud: () => Promise<void>;
-    applyTranslations: () => void;
-    exportHealthReport: () => void;
-    closeModal: () => void;
-    setTheme: (theme: string, persist?: boolean) => string;
-    revertTheme: () => string;
-    resetThemeToSystem: () => void;
-    toggleTheme: () => void;
-    setView: (v: string) => void;
-    showInChartView: (name: string) => void;
-    showInCardView: (name: string) => void;
-    copyDeepLink: (name: string) => void;
-    renderDropdowns: () => void;
-    toggleHistory: () => void;
-    toggleHistoryTab: (tab: string) => void;
-    selectCurrentWeek: () => void;
-    loadSnapshot: (date: string) => Promise<void>;
-    loadCumulative: (type: string) => Promise<void>;
-    downloadConsolidatedPdf: () => Promise<void>;
-    downloadPdf: (date: string) => Promise<void>;
-    handleVerification: () => Promise<void>;
-    checkDeepLink: () => void;
-    handleSearch: (term?: string) => void;
-    sortData: (key: string) => void;
-    shareApp: () => void;
-    checkForPWAUpdate: () => Promise<void>;
-    installUpdate: () => Promise<void>;
-    getProgress: (row: ProjectRow, headers: SpreadsheetHeaders) => number;
-    renderMiniChart: (percent: number, showTrend?: boolean) => string;
-    renderSparkline: (annPerc: number, totPerc: number) => string;
-    showModal: (indicatorName: string) => void;
-    toggleDiffMode: (date: string | null) => Promise<void>;
-    checkForUpdates: () => Promise<void>;
-    requestSnapshotKey: () => Promise<string | null>;
-    createSnapshotManual: (e?: Event) => Promise<void>;
-    listSnapshots: (force?: boolean) => Promise<void>;
-    downloadSnapshot: (date: string) => Promise<void>;
-    deleteSnapshot: (date: string) => Promise<void>;
-    showSettings: () => Promise<void>;
-    triggerDatabaseBackup: () => Promise<void>;
-    triggerDatabaseRestore: () => Promise<void>;
-    downloadAllOfflineData: () => Promise<void>;
-    clearDataCache: () => void;
-    showFactoryResetConfirmation: () => void;
-    executeFactoryReset: () => Promise<void>;
-    toggleLowData: (enabled: boolean) => void;
-    toggleDarkSchedule: (enabled: boolean) => void;
-    updateVoicePreference: (uri: string) => void;
-    updateSpeechRate: (val: string) => void;
-    updateSpeechPitch: (val: string) => void;
-    toggleSystemFont: (enabled: boolean) => void;
-    updateFontSize: (val: string) => void;
-    toggleHighContrast: (enabled: boolean) => void;
-    toggleGrayscale: (enabled: boolean) => void;
-    toggleSepia: (enabled: boolean) => void;
-    generateClientPDF: () => Promise<void>;
-    setSoundPack: (pack: string) => void;
-    updateVolume: (volume: number) => void;
-    setMusicVolume: (volume: number) => void;
-    toggleMute: () => void;
-    resetAudioToDefault: () => void;
-    getRelativeTimeString: () => string;
-    syncAppTheme: () => void;
-    setMusicTrack: (track: string) => void;
-    shareSnapshot: (date: string) => void;
-    quickPrintSnapshot: (date: string) => void;
-  }
-
-  interface Navigator {
-    standalone?: boolean;
-  }
-
-  type Env = BaseEnv;
-  type ProjectRow = BaseProjectRow;
-  type AiSummary = BaseAiSummary;
-  type ProjectReport = BaseProjectReport;
-  type SpreadsheetHeaders = BaseHeaders;
+interface Window {
+  SpeechRecognition: typeof SpeechRecognition;
+  webkitSpeechRecognition: typeof SpeechRecognition;
 }
 
-// Extend jsPDF type to include properties added by jspdf-autotable
-declare module "jspdf" {
-  interface jsPDF {
-    lastAutoTable: {
-      finalY: number;
-    };
-  }
+declare const SpeechRecognition: {
+  prototype: SpeechRecognition;
+  new (): SpeechRecognition;
+};
+
+declare const webkitSpeechRecognition: {
+  prototype: SpeechRecognition;
+  new (): SpeechRecognition;
+};
+
+interface SpeechRecognition extends EventTarget {
+  continuous: boolean;
+  interimResults: boolean;
+  lang: string;
+  maxAlternatives: number;
+  onaudiostart: ((this: SpeechRecognition, ev: Event) => any) | null;
+  onsoundstart: ((this: SpeechRecognition, ev: Event) => any) | null;
+  onspeechstart: ((this: SpeechRecognition, ev: Event) => any) | null;
+  onspeechend: ((this: SpeechRecognition, ev: Event) => any) | null;
+  onsoundend: ((this: SpeechRecognition, ev: Event) => any) | null;
+  onaudioend: ((this: SpeechRecognition, ev: Event) => any) | null;
+  onresult:
+    | ((this: SpeechRecognition, ev: SpeechRecognitionEvent) => any)
+    | null;
+  onnomatch:
+    | ((this: SpeechRecognition, ev: SpeechRecognitionEvent) => any)
+    | null;
+  onerror: ((this: SpeechRecognition, ev: any) => any) | null;
+  onstart: ((this: SpeechRecognition, ev: Event) => any) | null;
+  onend: ((this: SpeechRecognition, ev: Event) => any) | null;
+  abort(): void;
+  start(): void;
+  stop(): void;
+}
+
+/** Web Speech API Type Definitions to resolve TS2552 in SearchManager.ts */
+interface SpeechRecognitionEvent extends Event {
+  readonly resultIndex: number;
+  readonly results: SpeechRecognitionResultList;
+}
+
+interface SpeechRecognitionResultList {
+  readonly length: number;
+  item(index: number): SpeechRecognitionResult;
+  [index: number]: SpeechRecognitionResult;
+}
+
+interface SpeechRecognitionResult {
+  readonly length: number;
+  item(index: number): SpeechRecognitionAlternative;
+  [index: number]: SpeechRecognitionAlternative;
+  readonly isFinal: boolean;
+}
+
+interface SpeechRecognitionAlternative {
+  readonly transcript: string;
+  readonly confidence: number;
 }
