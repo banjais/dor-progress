@@ -167,7 +167,8 @@ export class BootstrapManager {
             config.recaptchaKey,
           );
           console.info(
-            "[App Check] ReCAPTCHA Enterprise provider initialized.",
+            "[App Check] ReCAPTCHA Enterprise provider initialized with key:",
+            config.recaptchaKey,
           );
         } catch (e) {
           console.error(
