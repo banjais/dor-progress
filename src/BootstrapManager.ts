@@ -48,9 +48,18 @@ export class BootstrapManager {
 
     // Apply UI branding immediately so the app looks correct during load
     // Use Vite's injected environment variables for the client application.
-    const safeWorkerBase = (globalThis as any).WORKER_BASE
-      ? (globalThis as any).WORKER_BASE
-      : (import.meta as any).env.VITE_WORKER_BASE || "";
+    // Resolve the worker base URL – ensure it's a full URL and not just '/'
+    const safeWorkerBase =
+      typeof WORKER_BASE !== "undefined"
+        ? WORKER_BASE
+        : (import.meta as any).env.VITE_WORKER_BASE || "";
+
+    if (!safeWorkerBase || safeWorkerBase === "/") {
+      console.error(
+        "[CRITICAL] VITE_WORKER_BASE is missing or invalid. API requests will default to the hosting origin and return HTML. Set VITE_WORKER_BASE to your Cloudflare Worker URL in the build environment.",
+      );
+      // Optionally, you could throw to halt boot, but we continue to allow UI to show error toasts.
+    }
 
     // Diagnostic log to verify build-time injection
     console.info(`[System] Initializing with WORKER_BASE: "${safeWorkerBase}"`);
