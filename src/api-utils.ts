@@ -420,10 +420,13 @@ export function toError(err: unknown): Error {
   if (err instanceof Error) return err;
   if (err && typeof err === "object") {
     const e = err as any;
-    // Extract message from Firebase/App Check error objects (e.g., name: 'n', code: 403)
+    // Extract message from Firebase/App Check error objects (e.g., name: 'n', code: 403, httpStatus: 400)
     const msg =
       e.message ||
       e.statusText ||
+      (e.name === "n" && e.code
+        ? `App Check Security Error (Code: ${e.code})`
+        : null) ||
       (e.code ? `Security Error (Code: ${e.code})` : null);
     if (msg) return new Error(msg);
   }

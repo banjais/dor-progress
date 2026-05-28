@@ -170,8 +170,8 @@ export class SplashParticles {
   };
 
   private handleClick = (e: MouseEvent) => {
-    this.dashboard.resumeAudioContext();
-    this.dashboard.startMusic("/audio/ambient_track.mp3");
+    // this.dashboard.resumeAudioContext(); // Disabled: No audio required
+    // this.dashboard.startMusic("/audio/ambient_track.mp3"); // Disabled: No audio required
     this.worker.postMessage({
       type: "CLICK",
       data: { x: e.clientX, y: e.clientY },
@@ -184,16 +184,24 @@ export class SplashParticles {
   private handleWorkerMessage = (e: MessageEvent) => {
     const { proximityIntensity, events, bassIntensity } = e.data;
 
-    // Process events from worker (e.g. audio triggers)
+    // Process events from worker (audio triggers disabled)
     events.forEach((evt: string) => {
-      if (evt === "playPop")
-        this.dashboard.playUi("pop", true, 2.5 + Math.random());
-      if (evt === "playShockwavePop")
-        this.dashboard.playUi("pop", true, 3.0 + Math.random() * 0.5); // High-pitched pop for rebirth
-      if (evt === "playSplash")
-        this.dashboard.playUi("click", true, 2.0 + Math.random()); // Microscopic splash sound
+      // No citation needed, this is internal code.
+      if (evt === "playPop") {
+        /* this.dashboard.playUi("pop", true, 2.5 + Math.random()); */
+      }
+      if (evt === "playShockwavePop") {
+        /* this.dashboard.playUi("pop", true, 3.0 + Math.random() * 0.5); */
+      } // High-pitched pop for rebirth
+      if (evt === "playSplash") {
+        /* this.dashboard.playUi("click", true, 2.0 + Math.random()); */
+      } // Microscopic splash sound
       if (evt === "playShatter") {
-        this.dashboard.triggerGlitch(); // Spikes global static/shake + plays crunch sound
+        // No citation needed, this is internal code.
+        // this.dashboard.triggerGlitch(); // Spikes global static/shake + plays crunch sound
+        // Glitch effect is still visual, but audio is removed.
+        this.dashboard.triggerGlitch();
+
         if (this.splashLogo) {
           this.splashLogo.classList.add("glitch");
           this.splashLogo.style.setProperty("--logo-scale", "1.4"); // Spiked scale
@@ -233,14 +241,15 @@ export class SplashParticles {
       return;
     }
 
-    const audioData = this.dashboard.audio.getAnalyserData();
-    let bass = 0;
-
-    if (audioData) {
-      // Sample the first 4 frequency bins for high-precision bass/beat detection
-      for (let i = 0; i < 4; i++) bass += audioData[i];
-      bass = bass / 4 / 255; // Normalize to 0.0 - 1.0 range
-    }
+    const bass = 0; // Initialize bass to 0 since audio processing is disabled
+    // Audio processing disabled
+    // const audioData = this.dashboard.audio.getAnalyserData();
+    // let bass = 0;
+    // if (audioData) {
+    //   // Sample the first 4 frequency bins for high-precision bass/beat detection
+    //   for (let i = 0; i < 4; i++) bass += audioData[i];
+    //   bass = bass / 4 / 255; // Normalize to 0.0 - 1.0 range
+    // }
 
     this.worker.postMessage({
       type: "INPUT",

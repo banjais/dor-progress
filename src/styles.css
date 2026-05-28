@@ -515,7 +515,7 @@ body[data-theme="dark"]::after {
 }
 
 .splash-logo-mini {
-  height: 50px !important;
+  height: 30px !important; /* Smaller logo */
   max-width: 90%;
   object-fit: contain;
   filter: brightness(var(--logo-brightness, 1)) drop-shadow(0 0 var(--logo-glow-radius, 15px) var(--splash-logo-glow-color));
@@ -587,17 +587,19 @@ body[data-theme="dark"]::after {
 }
 
 .splash-bottom {
+  /* Centered at the bottom */
   position: absolute;
   bottom: 40px;
-  right: 5%;
+  left: 50%;
+  transform: translateX(-50%);
   display: flex;
   flex-direction: row;
   align-items: center;
   gap: 20px;
   /* Glassmorphism Styles */
   background: var(--splash-prompt-bg); /* Re-use prompt bg for consistency */
-  backdrop-filter: blur(12px);
-  -webkit-backdrop-filter: blur(12px);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
   padding: 15px 25px;
   border-radius: 16px;
   border: 1px solid var(--splash-prompt-border); /* Re-use prompt border */
@@ -605,6 +607,32 @@ body[data-theme="dark"]::after {
   opacity: 0;
   transform: translateY(20px);
   transition: opacity 1s cubic-bezier(0.4, 0, 0.2, 1), transform 1s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+/* New container for the loader, positioned to the right */
+.splash-loader-container {
+  position: absolute;
+  bottom: 40px;
+  right: 5%;
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 20px;
+  background: var(--splash-prompt-bg);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  padding: 15px 25px;
+  border-radius: 16px;
+  border: 1px solid var(--splash-prompt-border);
+  box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.3);
+  opacity: 0;
+  transform: translateY(20px);
+  transition: opacity 1s cubic-bezier(0.4, 0, 0.2, 1), transform 1s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.splash-loader-container.visible {
+  opacity: 1;
+  transform: translateY(0);
 }
 
 .splash-bottom.visible {
@@ -636,7 +664,7 @@ body[data-theme="dark"]::after {
 }
 
 .modern-loader {
-  width: 2px;
+  width: 2px; /* Vertical bar width */
   height: 40px;
   background: var(--splash-loader-track);
   position: relative;

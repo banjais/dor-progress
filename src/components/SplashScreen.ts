@@ -6,10 +6,10 @@ export class SplashScreen {
   public static readyToEnter = false; // Made public for SplashParticles to access
 
   static init(dashboard: Dashboard) {
-    this.handleSplashVideo();
+    // Removed: No video required
     this.addSkipButton(dashboard);
-    this.initParallaxEffect(dashboard);
-    this.initAudioPrompt(dashboard);
+    // Removed: Not needed with smaller logo
+    // Removed: No audio required
     this.initSignalIndicator(dashboard);
 
     // Dynamically import and initialize SplashParticles
@@ -42,6 +42,14 @@ export class SplashScreen {
       } else {
         text.classList.remove("ready-pulse");
       }
+    }
+
+    // Ensure the loader container is visible when progress updates
+    const loaderContainer = document.querySelector(".splash-loader-container");
+    if (loaderContainer && percent > 0) {
+      loaderContainer.classList.add("visible");
+    } else if (loaderContainer && percent === 0) {
+      loaderContainer.classList.remove("visible");
     }
   }
 
@@ -81,16 +89,6 @@ export class SplashScreen {
     Dashboard.getInstance().playUi("pop", true, 0.25); // Deep distortion crunch
   }
 
-  private static handleSplashVideo() {
-    const video = document.querySelector(".splash-video") as HTMLVideoElement;
-    if (video) {
-      video.muted = true;
-      video
-        .play()
-        .catch(() => console.warn("[System] Splash video autoplay blocked."));
-    }
-  }
-
   private static addSkipButton(dashboard: Dashboard) {
     const splashScreen = document.getElementById("splash-screen");
     if (!splashScreen) return;
@@ -103,31 +101,10 @@ export class SplashScreen {
 
     skipButton.addEventListener("click", (e) => {
       e.stopPropagation();
-      dashboard.resumeAudioContext();
-      dashboard.startMusic("/audio/ambient_track.mp3");
+      // dashboard.resumeAudioContext(); // Disabled: No audio required
+      // dashboard.startMusic("/audio/ambient_track.mp3"); // Disabled: No audio required
       this.hide(true);
     });
-  }
-
-  private static initAudioPrompt(dashboard: Dashboard) {
-    const splashScreen = document.getElementById("splash-screen");
-    if (!splashScreen) return;
-
-    const prompt = document.createElement("div");
-    prompt.className = "splash-audio-prompt";
-    prompt.innerHTML = `<i>🔇</i> <span>${dashboard.t("clickToEnableSound") || "Click to enable sound"}</span>`;
-    splashScreen.appendChild(prompt);
-
-    dashboard.subscribe<{ suspended: boolean; broken: boolean }>(
-      ({ suspended, broken }) => {
-        if (suspended && !broken) prompt.classList.add("visible");
-        else prompt.classList.remove("visible");
-      },
-      (state) => ({
-        suspended: state.isAudioContextSuspended,
-        broken: state.isAudioEngineBroken,
-      }),
-    );
   }
 
   private static initSignalIndicator(dashboard: Dashboard) {
@@ -168,35 +145,6 @@ export class SplashScreen {
       },
       (state) => state.signalStrength,
     );
-  }
-
-  private static initParallaxEffect(dashboard: Dashboard) {
-    const splashScreen = document.getElementById("splash-screen");
-    const splashLogo = document.querySelector(
-      ".splash-logo-mini",
-    ) as HTMLElement;
-    if (!splashScreen || !splashLogo) return;
-
-    const handleMouseMove = (e: MouseEvent) => {
-      const rect = splashScreen.getBoundingClientRect();
-      const offsetX = (e.clientX - (rect.left + rect.width / 2)) * 0.02;
-      const offsetY = (e.clientY - (rect.top + rect.height / 2)) * 0.02;
-      splashLogo.style.setProperty("--logo-translate-x", `${offsetX}px`);
-      splashLogo.style.setProperty("--logo-translate-y", `${offsetY}px`);
-    };
-    splashScreen.addEventListener("mousemove", handleMouseMove);
-
-    const updateGlitch = () => {
-      if (Math.random() < dashboard.state.riskLevel * 0.15) {
-        splashLogo.classList.add("glitch");
-        setTimeout(
-          () => splashLogo.classList.remove("glitch"),
-          80 + Math.random() * 100,
-        );
-      }
-      requestAnimationFrame(updateGlitch);
-    };
-    updateGlitch();
   }
 
   static getGreetingKey(): string {
