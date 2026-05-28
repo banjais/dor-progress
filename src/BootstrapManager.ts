@@ -1,7 +1,7 @@
 import { initializeApp } from "firebase/app";
 import {
   CustomProvider,
-  ReCaptchaEnterpriseProvider,
+  ReCaptchaV3Provider,
   initializeAppCheck,
 } from "firebase/app-check";
 
@@ -32,7 +32,9 @@ export class BootstrapManager {
     const viteDebugToken = import.meta.env.VITE_APP_CHECK_DEBUG_TOKEN;
     const storedDebugToken = localStorage.getItem("debug_app_check");
 
-    if (appEnv === "development" && (viteDebugToken || storedDebugToken)) {
+    // Activate debug mode if a token is provided in the environment (even in production)
+    // or if we are in development and a token is stored locally.
+    if (viteDebugToken || (appEnv === "development" && storedDebugToken)) {
       // No citation needed, this is internal code.
       // Prioritize VITE_APP_CHECK_DEBUG_TOKEN, then stored, otherwise generate new (by setting to true)
       (self as any).FIREBASE_APPCHECK_DEBUG_TOKEN =
@@ -41,6 +43,10 @@ export class BootstrapManager {
           : storedDebugToken && storedDebugToken !== "false"
             ? storedDebugToken
             : true;
+      console.log(
+        "[App Check] Global token set to:",
+        (self as any).FIREBASE_APPCHECK_DEBUG_TOKEN,
+      );
       console.warn(
         "[App Check] Debug mode active. Token:",
         (self as any).FIREBASE_APPCHECK_DEBUG_TOKEN,
@@ -163,11 +169,9 @@ export class BootstrapManager {
       let appCheckProvider; // No citation needed, this is internal code.
       if (config.recaptchaKey) {
         try {
-          appCheckProvider = new ReCaptchaEnterpriseProvider(
-            config.recaptchaKey,
-          );
+          appCheckProvider = new ReCaptchaV3Provider(config.recaptchaKey);
           console.info(
-            "[App Check] ReCAPTCHA Enterprise provider initialized with key:",
+            "[App Check] ReCAPTCHA v3 provider initialized with key:",
             config.recaptchaKey,
           );
         } catch (e) {
