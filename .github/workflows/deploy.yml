@@ -2,12 +2,9 @@ name: CI/CD Deployment
 
 on:
   push:
-    branches:
-      - main
+    branches: [main]
   pull_request:
-    branches:
-      - main
-
+    branches: [main]
   workflow_dispatch:
 
 permissions:
@@ -22,23 +19,12 @@ env:
   NODE_VERSION: 22
 
 jobs:
-  deploy:
-    name: Validate, Build & Deploy
+  # JOB 1: Validation of Secrets
+  validate-secrets:
+    name: Check Required Secrets
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout Repository
-        uses: actions/checkout@v4
-
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: ${{ env.NODE_VERSION }}
-          cache: npm
-
-      - name: Install Dependencies
-        run: npm install
-
-      - name: Check Required Secrets
+      - name: Verify Environment Secrets
         env:
           CF_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CF_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
@@ -56,23 +42,53 @@ jobs:
           test -n "$SNAP_KEY" || (echo "❌ Missing SNAPSHOT_KEY" && exit 1)
           echo "✅ All required secrets exist"
 
-      - name: Run Verification (Lint & Typecheck)
-        run: npm run verify
-
-      - name: Run npm audit
-        run: npm audit --audit-level=high
-
-      - name: Build Project
-        env:
-          VITE_WORKER_BASE: ${{ secrets.VITE_WORKER_BASE }}
-          VITE_FIREBASE_URL: ${{ secrets.VITE_FIREBASE_URL }}
-        run: npm run build
+  # JOB 2: Backend Deployment (Cloudflare Workers)
+  backend-deploy:
+    name: Build & Deploy Backend
+    needs: [validate-secrets]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+      
+      - name: Install Dependencies
+        run: npm install
 
       - name: Deploy to Cloudflare Workers
         uses: cloudflare/wrangler-action@v3
         with:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+
+  # JOB 3: Frontend Deployment (Firebase Hosting)
+  frontend-deploy:
+    name: Build & Deploy Frontend
+    needs: [validate-secrets]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+
+      - name: Install Dependencies
+        run: npm install
+
+      - name: Run Verification (Lint & Typecheck)
+        run: npm run verify
+
+      - name: Run npm audit
+        run: npm audit --audit-level=high
+
+      - name: Build Frontend Project
+        env:
+          VITE_WORKER_BASE: ${{ secrets.VITE_WORKER_BASE }}
+          VITE_FIREBASE_URL: ${{ secrets.VITE_FIREBASE_URL }}
+        run: npm run build
 
       - name: Deploy to Firebase Hosting
         uses: FirebaseExtended/action-hosting-deploy@v0
@@ -83,9 +99,10 @@ jobs:
           projectId: ${{ secrets.FIREBASE_PROJECT_ID }}
           firebaseToolsVersion: local
 
-  dependabot-merge:
+  # JOB 4: Dependabot Auto-Merge
+  dependabot:
     name: Dependabot Auto-Merge
-    needs: [deploy]
+    needs: [backend-deploy, frontend-deploy]
     if: github.event.pull_request.user.login == 'dependabot[bot]'
     runs-on: ubuntu-latest
     steps:
