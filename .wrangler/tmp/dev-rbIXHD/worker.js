@@ -28686,6 +28686,60 @@ init_virtual_unenv_global_polyfill_cloudflare_unenv_preset_node_process();
 init_virtual_unenv_global_polyfill_cloudflare_unenv_preset_node_console();
 init_performance2();
 
+// node_modules/wrangler/templates/middleware/middleware-ensure-req-body-drained.ts
+init_modules_watch_stub();
+init_virtual_unenv_global_polyfill_cloudflare_unenv_preset_node_process();
+init_virtual_unenv_global_polyfill_cloudflare_unenv_preset_node_console();
+init_performance2();
+var drainBody = /* @__PURE__ */ __name(
+  async (request, env2, _ctx, middlewareCtx) => {
+    try {
+      return await middlewareCtx.next(request, env2);
+    } finally {
+      try {
+        if (request.body !== null && !request.bodyUsed) {
+          const reader = request.body.getReader();
+          while (!(await reader.read()).done) {}
+        }
+      } catch (e2) {
+        console.error("Failed to drain the unused request body.", e2);
+      }
+    }
+  },
+  "drainBody",
+);
+var middleware_ensure_req_body_drained_default = drainBody;
+
+// node_modules/wrangler/templates/middleware/middleware-miniflare3-json-error.ts
+init_modules_watch_stub();
+init_virtual_unenv_global_polyfill_cloudflare_unenv_preset_node_process();
+init_virtual_unenv_global_polyfill_cloudflare_unenv_preset_node_console();
+init_performance2();
+function reduceError(e2) {
+  return {
+    name: e2?.name,
+    message: e2?.message ?? String(e2),
+    stack: e2?.stack,
+    cause: e2?.cause === void 0 ? void 0 : reduceError(e2.cause),
+  };
+}
+__name(reduceError, "reduceError");
+var jsonError = /* @__PURE__ */ __name(
+  async (request, env2, _ctx, middlewareCtx) => {
+    try {
+      return await middlewareCtx.next(request, env2);
+    } catch (e2) {
+      const error3 = reduceError(e2);
+      return Response.json(error3, {
+        status: 500,
+        headers: { "MF-Experimental-Error-Stack": "true" },
+      });
+    }
+  },
+  "jsonError",
+);
+var middleware_miniflare3_json_error_default = jsonError;
+
 // src/worker.ts
 init_modules_watch_stub();
 init_virtual_unenv_global_polyfill_cloudflare_unenv_preset_node_process();
@@ -68035,60 +68089,6 @@ var handler = {
   },
 };
 var worker_default = handler;
-
-// node_modules/wrangler/templates/middleware/middleware-ensure-req-body-drained.ts
-init_modules_watch_stub();
-init_virtual_unenv_global_polyfill_cloudflare_unenv_preset_node_process();
-init_virtual_unenv_global_polyfill_cloudflare_unenv_preset_node_console();
-init_performance2();
-var drainBody = /* @__PURE__ */ __name(
-  async (request, env2, _ctx, middlewareCtx) => {
-    try {
-      return await middlewareCtx.next(request, env2);
-    } finally {
-      try {
-        if (request.body !== null && !request.bodyUsed) {
-          const reader = request.body.getReader();
-          while (!(await reader.read()).done) {}
-        }
-      } catch (e2) {
-        console.error("Failed to drain the unused request body.", e2);
-      }
-    }
-  },
-  "drainBody",
-);
-var middleware_ensure_req_body_drained_default = drainBody;
-
-// node_modules/wrangler/templates/middleware/middleware-miniflare3-json-error.ts
-init_modules_watch_stub();
-init_virtual_unenv_global_polyfill_cloudflare_unenv_preset_node_process();
-init_virtual_unenv_global_polyfill_cloudflare_unenv_preset_node_console();
-init_performance2();
-function reduceError(e2) {
-  return {
-    name: e2?.name,
-    message: e2?.message ?? String(e2),
-    stack: e2?.stack,
-    cause: e2?.cause === void 0 ? void 0 : reduceError(e2.cause),
-  };
-}
-__name(reduceError, "reduceError");
-var jsonError = /* @__PURE__ */ __name(
-  async (request, env2, _ctx, middlewareCtx) => {
-    try {
-      return await middlewareCtx.next(request, env2);
-    } catch (e2) {
-      const error3 = reduceError(e2);
-      return Response.json(error3, {
-        status: 500,
-        headers: { "MF-Experimental-Error-Stack": "true" },
-      });
-    }
-  },
-  "jsonError",
-);
-var middleware_miniflare3_json_error_default = jsonError;
 
 // .wrangler/tmp/bundle-xzzH3w/middleware-insertion-facade.js
 var __INTERNAL_WRANGLER_MIDDLEWARE__ = [

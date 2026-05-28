@@ -1,9 +1,9 @@
 {
-  "version": "1.0.475",
+  "version": "1.0.476",
   "lastUpdate": {
     "value": "2026-05-28"
   },
-  "lastCommitHash": "f81dc2f",
+  "lastCommitHash": "a8fe77a",
   "_comment": "Sheet Display Configuration for DoR MIS Dashboard. Add new sheets here — the app will auto-discover columns from the sheet itself, this file only controls HOW they are displayed.",
   "sheets": [
     {
