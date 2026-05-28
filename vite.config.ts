@@ -12,14 +12,10 @@ export default defineConfig(({ mode }) => {
   // Load env file based on `mode` in the current working directory (root).
   const env = loadEnv(mode, process.cwd(), "");
 
-  // Priority: 1. VITE_API_BASE_URL in development, 2. VITE_WORKER_BASE in production, 3. fallback localhost
-  let apiBaseUrl: string;
-  if (mode === "production") {
-    apiBaseUrl = env.VITE_WORKER_BASE || "";
-  } else {
-    apiBaseUrl = env.VITE_API_BASE_URL || "http://localhost:8787";
-  }
-  if (!apiBaseUrl) console.warn("[Vite] No API base URL set; proxy may fail.");
+  // Single variable: VITE_WORKER_BASE — used in both dev and production
+  const apiBaseUrl = env.VITE_WORKER_BASE || "http://localhost:8787";
+  if (!apiBaseUrl)
+    console.warn("[Vite] VITE_WORKER_BASE is not set; proxy may fail.");
 
   // --- Branding Automation ---
   if (mode === "production") {
