@@ -26,9 +26,9 @@
     "upgrade:firebase": "npm i firebase-tools@latest firebase@latest"
   },
   "devDependencies": {
-    "@cloudflare/workers-types": "^4.20260521.1",
+    "@cloudflare/workers-types": "^4.20260528.1",
     "@eslint/js": "^9.39.1",
-    "@google/generative-ai": "^0.22.0",
+    "@google/generative-ai": "^0.24.1",
     "@trivago/prettier-plugin-sort-imports": "^5.2.2",
     "@types/node": "^22.10.1",
     "@vitejs/plugin-legacy": "^7.2.1",
