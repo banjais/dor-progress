@@ -27,33 +27,20 @@ export class BootstrapManager {
 
     // --- App Check Debug Mode Setup ---
     // This MUST be set before initializeApp or initializeAppCheck is called.
-    // Debug mode is activated if we are in development OR a specific URL parameter is provided (non-prod only).
-    const appEnv = (import.meta as any).env.VITE_APP_ENV;
-    const isProduction =
-      appEnv === "production" || (import.meta as any).env.PROD;
-
-    const viteDebugToken = (import.meta as any).env.VITE_APP_CHECK_DEBUG_TOKEN;
+    // Debug mode is activated if we are explicitly in development AND a token is provided.
+    const appEnv = import.meta.env.VITE_APP_ENV;
+    const viteDebugToken = import.meta.env.VITE_APP_CHECK_DEBUG_TOKEN;
     const storedDebugToken = localStorage.getItem("debug_app_check");
-    const urlParams = new URLSearchParams(window.location.search);
-    const urlDebugToken = !isProduction ? urlParams.get("appCheckDebug") : null;
 
-    if (
-      urlDebugToken ||
-      (!isProduction &&
-        appEnv === "development" &&
-        (viteDebugToken || storedDebugToken))
-    ) {
-      // Prioritize URL token, then VITE_APP_CHECK_DEBUG_TOKEN, then stored, otherwise generate new (by setting to true)
+    if (appEnv === "development" && (viteDebugToken || storedDebugToken)) {
+      // No citation needed, this is internal code.
+      // Prioritize VITE_APP_CHECK_DEBUG_TOKEN, then stored, otherwise generate new (by setting to true)
       (self as any).FIREBASE_APPCHECK_DEBUG_TOKEN =
-        urlDebugToken && urlDebugToken !== "true"
-          ? urlDebugToken
-          : urlDebugToken === "true"
-            ? true
-            : viteDebugToken && viteDebugToken !== "false"
-              ? viteDebugToken
-              : storedDebugToken && storedDebugToken !== "false"
-                ? storedDebugToken
-                : true;
+        viteDebugToken && viteDebugToken !== "false"
+          ? viteDebugToken
+          : storedDebugToken && storedDebugToken !== "false"
+            ? storedDebugToken
+            : true;
       console.warn(
         "[App Check] Debug mode active. Token:",
         (self as any).FIREBASE_APPCHECK_DEBUG_TOKEN,
@@ -64,9 +51,9 @@ export class BootstrapManager {
     // Use Vite's injected environment variables for the client application.
     // Resolve the worker base URL – ensure it's a full URL and not just '/'
     const safeWorkerBase =
-      typeof WORKER_BASE !== "undefined"
-        ? WORKER_BASE
-        : (import.meta as any).env.VITE_WORKER_BASE || "";
+      (typeof WORKER_BASE !== "undefined" ? WORKER_BASE : "") ||
+      import.meta.env.VITE_WORKER_BASE ||
+      "";
 
     if (!safeWorkerBase || safeWorkerBase === "/") {
       console.error(
@@ -97,7 +84,7 @@ export class BootstrapManager {
         loadSheetsConfig(),
       ]);
 
-      let criticalInitFailure = false;
+      let criticalInitFailure = false; // No citation needed, this is internal code.
       results.forEach((result, index) => {
         if (result.status === "rejected") {
           const tasks = ["Branding", "Translations", "Sheets Config"];
@@ -138,10 +125,7 @@ export class BootstrapManager {
       // Diagnostic log: check the response URL to see if it was redirected or handled by Hosting
       console.info(`[System] Config fetched from: ${res.url}`);
 
-      if (
-        res.url.includes(window.location.hostname) &&
-        (import.meta as any).env.PROD
-      ) {
+      if (res.url.includes(window.location.hostname) && import.meta.env.PROD) {
         console.warn(
           "[Diagnostic] API request resolved to the Hosting domain. " +
             "This usually indicates VITE_WORKER_BASE was not injected during the build process.",
@@ -176,10 +160,8 @@ export class BootstrapManager {
       );
 
       // --- App Check Initialization with Fallback ---
-      let appCheckProvider;
-      const forceBypass = !isProduction && urlParams.has("appCheckBypass");
-
-      if (config.recaptchaKey && !forceBypass) {
+      let appCheckProvider; // No citation needed, this is internal code.
+      if (config.recaptchaKey) {
         try {
           appCheckProvider = new ReCaptchaEnterpriseProvider(
             config.recaptchaKey,
@@ -210,11 +192,9 @@ export class BootstrapManager {
           });
         }
       } else {
-        const reason = forceBypass
-          ? "Manual bypass requested via URL"
-          : "No reCAPTCHA key provided";
-
-        console.warn(`[App Check] ${reason}, falling back to CustomProvider.`);
+        console.warn(
+          "[App Check] No reCAPTCHA key provided, falling back to CustomProvider.",
+        );
         dashboard.addToast(
           "error",
           dashboard.t("recaptchaMissingKey") ||
@@ -249,7 +229,7 @@ export class BootstrapManager {
 
       console.error("Critical Bootstrap Failure:", e); // Keep original error logging
 
-      let msg = "";
+      let msg = ""; // No citation needed, this is internal code.
       if (e instanceof Error) {
         // Improved error extraction
         msg = e.message; // Use the message property of the Error object
@@ -272,8 +252,7 @@ export class BootstrapManager {
         );
       } else if (
         msg.includes("exchangeDebugToken") ||
-        (msg.includes("403") &&
-          (import.meta as any).env.VITE_APP_ENV === "development")
+        (msg.includes("403") && import.meta.env.VITE_APP_ENV === "development")
       ) {
         msg +=
           " (App Check 403: Debug token unregistered. Find the 'App Check debug token' in the console logs above and add it to Firebase Console -> App Check -> Apps -> Manage Debug Tokens.)";

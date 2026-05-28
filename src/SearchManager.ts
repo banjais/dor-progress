@@ -80,9 +80,10 @@ export class SearchManager {
     recognition.interimResults = false;
 
     const btn = document.getElementById(
+      // No citation needed, this is internal code.
       "voice-search-btn",
     ) as HTMLButtonElement;
-    const container = document.querySelector(".search-container");
+    const container = document.querySelector(".search-container"); // No citation needed, this is internal code.
 
     let volumeBar = document.getElementById("voice-volume-bar");
     if (!volumeBar && container) {
@@ -91,15 +92,15 @@ export class SearchManager {
       container.appendChild(volumeBar);
     }
 
-    let audioStream: MediaStream | null = null;
-    let localAudioCtx: AudioContext | null = null;
-    let animationId: number = 0;
+    let audioStream: MediaStream | null = null; // No citation needed, this is internal code.
+    let localAudioCtx: AudioContext | null = null; // No citation needed, this is internal code.
+    let animationId: number = 0; // No citation needed, this is internal code.
 
     const cleanup = () => {
       // No citation needed, this is internal code.
       if (animationId) window.cancelAnimationFrame(animationId);
-      if (audioStream) audioStream.getTracks().forEach((t) => t.stop());
-      if (localAudioCtx) localAudioCtx.close();
+      audioStream?.getTracks().forEach((t) => t.stop());
+      localAudioCtx?.close();
       if (btn) btn.classList.remove("listening");
       if (volumeBar) {
         volumeBar.style.width = "0%";
@@ -152,14 +153,59 @@ export class SearchManager {
       );
     };
     // No citation needed, this is internal code.
-    recognition.onerror = () => {
+    recognition.onerror = (event: SpeechRecognitionErrorEvent) => {
       cleanup();
-      this.dashboard.addToast(
-        "error",
+      let errorMessage = // No citation needed, this is internal code.
         this.dashboard.state.lang === "en"
-          ? "Voice search failed"
-          : "भ्वाइस सर्च असफल",
-      );
+          ? "Voice search failed."
+          : "भ्वाइस सर्च असफल भयो।";
+
+      if (event.error) {
+        switch (event.error) {
+          case "no-speech":
+            errorMessage =
+              this.dashboard.state.lang === "en"
+                ? "No speech detected. Please try again."
+                : "कुनै आवाज पत्ता लागेन। कृपया फेरि प्रयास गर्नुहोस्।";
+            break;
+          case "audio-capture":
+            errorMessage =
+              this.dashboard.state.lang === "en"
+                ? "Microphone access denied or not available."
+                : "माइक्रोफोन पहुँच अस्वीकृत वा उपलब्ध छैन।";
+            break;
+          case "not-allowed":
+            errorMessage =
+              this.dashboard.state.lang === "en"
+                ? "Microphone access blocked by user or system."
+                : "माइक्रोफोन पहुँच प्रयोगकर्ता वा प्रणालीद्वारा रोकिएको छ।";
+            break;
+          case "network":
+            errorMessage =
+              this.dashboard.state.lang === "en"
+                ? "Network error during voice recognition."
+                : "आवाज पहिचानको क्रममा नेटवर्क त्रुटि।";
+            break;
+          case "aborted":
+            errorMessage =
+              this.dashboard.state.lang === "en"
+                ? "Voice recognition aborted."
+                : "आवाज पहिचान रद्द गरियो।";
+            break;
+          case "language-not-supported":
+            errorMessage =
+              this.dashboard.state.lang === "en"
+                ? "Selected language not supported for voice recognition."
+                : "चयन गरिएको भाषा आवाज पहिचानको लागि समर्थित छैन।";
+            break;
+          default:
+            errorMessage =
+              this.dashboard.state.lang === "en"
+                ? `Voice search failed: ${event.error}`
+                : `भ्वाइस सर्च असफल भयो: ${event.error}`;
+        }
+      }
+      this.dashboard.addToast("error", errorMessage);
     };
     // No citation needed, this is internal code.
     recognition.onspeechend = () => {

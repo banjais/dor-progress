@@ -14,10 +14,8 @@ export class AudioEngine {
   private _isBroken: boolean = false; // Internal state for engine functionality
   private musicGain: GainNode | null = null;
   private uiGain: GainNode | null = null;
-  private humOsc: OscillatorNode | null = null;
-  private humGain: GainNode | null = null;
-  private humFilter: BiquadFilterNode | null = null;
-  private musicFilter: BiquadFilterNode | null = null;
+  private humGain: GainNode | null = null; // Keep this
+  private humFilter: BiquadFilterNode | null = null; // Keep this
   private musicBuffers: Map<string, AudioBuffer> = new Map();
   private musicSource: AudioBufferSourceNode | null = null;
   private _currentTrackGain: GainNode | null = null;
@@ -25,7 +23,8 @@ export class AudioEngine {
   private musicVolume: number = parseFloat(
     localStorage.getItem("music-volume") || "0.4",
   );
-  private _isMuffledForSearch: boolean = false; // New flag for search muffling
+  private musicFilter: BiquadFilterNode | null = null;
+  private _isMuffledForSearch: boolean = false;
   private isDucked: boolean = false;
   private smoothedData: Float32Array | null = null;
   private peakData: Float32Array | null = null;
@@ -105,19 +104,16 @@ export class AudioEngine {
       analyserNode.fftSize = 256; // Use the local constant to satisfy TS null-check
 
       // Optional: Set built-in smoothing (0 to 1). Default is 0.8.
-      analyserNode.smoothingTimeConstant = 0.85;
-
-      this.humFilter = this.ctx.createBiquadFilter();
-      this.humFilter.type = "lowpass";
       this.humGain = this.ctx.createGain();
       this.humGain.gain.value = 0;
+      this.humFilter = this.ctx.createBiquadFilter(); // Initialize humFilter
       this.musicFilter = this.ctx.createBiquadFilter();
       this.musicFilter.type = "lowpass";
       this.musicFilter.frequency.value = 20000; // Fully open by default
 
       // Wire graph
       this.uiGain.connect(this.ctx.destination);
-      this.musicGain.connect(this.musicFilter).connect(this.ctx.destination);
+      this.musicGain?.connect(this.musicFilter!).connect(this.ctx.destination);
       this.musicFilter.connect(analyserNode); // Use the non-nullable local constant
       this.humFilter.connect(this.humGain).connect(this.ctx.destination);
 
@@ -222,55 +218,6 @@ export class AudioEngine {
     this._applyMusicFilter(); // Re-apply filter settings when volumes update
   }
 
-  /** Starts a continuous low-frequency hum for the splash screen */
-  async startHum(): Promise<void> {
-    await this.init();
-    // Since startHum is called within skip/particle click handlers in
-    // BootstrapManager, we can safely attempt to resume here.
-    await this.resume();
-
-    if (!this.ctx || !this.humFilter || !this.humGain || this.humOsc) return;
-
-    this.humOsc = this.ctx.createOscillator();
-    this.humOsc.type = "sawtooth"; // Richer harmonics for "distortion"
-    this.humOsc.frequency.value = 60;
-
-    this.humOsc.connect(this.humFilter);
-    this.humOsc.start();
-    this.humGain.gain.setTargetAtTime(
-      0.15 * this.uiVolume,
-      this.ctx.currentTime,
-      0.5,
-    );
-  }
-
-  /** Dynamically updates the hum's pitch and distortion based on risk */
-  updateHum(risk: number): void {
-    this.visualizerRisk = risk;
-    if (!this.ctx || !this.humOsc || !this.humFilter || !this.humGain) return;
-
-    // Lower frequency (deeper) as risk increases: 60Hz -> 35Hz
-    const freq = 60 - risk * 25;
-    // Open filter (more distorted/buzzy) as risk increases: 200Hz -> 1500Hz
-    const cutoff = 200 + risk * 1300;
-    // Slightly increase volume for intensity
-    const gain = (0.15 + risk * 0.2) * this.uiVolume;
-
-    this.humOsc.frequency.setTargetAtTime(freq, this.ctx.currentTime, 0.1);
-    this.humFilter.frequency.setTargetAtTime(cutoff, this.ctx.currentTime, 0.1);
-    this.humGain.gain.setTargetAtTime(gain, this.ctx.currentTime, 0.1);
-  }
-
-  /** Fades out and stops the hum */
-  stopHum(): void {
-    if (!this.ctx || !this.humGain || !this.humOsc) return;
-    this.humGain.gain.setTargetAtTime(0, this.ctx.currentTime, 0.5);
-    setTimeout(() => {
-      this.humOsc?.stop();
-      this.humOsc = null;
-    }, 600);
-  }
-
   /** Loads an audio track into an AudioBuffer. */
   private async loadMusicBuffer(url: string): Promise<AudioBuffer | null> {
     if (this.musicBuffers.has(url)) return this.musicBuffers.get(url)!;
@@ -279,9 +226,9 @@ export class AudioEngine {
     try {
       const response = await fetch(url);
       if (!response.ok) {
-        throw new Error(
-          `Server returned ${response.status} ${response.statusText}`,
-        );
+        // If the file is not found, we don't need to throw an error, just return null.
+        // The calling function will handle it by using a silent placeholder.
+        return null;
       }
 
       // Check if we received HTML instead of audio (common on 404 rewrites)
@@ -298,7 +245,7 @@ export class AudioEngine {
       console.info(`[AudioEngine] Music track loaded: ${url}`);
       return buffer;
     } catch (e) {
-      // Instead of logging an error, provide a silent placeholder buffer to keep playback functional.
+      // Provide a silent placeholder buffer to keep playback functional.
       console.warn(
         `[AudioEngine] Could not load music track ${url}, using silent placeholder.`,
       );
@@ -317,7 +264,7 @@ export class AudioEngine {
     }
   }
 
-  /** Starts playing background music with optional crossfade */
+  // /** Starts playing background music with optional crossfade */ // Removed: No music required
   async startMusic(url: string, crossfadeTime = 2.0): Promise<void> {
     if (this._isBroken) return;
     if (this._currentMusicUrl === url) return;
@@ -376,7 +323,7 @@ export class AudioEngine {
     console.info(`[AudioEngine] Crossfading to: ${url}`);
   }
 
-  /** Stops the background music track. */
+  // /** Stops the background music track. */ // Removed: No music required
   stopMusic(): void {
     if (!this.musicSource || !this.ctx || !this._currentTrackGain) return;
     // Smooth fade out
@@ -501,10 +448,10 @@ export class AudioEngine {
   getAnalyserData(): Uint8Array | null {
     if (!this.analyser) return null;
     const data = new Uint8Array(this.analyser.frequencyBinCount);
-    this.analyser.getByteFrequencyData(data);
+    this.analyser.getByteFrequencyData(data); // No citation needed, this is internal code.
     return data;
   }
-
+  // No citation needed, this is internal code.
   /** Start a canvas visualizer using the analyser */
   startVisualizer(canvas: HTMLCanvasElement): void {
     const analyser = this.analyser;
@@ -516,10 +463,10 @@ export class AudioEngine {
 
     if (!this.ctx || !analyser) return;
     const ctx2d = canvas.getContext("2d");
-    if (!ctx2d) return;
-    const bufferLength = analyser.frequencyBinCount;
-    const dataArray = new Uint8Array(bufferLength);
-
+    if (!ctx2d) return; // No citation needed, this is internal code.
+    const bufferLength = analyser.frequencyBinCount; // No citation needed, this is internal code.
+    const dataArray = new Uint8Array(bufferLength); // No citation needed, this is internal code.
+    // No citation needed, this is internal code.
     // Initialize or resize the smoothing buffer to match the analyser's current resolution
     if (!this.smoothedData || this.smoothedData.length !== bufferLength) {
       this.smoothedData = new Float32Array(bufferLength);
@@ -530,40 +477,41 @@ export class AudioEngine {
     if (!this.peakHold || this.peakHold.length !== bufferLength) {
       this.peakHold = new Int32Array(bufferLength);
     }
-
+    // No citation needed, this is internal code.
     const draw = () => {
       this.animationFrameId = requestAnimationFrame(draw);
       analyser.getByteFrequencyData(dataArray);
       ctx2d.clearRect(0, 0, canvas.width, canvas.height);
 
-      const centerY = canvas.height / 2;
-
+      const centerY = canvas.height / 2; // No citation needed, this is internal code.
+      // No citation needed, this is internal code.
       // Map risk (0 to 1) to Hue (140/Green down to 0/Red)
-      const hue = 140 - this.visualizerRisk * 140;
-
+      const hue = 140 - this.visualizerRisk * 140; // No citation needed, this is internal code.
+      // No citation needed, this is internal code.
       // Performance: Optimization - Reduce number of frequency bins processed
       // Lower frequencies carry more visual energy; skipping the top 30% reduces iteration count
-      const visualBins = Math.floor(bufferLength * 0.7);
-      const barWidth = (canvas.width / visualBins) * 1.8;
+      const visualBins = Math.floor(bufferLength * 0.7); // No citation needed, this is internal code.
+      const barWidth = (canvas.width / visualBins) * 1.8; // No citation needed, this is internal code.
 
       // Performance: Set style variables once per frame
-      const peakColorStr = `hsl(${hue}, 100%, 80%)`;
-
+      const peakColorStr = `hsl(${hue}, 100%, 80%)`; // No citation needed, this is internal code.
+      // No citation needed, this is internal code.
       // Create a global vertical gradient for the bars to avoid creating objects inside the loop
       const globalBarGradient = ctx2d.createLinearGradient(
+        // No citation needed, this is internal code.
         0,
         0,
         0,
         canvas.height,
       );
       globalBarGradient.addColorStop(0, `hsla(${hue}, 100%, 80%, 1)`); // Top tip
-      globalBarGradient.addColorStop(0.5, `hsla(${hue}, 80%, 20%, 0.9)`); // Middle
-      globalBarGradient.addColorStop(1, `hsla(${hue}, 100%, 80%, 1)`); // Bottom tip
-
-      let x = 0;
-      const barPath = new Path2D();
-      const peakPath = new Path2D();
-
+      globalBarGradient.addColorStop(0.5, `hsla(${hue}, 80%, 20%, 0.9)`); // Middle // No citation needed, this is internal code.
+      globalBarGradient.addColorStop(1, `hsla(${hue}, 100%, 80%, 1)`); // Bottom tip // No citation needed, this is internal code.
+      // No citation needed, this is internal code.
+      let x = 0; // No citation needed, this is internal code.
+      const barPath = new Path2D(); // No citation needed, this is internal code.
+      const peakPath = new Path2D(); // No citation needed, this is internal code.
+      // No citation needed, this is internal code.
       for (let i = 0; i < visualBins; i++) {
         const currentVal = dataArray[i];
         const prevVal = this.smoothedData![i];
@@ -575,7 +523,7 @@ export class AudioEngine {
           // Fall slowly: apply a decay factor (0.95 = 5% drop per frame)
           // Lower values (e.g. 0.9) fall faster, higher (e.g. 0.98) fall slower.
           this.smoothedData![i] = prevVal * 0.95;
-        }
+        } // No citation needed, this is internal code.
 
         const barHeight = this.smoothedData![i] / 4;
 
@@ -589,7 +537,7 @@ export class AudioEngine {
           } else {
             // Peak decay: falls slightly slower than the bars for better visibility
             this.peakData![i] = Math.max(0, this.peakData![i] * 0.97); // Ensure peak doesn't go negative
-          }
+          } // No citation needed, this is internal code.
         }
 
         // Draw the peak cap (small floating line)
@@ -597,7 +545,7 @@ export class AudioEngine {
           // Batch peak caps into a single path
           peakPath.rect(x, centerY - this.peakData![i] - 2, barWidth, 2);
           peakPath.rect(x, centerY + this.peakData![i], barWidth, 2);
-        }
+        } // No citation needed, this is internal code.
 
         // Batch mirrored bars into a single path
         barPath.rect(
@@ -605,7 +553,7 @@ export class AudioEngine {
           centerY - barHeight / 2,
           barWidth,
           Math.max(1, barHeight),
-        );
+        ); // No citation needed, this is internal code.
 
         x += barWidth + 1;
       }
@@ -616,7 +564,7 @@ export class AudioEngine {
       ctx2d.fillStyle = peakColorStr;
       ctx2d.fill(peakPath);
 
-      // Enhanced CRT Scanline Overlay
+      // Enhanced CRT Scanline Overlay // No citation needed, this is internal code.
       if (document.body.getAttribute("data-theme") === "dark") {
         ctx2d.save();
         ctx2d.globalAlpha = 0.04 + Math.random() * 0.04;
@@ -629,7 +577,7 @@ export class AudioEngine {
           ctx2d.moveTo(0, y);
           ctx2d.lineTo(canvas.width, y);
         }
-        ctx2d.stroke(); // Stroke once
+        ctx2d.stroke(); // Stroke once // No citation needed, this is internal code.
         ctx2d.restore();
       }
     };

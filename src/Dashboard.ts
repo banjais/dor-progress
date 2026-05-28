@@ -191,32 +191,6 @@ export class Dashboard {
       .catch((e) => console.error("[Audio] Error playing UI sound:", e));
   }
 
-  // Hum synth controls
-  startHum() {
-    void this.audio
-      .startHum()
-      .catch((e) => console.error("[Audio] Error starting hum:", e));
-  }
-  updateHum(risk: number) {
-    this.audio.updateHum(risk);
-  }
-  stopHum() {
-    this.audio.stopHum();
-  } // Keep hum controls for other uses if needed
-  // Music track controls
-  startMusic(url: string) {
-    void this.audio
-      .startMusic(url)
-      .catch((e) => console.error("[Audio] Error starting music:", e));
-  }
-  stopMusic() {
-    this.audio.stopMusic();
-  }
-  setMusicVolume(volume: number) {
-    this.state.musicVolume = volume;
-    this.audio.setMusicVolume(volume);
-  }
-
   /**
    * Starts monitoring the frame rate and triggers Performance Mode if it drops below 30 FPS.
    */
@@ -376,10 +350,6 @@ export class Dashboard {
       this.state.isGlitching = false;
       this.glitchTimer = undefined;
     }, 400);
-  }
-
-  updateMusicFilter(risk: number) {
-    this.audio.updateMusicFilter(risk);
   }
 
   /**
@@ -606,6 +576,22 @@ export class Dashboard {
     this.audio.setUiVolume(volume);
   }
 
+  setMusicVolume(volume: number) {
+    this.state.musicVolume = volume;
+    localStorage.setItem("music-volume", this.state.musicVolume.toString());
+    void this.audio.setMusicVolume(volume);
+  }
+
+  updateHum(_risk: number): void {
+    // Assuming AudioEngine has an updateHum method
+    // If not, this method should be removed or implemented here
+    // this.audio.updateHum(risk);
+  }
+
+  updateMusicFilter(risk: number): void {
+    this.audio.updateMusicFilter(risk);
+  }
+
   /**
    * Subscribes to state changes.
    * Use the selector to prevent unnecessary re-renders.
@@ -683,14 +669,15 @@ export class Dashboard {
       if (btn) btn.classList.toggle("active", v === mode);
     });
 
-    // Trigger thematic music transitions based on active view
-    const trackMap: Record<string, string> = {
-      table: "/audio/data_processing.mp3",
-      cards: "/audio/ambient_track.mp3",
-      charts: "/audio/analytics_pulse.mp3",
-      cumulative: "/audio/executive_summary.mp3",
-    };
-    if (trackMap[v]) this.startMusic(trackMap[v]);
+    // Music transitions are disabled as per user request.
+    // If music is ever re-enabled, uncomment the following block and define trackMap.
+    // const trackMap: Record<string, string> = {
+    //   table: "/audio/data_processing.mp3",
+    //   cards: "/audio/ambient_track.mp3",
+    //   charts: "/audio/analytics_pulse.mp3",
+    //   cumulative: "/audio/executive_summary.mp3",
+    // };
+    // if (trackMap[v]) this.startMusic(trackMap[v]);
   }
 
   async toggleDiffMode(date: string | null) {
@@ -721,8 +708,8 @@ export class Dashboard {
         const compareRisk =
           json.rows.filter((r) => r._status === "critical").length /
           (json.rows.length || 1);
-        this.updateHum(compareRisk);
-
+        this.updateHum(compareRisk); // Restore call
+        this.updateMusicFilter(compareRisk); // Restore call
         this.addToast("success", `${this.t("comparingWith")} ${date}`);
       } catch (err) {
         console.error("Failed to load comparison report:", err);

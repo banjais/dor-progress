@@ -64,7 +64,7 @@ export class SplashScreen {
   static hide(immediate = false) {
     const splash = document.getElementById("splash-screen");
     if (splash) {
-      Dashboard.getInstance().stopMusic();
+      // Dashboard.getInstance().stopMusic(); // Disabled: No music required
       // Reset any high-intensity static variables triggered during boot failure
       document.body.style.setProperty("--static-opacity", "0.03");
       document.body.style.setProperty("--noise-contrast", "120%");

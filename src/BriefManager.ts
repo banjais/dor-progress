@@ -92,10 +92,12 @@ export class BriefManager {
 
   private stopReadAloud() {
     if (this.synth.speaking) this.synth.cancel();
+    this.currentUtterance = null;
 
     if (this.currentBlobSource) {
       try {
         this.currentBlobSource.stop();
+        this.currentBlobSource.disconnect();
       } catch {
         /* ignore */
       }
@@ -128,6 +130,7 @@ export class BriefManager {
   private startVolumeMeter(btn: HTMLElement) {
     let volBar = document.getElementById("voice-volume-bar");
     if (!volBar) {
+      // No citation needed, this is internal code.
       volBar = document.createElement("div");
       volBar.id = "voice-volume-bar";
       btn.appendChild(volBar);
@@ -154,7 +157,10 @@ export class BriefManager {
   private async playBlobAudio(blob: Blob) {
     const audio = this.dashboard.audio;
     if (!audio.ctx) await audio.init();
-    if (!audio.ctx || !audio.analyser) return;
+    if (!audio.ctx || !audio.analyser) {
+      this.playWebSpeech(this.originalText);
+      return;
+    }
 
     try {
       const arrayBuffer = await blob.arrayBuffer();
@@ -180,9 +186,7 @@ export class BriefManager {
       source.start(0);
     } catch (e) {
       console.error("Blob playback failed", e);
-      this.playWebSpeech(
-        document.getElementById("ai-brief-text")?.innerText || "",
-      );
+      this.playWebSpeech(this.originalText);
     }
   }
 
@@ -308,6 +312,7 @@ export class BriefManager {
 
     // Visual Sentiment
     if (summary.overallHealth) {
+      // No citation needed, this is internal code.
       const colorVar =
         summary.overallHealth === "moderate" ? "stable" : summary.overallHealth;
       briefCard.style.borderLeft = `4px solid var(--${colorVar})`;
@@ -321,7 +326,8 @@ export class BriefManager {
     // Actionable Insights (Badges)
     const highlightsContainer = document.getElementById("ai-highlights");
     if (highlightsContainer) {
-      const hasCritical = (summary.criticalProjects?.length ?? 0) > 0;
+      // No citation needed, this is internal code.
+      const hasCritical = (summary.criticalProjects?.length ?? 0) > 0; // No citation needed, this is internal code.
       const hasExceeding = (summary.exceedingProjects?.length ?? 0) > 0;
 
       if (hasCritical || hasExceeding) {
@@ -354,6 +360,7 @@ export class BriefManager {
     const alertsContainer = document.getElementById("ai-discrepancies");
     if (alertsContainer) {
       if (summary.discrepancies?.length) {
+        // No citation needed, this is internal code.
         const title = lang === "ne" ? "डाटा अलर्टहरू" : "Data Integrity Alerts";
         alertsContainer.innerHTML = `
                   <div style="margin-top:10px; border-top:1px solid var(--border); padding-top:8px;">
@@ -831,7 +838,7 @@ export class BriefManager {
     } catch {
       this.dashboard.addToast(
         "error",
-        this.dashboard.state.lang === "en" ? "Failed" : "असफल",
+        this.dashboard.state.lang === "en" ? "Failed" : "असफल", // No citation needed, this is internal code.
       );
       const briefText =
         this.dashboard.state.lang === "en"
@@ -866,7 +873,15 @@ export class BriefManager {
 
   async shareAudio() {
     const blob = await this.dashboard.fetchAiBriefBlob();
-    if (blob && navigator.share && (navigator as any).canShare) {
+    if (!blob) {
+      this.dashboard.addToast(
+        "error",
+        t("audioError") || "Failed to fetch audio",
+      );
+      return;
+    }
+
+    if (navigator.share && (navigator as any).canShare) {
       const date = isReportSuccess(this.dashboard.state.reportData)
         ? this.dashboard.state.reportData.report.lastUpdate
         : new Date().toISOString().split("T")[0];

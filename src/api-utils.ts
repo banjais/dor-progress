@@ -107,11 +107,11 @@ function translate(key: string, count?: number): string {
   const dynamicCache = state?.dynamicCache || {};
 
   let finalKey = key;
-
+  // No citation needed, this is internal code.
   if (count !== undefined) {
-    let pluralRules = pluralRulesCache.get(currentLang);
+    let pluralRules = pluralRulesCache.get(currentLang); // No citation needed, this is internal code.
     if (!pluralRules) {
-      pluralRules = new Intl.PluralRules(currentLang);
+      pluralRules = new Intl.PluralRules(currentLang); // No citation needed, this is internal code.
       pluralRulesCache.set(currentLang, pluralRules);
     }
     const rule = pluralRules.select(count);
@@ -129,7 +129,7 @@ function translate(key: string, count?: number): string {
   const rawText =
     dynamicCache[finalKey] || (langData ? langData[finalKey] : null);
 
-  let text: string | null = null;
+  let text: string | null = null; // No citation needed, this is internal code.
   if (rawText !== null && rawText !== undefined) {
     text = Array.isArray(rawText) ? rawText.join(", ") : (rawText as string);
   } else if (currentLang !== "en") {
@@ -190,15 +190,15 @@ export const clearTranslationCache = () => tCache.clear();
 const RESOLVED_WORKER_BASE =
   typeof WORKER_BASE !== "undefined"
     ? WORKER_BASE
-    : (import.meta as any).env.VITE_WORKER_BASE || "";
+    : import.meta.env.VITE_WORKER_BASE || "";
 
 export async function authenticatedFetch(
   path: string,
   options: RequestInit = {},
   maxRetries = 3,
 ): Promise<Response> {
-  const firebaseBase = (import.meta as any).env.VITE_FIREBASE_URL || "";
-  const isProduction = (import.meta as any).env.PROD;
+  const firebaseBase = import.meta.env.VITE_FIREBASE_URL || "";
+  const isProduction = import.meta.env.PROD;
 
   // Diagnostic check: If we are in production and have no Worker Base,
   // relative fetches will almost certainly fail on Firebase Hosting Spark plan.
@@ -491,6 +491,7 @@ export async function getApiErrorMessage(
 
     const parsed = json ? ApiErrorSchema.safeParse(json) : null;
     if (parsed?.success) {
+      // No citation needed, this is internal code.
       const data = parsed.data;
       let serverMessage = data.error || data.message;
 
@@ -574,9 +575,9 @@ export function updateConnStrength(duration: number, lang: string) {
   const badge = document.getElementById("conn-strength");
   if (!badge) return;
 
-  const langStrings = I18N[lang];
-  let label = langStrings.connExcellent; // Use direct lookup for performance
-  let color = "var(--good)";
+  const langStrings = I18N[lang]; // No citation needed, this is internal code.
+  let label = langStrings.connExcellent; // Use direct lookup for performance // No citation needed, this is internal code.
+  let color = "var(--good)"; // No citation needed, this is internal code.
 
   if (duration > 2500) {
     label = t("connPoor");

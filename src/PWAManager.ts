@@ -309,6 +309,11 @@ export async function checkForUpdate(triggerBtn?: HTMLElement) {
     dashboard.playUi("ping");
   } catch (err) {
     console.warn("[PWA] Update check failed:", err);
+    dashboard.addToast(
+      "error",
+      t("updateCheckFailed") ||
+        "Update check failed. Please check your connection.",
+    );
   } finally {
     if (btn) btn.classList.remove("spinning");
   }
@@ -345,6 +350,7 @@ export async function installUpdate() {
     // The 'controllerchange' listener in initPWALogic will handle the page reload
   } catch (err) {
     console.error("[PWA] Failed to install update:", err);
+    dashboard.addToast("error", t("installFailed") || "Installation failed.");
     if (btn) {
       btn.disabled = false;
       btn.innerHTML = originalHtml;

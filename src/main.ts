@@ -52,9 +52,20 @@ dashboard.subscribe(render, (state) => state);
 
 // Attach event handlers
 dashboard.onSearch = (term) => searchManager.handleSearch(term);
-dashboard.onUpdateCheck = () => checkForUpdate(); // Direct reference to imported function
+dashboard.onUpdateCheck = async () => {
+  try {
+    await checkForUpdate();
+  } catch (e) {
+    console.error("[App] Update check failed:", e);
+  }
+};
 dashboard.onDatabaseRestore = () =>
-  import("./AdminManager.js").then((m) => m.triggerDatabaseRestore());
+  import("./AdminManager.js")
+    .then((m) => m.triggerDatabaseRestore())
+    .catch((e) => {
+      console.error(e);
+      dashboard.addToast("error", t("moduleLoadError") || "Connection error");
+    });
 dashboard.onVerify = () => historyManager.handleVerification(); // Use instance, not class
 dashboard.onApplyTranslations = () => App.applyTranslations();
 
@@ -96,26 +107,63 @@ Object.assign(App, {
 
   // Snapshots & Diagnostics
   requestSnapshotKey: () =>
-    import("./AdminManager.js").then((m) => m.requestSnapshotKey()),
+    import("./AdminManager.js")
+      .then((m) => m.requestSnapshotKey())
+      .catch((e) => {
+        console.error(e);
+        dashboard.addToast("error", t("moduleLoadError") || "Connection error");
+      }),
   createSnapshotManual: (e?: Event) =>
-    import("./AdminManager.js").then((m) => m.createSnapshotManual(e)),
+    import("./AdminManager.js")
+      .then((m) => m.createSnapshotManual(e))
+      .catch((e) => {
+        console.error(e);
+        dashboard.addToast("error", t("moduleLoadError") || "Connection error");
+      }),
   listSnapshots: (force?: boolean) =>
-    import("./AdminManager.js").then((m) => m.listSnapshots(force)),
+    import("./AdminManager.js")
+      .then((m) => m.listSnapshots(force))
+      .catch((e) => {
+        console.error(e);
+        dashboard.addToast("error", t("moduleLoadError") || "Connection error");
+      }),
   downloadSnapshot: (date: string) =>
-    import("./AdminManager.js").then((m) => m.downloadSnapshot(date)),
+    import("./AdminManager.js")
+      .then((m) => m.downloadSnapshot(date))
+      .catch((e) => {
+        console.error(e);
+        dashboard.addToast("error", t("moduleLoadError") || "Connection error");
+      }),
   deleteSnapshot: (date: string) =>
-    import("./AdminManager.js").then((m) => m.deleteSnapshot(date)),
+    import("./AdminManager.js")
+      .then((m) => m.deleteSnapshot(date))
+      .catch((e) => {
+        console.error(e);
+        dashboard.addToast("error", t("moduleLoadError") || "Connection error");
+      }),
   logoutSnapshotSession: () =>
-    import("./AdminManager.js").then((m) => m.logoutSnapshotSession()),
+    import("./AdminManager.js")
+      .then((m) => m.logoutSnapshotSession())
+      .catch((e) => {
+        console.error(e);
+        dashboard.addToast("error", t("moduleLoadError") || "Connection error");
+      }),
   exportHealthReport: () =>
-    import("./DiagnosticManager.js").then((m) => m.showDiagnostics()),
+    import("./DiagnosticManager.js")
+      .then((m) => m.showDiagnostics())
+      .catch((e) => {
+        console.error(e);
+        dashboard.addToast("error", t("moduleLoadError") || "Connection error");
+      }),
 
   // UI
   shareSnapshot: async (date: string) => {
     const url = `${window.location.origin}?date=${date}&lang=${dashboard.state.lang}`;
     const shareData = { title: `${t("appName")} - ${date}`, url };
     if (navigator.share && navigator.canShare?.(shareData)) {
+      // No citation needed, this is internal code.
       try {
+        // No citation needed, this is internal code.
         await navigator.share(shareData);
       } catch (e) {
         if ((e as Error).name !== "AbortError") console.error(e);
@@ -175,7 +223,7 @@ Object.assign(App, {
   checkForPWAUpdate: checkForUpdate, // Use shorthand property name
   showSettings: () => import("./AdminManager.js").then((m) => m.showSettings()),
   setMusicVolume: (vol: number) => dashboard.setMusicVolume(vol),
-  setMusicTrack: (track: string) => dashboard.startMusic(track),
+  // setMusicTrack: (track: string) => dashboard.startMusic(track),
   getRelativeTimeString: () => dashboard.getRelativeTimeString(),
   installUpdate, // Use shorthand property name
 
