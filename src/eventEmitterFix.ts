@@ -8,7 +8,7 @@
 import { EventEmitter } from "events";
 
 // Adjust the global default for all EventEmitter instances.
-EventEmitter.defaultMaxListeners = 20;
+EventEmitter.defaultMaxListeners = 30;
 
 // For environments that use a polyfilled EventEmitter (e.g., events package
 // bundled for the browser), also set the prototype to be safe.
@@ -16,5 +16,5 @@ if (
   (EventEmitter as any).prototype &&
   typeof (EventEmitter as any).prototype.setMaxListeners === "function"
 ) {
-  (EventEmitter as any).prototype.setMaxListeners(20);
+  (EventEmitter as any).prototype.setMaxListeners(30);
 }

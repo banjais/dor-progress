@@ -16,6 +16,7 @@ export class SplashParticles {
   private worker: Worker;
   private idleTimer: number | null = null;
   private readonly IDLE_THRESHOLD = 5000; // 5 seconds
+  private cleaned = false;
 
   constructor(dashboard: Dashboard, splashScreenElement: HTMLElement) {
     this.dashboard = dashboard;
@@ -255,6 +256,8 @@ export class SplashParticles {
   };
 
   private cleanup() {
+    if (this.cleaned) return;
+    this.cleaned = true;
     if (this.animationFrameId) cancelAnimationFrame(this.animationFrameId);
     this.worker.terminate();
     if (this.idleTimer) window.clearTimeout(this.idleTimer);

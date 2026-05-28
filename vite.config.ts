@@ -40,7 +40,7 @@ export default defineConfig(({ mode }) => {
   return {
     // Define global constants for build-time injection
     define: {
-      WORKER_BASE: JSON.stringify(apiBaseUrl),
+      VITE_WORKER_BASE: JSON.stringify(apiBaseUrl),
       APP_ENV: JSON.stringify(mode),
     },
     plugins: [
