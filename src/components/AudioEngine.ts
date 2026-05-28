@@ -298,7 +298,21 @@ export class AudioEngine {
       console.info(`[AudioEngine] Music track loaded: ${url}`);
       return buffer;
     } catch (e) {
-      console.error(`[AudioEngine] Failed to load music track ${url}:`, e);
+      // Instead of logging an error, provide a silent placeholder buffer to keep playback functional.
+      console.warn(
+        `[AudioEngine] Could not load music track ${url}, using silent placeholder.`,
+      );
+      if (this.ctx) {
+        // Create a 1‑second silent buffer (2 channels)
+        const silentBuffer = this.ctx.createBuffer(
+          2,
+          this.ctx.sampleRate,
+          this.ctx.sampleRate,
+        );
+        // Fill with zeros (silence) – buffers are zero‑initialized by default
+        this.musicBuffers.set(url, silentBuffer);
+        return silentBuffer;
+      }
       return null;
     }
   }

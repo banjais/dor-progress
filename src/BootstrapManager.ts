@@ -206,7 +206,9 @@ export class BootstrapManager {
       }
 
       // Indicate that the app is ready to enter
-      SplashScreen.setReady();
+      // After setting ready, hide the splash screen for a smooth transition
+      SplashScreen.hide();
+      // Update status text indicating readiness
       SplashScreen.updateStatusText(dashboard.t("ready") || "Ready!", true);
 
       dashboard.appCheck = initializeAppCheck(app, {

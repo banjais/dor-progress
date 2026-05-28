@@ -272,10 +272,14 @@ export class SplashParticles {
     );
     this.splashScreenElement.removeEventListener("click", this.handleClick);
 
-    // Do not attempt to set canvas.width/height here.
-    // Once transferred to offscreen, these properties are read-only on the main thread.
-    this.canvas.remove();
+    // Optional: If you want to stop particles immediately from elsewhere, you can call this.observer?.disconnect(); here.
+    if (this.canvas.parentElement) {
+      this.canvas.remove();
+    }
 
-    this.observer.disconnect();
+    // Disconnect the observer only if it was created
+    if (this.observer) {
+      this.observer.disconnect();
+    }
   }
 }
