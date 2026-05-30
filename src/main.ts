@@ -1,4 +1,24 @@
 // src/main.ts
+// ─────────────────────────────────────────────────────────────
+// Extension Noise Silencer
+// ─────────────────────────────────────────────────────────────
+// Prevents known browser extension errors (like Grammarly/MetaMask) 
+// from cluttering the console or triggering error monitoring.
+window.addEventListener("unhandledrejection", (event) => {
+  const r = event.reason;
+  if (
+    r &&
+    (r.error === "exceptions.UserAuthError" ||
+      r.message === "permission error" ||
+      r.reqInfo?.pathPrefix === "/writing" ||
+      r.stack?.includes("chrome-extension://") ||
+      r.originalError?.stack?.includes("background.js"))
+  ) {
+    event.preventDefault();
+    event.stopPropagation();
+  }
+});
+
 // Global fix for EventEmitter max listeners
 import { getProgress, t } from "./api-utils.js";
 import { initApp } from "./App.js";
