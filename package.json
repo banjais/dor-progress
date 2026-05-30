@@ -1,6 +1,6 @@
 {
   "name": "dor-progress",
-  "version": "1.0.503",
+  "version": "1.0.504",
   "private": true,
   "type": "module",
   "scripts": {
@@ -22,7 +22,7 @@
     "find-unused": "node scripts/find-unused.js",
     "clean": "rimraf dist node_modules/.vite .tsbuildinfo",
     "deploy": "node scripts/deploy.js",
-    "deploy:hosting": "firebase deploy --only hosting --non-interactive",
+    "deploy:hosting": "npm run build && firebase deploy --only hosting",
     "check-updates": "npx npm-check-updates",
     "test": "echo \"No tests specified\" && exit 0",
     "reinstall": "rimraf node_modules package-lock.json && npm install",
