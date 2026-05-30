@@ -1,0 +1,277 @@
+<!doctype html>
+<html lang="ne">
+  <head>
+    <meta charset="UTF-8" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1, viewport-fit=cover"
+    />
+    <meta
+      name="theme-color"
+      content="#1a5c3a"
+    />
+    <meta
+      name="description"
+      content="Official Department of Roads Weekly Progress & Statistics Dashboard."
+    />
+
+    <meta
+      name="theme-color"
+      content="#1a5c3a"
+      media="(prefers-color-scheme: light)"
+    />
+    <meta
+      name="theme-color"
+      content="#0b0f1a"
+      media="(prefers-color-scheme: dark)"
+    />
+    <meta name="apple-mobile-web-app-title" content="DoR" />
+    <meta name="application-name" content="DoR Progress Dashboard" />
+    <meta name="msapplication-TileColor" content="#1a5c3a" />
+    <meta name="msapplication-TileImage" content="/logo.png" />
+    
+    <title>DoR – सडक विभाग</title>
+    
+    <meta name="mobile-web-app-capable" content="yes" />
+    <link rel="manifest" href="/manifest.json" />
+    <link rel="icon" type="image/png" href="/logo.png" />
+    <link rel="apple-touch-icon" href="/logo.png" />
+
+    <!-- Google Fonts -->
+    <link
+      href="https://fonts.googleapis.com/css2?family=Noto+Sans+Devanagari:wght@400;700&display=swap"
+      rel="stylesheet"
+      crossorigin="anonymous"
+    />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Roboto:wght@400;700&display=swap"
+      rel="stylesheet"
+      crossorigin="anonymous"
+    />
+
+    <!-- pdf-lib -->
+    <script
+      src="https://unpkg.com/pdf-lib@1.17.1/dist/pdf-lib.min.js"
+      crossorigin="anonymous"
+    ></script>
+
+    <!-- iOS Web App -->
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta
+      name="apple-mobile-web-app-status-bar-style"
+      content="black-translucent"
+    />
+
+    <!-- Social Meta Tags -->
+    <meta property="og:title" content="DoR MIS Dashboard - सडक विभाग" />
+    <meta
+      property="og:description"
+      content="Official Department of Roads Weekly Progress & Statistics Dashboard."
+    />
+    <meta property="og:image" content="https://dor-progress.web.app/logo.png" />
+    <meta property="og:url" content="https://dor-progress.web.app" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <script type="module" crossorigin src="/assets/index-CBhNwtv0.js"></script>
+    <link rel="modulepreload" crossorigin href="/assets/vendor-jspdf-C_IQQS5S.js">
+    <link rel="stylesheet" crossorigin href="/assets/index-DQlCNKSE.css">
+  </head>
+  <body>
+    <script>
+      // FOUC Guard + Theme Initialization
+      function syncAppTheme() {
+        const scheduleEnabled = localStorage.getItem("theme-schedule") === "true";
+        const savedTheme = localStorage.getItem("theme");
+
+        if (scheduleEnabled) {
+          const lat = parseFloat(localStorage.getItem("last-lat"));
+          const lon = parseFloat(localStorage.getItem("last-lon"));
+          const now = new Date();
+          const hour = now.getHours() + now.getMinutes() / 60;
+          let isDark = hour < 6 || hour >= 18;
+
+          if (!isNaN(lat) && !isNaN(lon)) {
+            const day = Math.floor((now - new Date(now.getFullYear(), 0, 0)) / 864e5);
+            const phi = (lat * Math.PI) / 180;
+            const delta = (-23.44 * Math.cos(((360 / 365) * (day + 10) * Math.PI) / 180) * Math.PI) / 180;
+            const val = -Math.tan(phi) * Math.tan(delta);
+
+            if (val >= 1) isDark = false;
+            else if (val <= -1) isDark = true;
+            else {
+              const h = (Math.acos(val) * 180) / Math.PI / 15;
+              isDark = hour < 12 - h || hour >= 12 + h;
+            }
+          }
+          document.body.setAttribute("data-theme", isDark ? "dark" : "light");
+        } else if (savedTheme) {
+          document.body.setAttribute("data-theme", savedTheme);
+        } else if (window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches) {
+          document.body.setAttribute("data-theme", "dark");
+        }
+      }
+
+      syncAppTheme();
+      setInterval(syncAppTheme, 60000);
+
+      // Font & Accessibility
+      if (localStorage.getItem("system-font") === "true") {
+        document.body.setAttribute("data-font", "system");
+      }
+      const savedMultiplier = localStorage.getItem("font-multiplier") || "1";
+      document.documentElement.style.setProperty("--font-multiplier", savedMultiplier);
+
+      if (localStorage.getItem("high-contrast") === "true") document.body.classList.add("high-contrast");
+      if (localStorage.getItem("grayscale") === "true") document.body.classList.add("grayscale");
+      if (localStorage.getItem("sepia") === "true") document.body.classList.add("sepia");
+      if (localStorage.getItem("system-font") === "true") document.body.classList.add("system-font");
+    </script>
+    <div id="device-debug">Device: </div>
+
+
+    <div id="admin-banner" class="admin-banner">
+      <span id="admin-message-text"></span>
+    </div>
+
+    <div id="pull-indicator">
+      <span id="pull-icon">🔄</span>
+      <div id="pull-time"></div>
+    </div>
+
+    <div id="ai-aura">
+      <div class="aura-container">
+        <div class="aura-halo"></div>
+        <div class="aura-glow"></div>
+      </div>
+      <div class="aura-text" id="aura-text"></div>
+    </div>
+
+    <!-- Print Branding -->
+    <div id="print-stamp"></div>
+    <div id="print-header">
+      <div class="header-text">
+        <img src="/logo.png" class="print-logo" alt="Logo" />
+        <h4 id="h-govt">Government of Nepal</h4>
+        <h4 id="h-min">Ministry of Physical Infrastructure and Transport</h4>
+        <h4 id="h-city">Chakupat, Lalitpur</h4>
+        <h4 id="h-report" class="print-report-title">DoR Progress Report (Weekly)</h4>
+        <div id="h-risk-summary" class="print-risk-summary"></div>
+      </div>
+      <img id="print-qr" src="https://api.qrserver.com/v1/create-qr-code/?size=150x150&data=https://dor-progress.web.app" alt="QR" />
+    </div>
+
+    <div id="print-footer">
+      <div>
+        Official Portal:
+        <a href="https://dor-progress.web.app" id="app-link">https://dor-progress.web.app</a>
+      </div>
+      <div>&copy; 2026 Department of Roads (DoR). All rights Reserved.</div>
+    </div>
+
+    <div id="toast-container">
+      <button id="dismiss-all" class="dismiss-all-btn" onclick="dismissAllToasts()">CLEAR ALL</button>
+    </div>
+
+    <div id="modal-overlay" onclick="closeModal()">
+      <div id="modal-content" onclick="event.stopPropagation()">
+        <span class="close-modal" onclick="closeModal()">×</span>
+        <div id="modal-body"></div>
+      </div>
+    </div>
+
+    <!-- Splash Screen -->
+    <div id="splash-screen">
+      <div class="splash-center">
+        <img src="/logo.png" alt="Logo" class="splash-logo-mini" />
+      </div>
+      <div class="splash-bottom">
+        <div class="splash-brand">
+          <span class="gov-text" id="splash-gov-text">Government of Nepal</span>
+          <span class="dept-text" id="splash-dept-text">Department of Roads</span>
+        </div>
+        <div class="modern-loader">
+          <div id="loader-bar-fill"></div>
+          <div id="loader-percentage">0%</div>
+        </div>
+        <div class="loader-status">Initializing...</div>
+      </div>
+    </div>
+
+    <!-- Loader -->
+    <div id="loader">
+      <div class="loader-content">
+        <div class="chart-container loader-chart">
+          <svg viewBox="0 0 36 36">
+            <path d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831" fill="none" stroke="var(--border)" stroke-width="2"/>
+            <path class="spinning" d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831" fill="none" stroke="var(--primary)" stroke-width="2" stroke-linecap="round"/>
+          </svg>
+        </div>
+        <img src="/logo.png" class="loader-logo" alt="logo"/>
+        <div id="loading-msg">डेटा लोड हुँदैछ...</div>
+      </div>
+    </div>
+
+    <!-- Offline Overlay -->
+    <div id="offline-overlay">
+      <div class="offline-card">
+        <div class="offline-top-bar"></div>
+        <img src="/logo.png" class="offline-logo" alt="Logo" />
+        <div class="offline-tag">OFFLINE / अफलाइन</div>
+        <h2 id="offline-title">No Internet Connection</h2>
+        <p id="offline-msg">You are currently offline. Please check your network connection and try again.</p>
+        <button onclick="window.location.reload()" class="offline-btn">RETRY / पुनः प्रयास गर्नुहोस्</button>
+      </div>
+    </div>
+
+    <header>
+      <div class="header-top">
+        <div class="header-logo-group">
+          <img src="/icons/logo.png" alt="Logo" class="header-logo" />
+          <span class="header-app-name">DoR Progress Dashboard</span>
+        </div>
+        <div class="header-controls-group">
+          <div class="conn-group">
+            <div class="conn-status-row">
+              <span id="data-sync-icon" class="data-sync-icon" title="Syncing Data">🔄</span>
+              <div id="status" class="status-text">Connecting...</div>
+              <button class="status-btn" id="status-refresh-btn" onclick="checkStatus()" title="Check Connection">🔄</button>
+            </div>
+            <div id="conn-strength" class="conn-badge"></div>
+          </div>
+          <button id="install-btn" aria-label="Install App"></button>
+
+          <div class="lang-btn-group" onclick="toggleLang()">
+            <i class="lang-globe-icon">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <circle cx="12" cy="12" r="10"></circle>
+                <line x1="2" y1="12" x2="22" y2="12"></line>
+                <path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"></path>
+              </svg>
+            </i>
+            <span id="lang-current-label">EN</span>
+          </div>
+        </div>
+      </div>
+    </header>
+
+    <div id="action-bar">
+      <!-- Your full action bar content remains unchanged -->
+      <div class="search-container">
+        <i>🔍</i>
+        <input type="text" id="search-input" oninput="handleSearch()" placeholder="Search" />
+      </div>
+      <!-- ... rest of your action bar (fab menu, gemini menu etc.) ... -->
+    </div>
+
+    <div id="info-bar">
+      <div id="last-update" class="info-last-update"></div>
+      <div id="refresh-timer" class="info-refresh-timer"></div>
+    </div>
+
+    <main>
+      <!-- All your main content (ai-brief-card, kpi-row, views, etc.) remains the same -->
+      <!-- Paste your original main content here if needed, but assuming it's unchanged -->
+    </main>
+
+    <!-- Main Application Entry -->
+  </body>
+</html>

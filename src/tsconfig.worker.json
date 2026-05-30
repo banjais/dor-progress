@@ -1,0 +1,9 @@
+{
+  "extends": "../tsconfig.base.json",
+  "compilerOptions": {
+    "lib": ["ESNext", "WebWorker"],
+    "types": ["@cloudflare/workers-types"]
+  },
+  "include": ["worker.ts", "particles-worker.ts", "api-shared.ts", "ai-service.ts", "fonts.ts", "worker-configuration.d.ts"],
+  "exclude": ["api-utils.ts"]
+}

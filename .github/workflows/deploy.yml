@@ -1,0 +1,129 @@
+name: CI/CD Deployment
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+
+concurrency:
+  group: dor-progress-production
+  cancel-in-progress: true
+
+env:
+  NODE_VERSION: 22
+
+jobs:
+  # JOB 1: Validation of Secrets
+  validate-secrets:
+    name: Check Required Secrets
+    runs-on: ubuntu-latest
+    steps:
+      - name: Verify Environment Secrets
+        env:
+          CF_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CF_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          FB_SA: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+          AI_KEY: ${{ secrets.GOOGLE_GENAI_API_KEY }}
+          SNAP_KEY: ${{ secrets.SNAPSHOT_KEY }}
+          FB_ID: ${{ secrets.FIREBASE_PROJECT_ID }}
+        run: |
+          echo "Checking required GitHub Secrets..."
+          test -n "$CF_TOKEN" || (echo "❌ Missing CLOUDFLARE_API_TOKEN" && exit 1)
+          test -n "$CF_ID" || (echo "❌ Missing CLOUDFLARE_ACCOUNT_ID" && exit 1)
+          test -n "$FB_SA" || (echo "❌ Missing FIREBASE_SERVICE_ACCOUNT" && exit 1)
+          test -n "$FB_ID" || (echo "❌ Missing FIREBASE_PROJECT_ID" && exit 1)
+          test -n "$AI_KEY" || (echo "❌ Missing GOOGLE_GENAI_API_KEY" && exit 1)
+          test -n "$SNAP_KEY" || (echo "❌ Missing SNAPSHOT_KEY" && exit 1)
+          echo "✅ All required secrets exist"
+
+  # JOB 2: Backend Deployment (Cloudflare Workers)
+  backend-deploy:
+    name: Build & Deploy Backend
+    needs: [validate-secrets]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+      
+      - name: Install Dependencies
+        run: npm install
+
+      - name: Deploy to Cloudflare Workers
+        uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+
+  # JOB 3: Frontend Deployment (Firebase Hosting)
+  frontend-deploy:
+    name: Build & Deploy Frontend
+    needs: [validate-secrets, backend-deploy]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # Required to allow the workflow to push new commits (version bump)
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+
+      - name: Install Dependencies
+        run: npm install
+
+      - name: Run Verification (Lint & Typecheck)
+        run: npm run verify
+
+      - name: Run npm audit
+        run: npm audit --audit-level=high
+
+      # Run the automated deployment script to bump versions in package.json, branding.json, etc.
+      # This script is expected to commit and push changes.
+      - name: Run Automated Deployment Script (Version Bump)
+        run: npm run deploy
+        env:
+          GIT_AUTHOR_NAME: 'github-actions[bot]' # Attribute the commit to the bot
+          GIT_AUTHOR_EMAIL: 'github-actions[bot]@users.noreply.github.com' # Bot's email
+      - name: Build Frontend Project
+        env:
+          VITE_WORKER_BASE: ${{ secrets.VITE_WORKER_BASE }}
+          VITE_APP_ENV: production # Explicitly set APP_ENV for production build
+          VITE_FIREBASE_URL: ${{ secrets.VITE_FIREBASE_URL }}
+        run: npm run build
+
+      - name: Deploy to Firebase Hosting
+        uses: FirebaseExtended/action-hosting-deploy@v0
+        with:
+          repoToken: ${{ secrets.GITHUB_TOKEN }}
+          firebaseServiceAccount: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+          channelId: live
+          projectId: ${{ secrets.FIREBASE_PROJECT_ID }}
+          firebaseToolsVersion: local
+
+  # JOB 4: Dependabot Auto-Merge
+  dependabot:
+    name: Dependabot Auto-Merge
+    needs: [backend-deploy, frontend-deploy]
+    if: github.event.pull_request.user.login == 'dependabot[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Fetch Dependabot metadata
+        id: metadata
+        uses: dependabot/fetch-metadata@v2
+        with:
+          github-token: "${{ secrets.GITHUB_TOKEN }}"
+
+      - name: Enable auto-merge for Dependabot PRs
+        run: gh pr merge --auto --merge "$PR_URL"
+        env:
+          PR_URL: ${{ github.event.pull_request.html_url }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

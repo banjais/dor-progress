@@ -1,0 +1,35 @@
+{
+  "version": "1.0.499",
+  "app": {
+    "name": "DoR Progress",
+    "fullName": "DoR Progress Dashboard",
+    "shortName": "DoR MIS",
+    "title": "DoR – सडक विभाग",
+    "subtitle": "Department of Roads Progress Monitoring",
+    "tagline": "सडक विभाग साप्ताहिक प्रगति प्रणाली"
+  },
+  "organization": {
+    "government": "Government of Nepal",
+    "ministry": "Ministry of Physical Infrastructure and Transport",
+    "department": "Department of Roads",
+    "location": "Chakupat, Lalitpur"
+  },
+  "report": {
+    "title": "DoR Progress Report (Weekly)"
+  },
+  "seo": {
+    "description": "Official Department of Roads Weekly Progress & Statistics Dashboard.",
+    "keywords": "DoR, Department of Roads, Nepal, Road Progress, सडक विभाग, Weekly Report",
+    "ogImage": "/logo.png"
+  },
+  "colors": {
+    "primary": "#8D1B1B",
+    "secondary": "#003893",
+    "accent": "#FFD700"
+  },
+  "lastUpdate": {
+    "label": "Last Updated",
+    "value": "2026-05-28"
+  },
+  "lastCommitHash": "539a387"
+}
