@@ -1,5 +1,6 @@
 // src/main.ts
 // Global fix for EventEmitter max listeners
+import { getProgress, t } from "./api-utils.js";
 import { initApp } from "./App.js";
 import { BootstrapManager } from "./BootstrapManager.js";
 import { Dashboard } from "./Dashboard.js";
@@ -10,10 +11,9 @@ import {
   initPWALogic,
   installUpdate,
 } from "./PWAManager.js";
-import { SearchManager } from "./SearchManager.js";
-import { getProgress, t } from "./api-utils.js";
-import "./eventEmitterFix";
 import { render } from "./render.js";
+import { SearchManager } from "./SearchManager.js";
+import "./eventEmitterFix";
 import "./styles.css";
 import { renderMiniChart, renderSparkline } from "./utils.js";
 

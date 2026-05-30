@@ -5,7 +5,6 @@ import {
   initializeAppCheck,
 } from "firebase/app-check";
 
-import { Dashboard } from "./Dashboard.js";
 import {
   type ClientConfig,
   ClientConfigSchema,
@@ -16,6 +15,7 @@ import {
 } from "./api-utils.js";
 import { BrandingEngine } from "./components/BrandingEngine.js";
 import { SplashScreen } from "./components/SplashScreen.js";
+import { Dashboard } from "./Dashboard.js";
 
 export class BootstrapManager {
   static async init(dashboard: Dashboard) {

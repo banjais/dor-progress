@@ -67,6 +67,20 @@ run("npm", ["audit", "--audit-level=high"]);
 console.log("✅ Security audit passed.\n");
 
 // ─────────────────────────────────────────────────────────────
+// Clean & Verify (Moved up to prevent version bumps on failure)
+// ─────────────────────────────────────────────────────────────
+
+console.log("🧹 Cleaning...");
+run("npm", ["run", "clean"]);
+
+console.log("✅ Clean completed.\n");
+
+console.log("🧪 Running verification...");
+run("npm", ["run", "verify"]);
+
+console.log("✅ Verification passed.\n");
+
+// ─────────────────────────────────────────────────────────────
 // Update Version
 // ─────────────────────────────────────────────────────────────
 
@@ -141,24 +155,6 @@ if (fs.existsSync("public/sw.v2.js")) {
 }
 
 console.log(`✅ Version updated to ${newVersion}\n`);
-
-// ─────────────────────────────────────────────────────────────
-// Clean
-// ─────────────────────────────────────────────────────────────
-
-console.log("🧹 Cleaning...");
-run("npm", ["run", "clean"]);
-
-console.log("✅ Clean completed.\n");
-
-// ─────────────────────────────────────────────────────────────
-// Verify
-// ─────────────────────────────────────────────────────────────
-
-console.log("🧪 Running verification...");
-run("npm", ["run", "verify"]);
-
-console.log("✅ Verification passed.\n");
 
 // ─────────────────────────────────────────────────────────────
 // Build

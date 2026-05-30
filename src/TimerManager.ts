@@ -1,5 +1,5 @@
-import { Dashboard } from "./Dashboard.js";
 import { t } from "./api-utils.js";
+import { Dashboard } from "./Dashboard.js";
 
 export class TimerManager {
     private dashboard: Dashboard;

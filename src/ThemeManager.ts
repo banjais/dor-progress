@@ -1,5 +1,5 @@
-import { Dashboard } from "./Dashboard.js";
 import { BrandingEngine } from "./components/BrandingEngine.js";
+import { Dashboard } from "./Dashboard.js";
 
 export class ThemeManager {
     private dashboard: Dashboard;

@@ -1,5 +1,3 @@
-import { Dashboard } from "./Dashboard.js";
-// No citation needed, this is internal code.
 import {
   I18N,
   type SpreadsheetHeaders,
@@ -8,6 +6,8 @@ import {
   isReportSuccess,
   toNepaliNumerals,
 } from "./api-utils.js";
+import { Dashboard } from "./Dashboard.js";
+// No citation needed, this is internal code.
 
 const dashboard = Dashboard.getInstance();
 

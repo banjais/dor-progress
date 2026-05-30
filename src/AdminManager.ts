@@ -1,7 +1,5 @@
 import { z } from "zod";
 
-import { Dashboard } from "./Dashboard.js";
-import { checkForUpdate, updateUpdateButtonState } from "./PWAManager.js";
 import {
   ArchiveMetadataSchema,
   authenticatedFetch,
@@ -12,6 +10,8 @@ import {
   toNepaliNumerals,
 } from "./api-utils.js";
 import { BrandingEngine } from "./components/BrandingEngine.js";
+import { Dashboard } from "./Dashboard.js";
+import { checkForUpdate, updateUpdateButtonState } from "./PWAManager.js";
 
 const dashboard = Dashboard.getInstance();
 

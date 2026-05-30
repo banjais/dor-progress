@@ -1,7 +1,8 @@
-import type { Dashboard } from "./Dashboard.js";
-import type { HistoryManager } from "./HistoryManager.js";
 import { getProgress, t } from "./api-utils.js";
 import { renderMiniChart, renderSparkline } from "./utils.js";
+
+import type { Dashboard } from "./Dashboard.js";
+import type { HistoryManager } from "./HistoryManager.js";
 
 export function initApp(
   dashboard: Dashboard,
