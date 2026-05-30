@@ -170,14 +170,11 @@ jobs:
       - name: Run Automated Deployment Script (Version Bump)
         run: npm run deploy
         env:
+          VITE_WORKER_BASE: ${{ secrets.VITE_WORKER_BASE }}
+          VITE_FIREBASE_URL: ${{ secrets.VITE_FIREBASE_URL }}
+          VITE_APP_ENV: production
           GIT_AUTHOR_NAME: 'github-actions[bot]' # Attribute the commit to the bot
           GIT_AUTHOR_EMAIL: 'github-actions[bot]@users.noreply.github.com' # Bot's email
-      - name: Build Frontend Project
-        env:
-          VITE_WORKER_BASE: ${{ secrets.VITE_WORKER_BASE }}
-          VITE_APP_ENV: production # Explicitly set APP_ENV for production build
-          VITE_FIREBASE_URL: ${{ secrets.VITE_FIREBASE_URL }}
-        run: npm run build
 
       - name: Deploy to Firebase Hosting
         uses: FirebaseExtended/action-hosting-deploy@v0

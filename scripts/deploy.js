@@ -2,6 +2,7 @@
 
 import { spawnSync, execSync } from "child_process";
 import fs from "fs";
+import "dotenv/config";
 
 process.env.NODE_NO_WARNINGS = "1";
 
@@ -43,6 +44,21 @@ const run = (command, args = [], options = {}) => {
 console.log(
   `${colors.bold}${colors.cyan}🚀 Starting DoR Progress Deployment${colors.reset}\n`
 );
+
+// ─────────────────────────────────────────────────────────────
+// Environment Validation
+// ─────────────────────────────────────────────────────────────
+
+console.log("📋 Checking environment variables...");
+const requiredEnvs = ["VITE_WORKER_BASE", "VITE_FIREBASE_URL"];
+const missingEnvs = requiredEnvs.filter(env => !process.env[env] && !process.env.GITHUB_ACTIONS);
+
+if (missingEnvs.length > 0) {
+  console.error(`${colors.red}❌ Missing required local environment variables: ${missingEnvs.join(", ")}${colors.reset}`);
+  console.error(`Ensure these are set in your terminal or .env file.`);
+  process.exit(1);
+}
+console.log("✅ Environment validation passed.\n");
 
 const today = new Date().toISOString().split("T")[0];
 

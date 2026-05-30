@@ -1,5 +1,5 @@
 {
-  "version": "1.0.504",
+  "version": "1.0.505",
   "app": {
     "name": "DoR Progress",
     "fullName": "DoR Progress Dashboard",
@@ -31,5 +31,5 @@
     "label": "Last Updated",
     "value": "2026-05-30"
   },
-  "lastCommitHash": "908d6926"
+  "lastCommitHash": "e4cd1b9f"
 }
