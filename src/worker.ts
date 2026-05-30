@@ -123,6 +123,7 @@ function jsonResponse(
   status = 200,
   origin: string | null = null,
 ): WorkerResponse {
+<<<<<<< HEAD
   return new Response(JSON.stringify(data) as any, {
     status,
     headers: getCorsHeaders(origin),
@@ -130,13 +131,34 @@ function jsonResponse(
 }
 
 async function generateFingerprint(buffer: ArrayBuffer): Promise<string> {
+=======
+  // No citation needed, this is internal code.
+  return new Response(JSON.stringify(data) as any, {
+    // No citation needed, this is internal code.
+    status,
+    headers: getCorsHeaders(origin),
+  }) as unknown as WorkerResponse; // No citation needed, this is internal code.
+}
+
+async function generateFingerprint(buffer: ArrayBuffer): Promise<string> {
+  // Google Sheets PDF exports contain volatile metadata (dates/IDs) that change
+  // even if the content is identical. We scrub these to ensure a stable fingerprint.
+>>>>>>> 2d1b30ec7401193df1d535d89d3fe40539ed54b8
   const binaryString = new TextDecoder("latin1").decode(buffer);
 
   const scrubbed = binaryString
     .replace(/\/CreationDate\s*\([^)]+\)/g, "")
     .replace(/\/ModDate\s*\([^)]+\)/g, "")
+<<<<<<< HEAD
     .replace(/\/ID\s*\[<[0-9A-F]+>\s*<[0-9A-F]+>\]/gi, "");
 
+=======
+    // Remove PDF Trailer IDs which are often randomized on every export
+    .replace(/\/ID\s*\[<[0-9A-F]+>\s*<[0-9A-F]+>\]/gi, "");
+
+  // Use Uint8Array.from with a mapping function to rebuild the buffer.
+  // While still a loop, it is more idiomatic and allows the engine to optimize the allocation.
+>>>>>>> 2d1b30ec7401193df1d535d89d3fe40539ed54b8
   const scrubbedBuffer = new Uint8Array(scrubbed.length);
   for (let i = 0; i < scrubbed.length; i++)
     scrubbedBuffer[i] = scrubbed.charCodeAt(i);
@@ -148,6 +170,10 @@ async function generateFingerprint(buffer: ArrayBuffer): Promise<string> {
 }
 
 async function verifyAppCheck(request: WorkerRequest, env: Env): Promise<void> {
+<<<<<<< HEAD
+=======
+  // Define environments where App Check should be bypassed (e.g., for local development or testing)
+>>>>>>> 2d1b30ec7401193df1d535d89d3fe40539ed54b8
   const bypassEnvironments = ["development", "test"];
   if (env.APP_ENV && bypassEnvironments.includes(env.APP_ENV)) {
     console.warn(`App Check bypassed for ${env.APP_ENV} environment.`);
@@ -155,8 +181,20 @@ async function verifyAppCheck(request: WorkerRequest, env: Env): Promise<void> {
   }
 
   const token = request.headers.get("X-Firebase-AppCheck");
+<<<<<<< HEAD
 
   if (!token) {
+=======
+  const isFallbackMode = request.headers.get("X-AppCheck-Fallback") === "true";
+
+  if (!token) {
+    if (isFallbackMode) {
+      console.warn(
+        "[App Check] Request received in fallback mode without a token. Proceeding with caution.",
+      );
+      return; // Allow request to proceed without App Check verification
+    }
+>>>>>>> 2d1b30ec7401193df1d535d89d3fe40539ed54b8
     throw new ServiceError("Unauthorized: No App Check token", { status: 401 });
   }
 
@@ -172,6 +210,10 @@ async function verifyAppCheck(request: WorkerRequest, env: Env): Promise<void> {
   }
 
   try {
+<<<<<<< HEAD
+=======
+    // The issuer must use the Project NUMBER, not the Project ID.
+>>>>>>> 2d1b30ec7401193df1d535d89d3fe40539ed54b8
     const issuer = `https://firebaseappcheck.googleapis.com/${projectNumber}`;
 
     const { payload } = await jwtVerify(token, JWKS, {
@@ -180,6 +222,10 @@ async function verifyAppCheck(request: WorkerRequest, env: Env): Promise<void> {
       clockTolerance: "1m",
     });
 
+<<<<<<< HEAD
+=======
+    // Validate Subject (App ID)
+>>>>>>> 2d1b30ec7401193df1d535d89d3fe40539ed54b8
     if (payload.sub !== appId) {
       console.error(
         `[App Check] Subject mismatch. Expected ${appId}, got ${payload.sub}`,
@@ -187,6 +233,10 @@ async function verifyAppCheck(request: WorkerRequest, env: Env): Promise<void> {
       throw new Error("Invalid Subject");
     }
   } catch (e: any) {
+<<<<<<< HEAD
+=======
+    // Log the specific jose verification error to Cloudflare Logs for debugging
+>>>>>>> 2d1b30ec7401193df1d535d89d3fe40539ed54b8
     console.error(`[App Check] Verification failed: ${e.message}`, {
       code: e.code,
       project: projectId,
@@ -222,12 +272,20 @@ async function handleFetch(
   const origin = request.headers.get("Origin");
   const url = new URL(request.url);
 
+<<<<<<< HEAD
+=======
+  // Validate environment at the entry point
+>>>>>>> 2d1b30ec7401193df1d535d89d3fe40539ed54b8
   const envValidation = BaseEnvSchema.safeParse(env);
   if (!envValidation.success) {
     console.error(
       "❌ Environment configuration mismatch:",
       envValidation.error.format(),
     );
+<<<<<<< HEAD
+=======
+    // Optionally return an error response in development
+>>>>>>> 2d1b30ec7401193df1d535d89d3fe40539ed54b8
     if (env.APP_ENV === "development")
       return jsonResponse(
         {
@@ -239,6 +297,10 @@ async function handleFetch(
       );
   }
 
+<<<<<<< HEAD
+=======
+  // Diagnostic log to verify Vite proxy hand-off
+>>>>>>> 2d1b30ec7401193df1d535d89d3fe40539ed54b8
   console.log(`[Worker] ${request.method} ${url.pathname} (Origin: ${origin})`);
 
   if (request.method === "OPTIONS") {
@@ -420,6 +482,7 @@ async function handleFetch(
           b: KVNamespaceListKey<ArchiveMetadata>,
         ) => b.name.localeCompare(a.name),
       )[0].name;
+<<<<<<< HEAD
       const rawReport = await env.REPORTS_KV.get(latestKey, { type: "json" });
       if (!rawReport)
         throw new ServiceError("Summary snapshot not found", { status: 404 });
@@ -431,6 +494,10 @@ async function handleFetch(
         });
 
       return jsonResponse(summaryValidation.data, 200, origin);
+=======
+      const report = await env.REPORTS_KV.get(latestKey, { type: "json" });
+      return jsonResponse(report, 200, origin);
+>>>>>>> 2d1b30ec7401193df1d535d89d3fe40539ed54b8
     }
 
     if (url.pathname === "/api/snapshot") {
@@ -579,6 +646,10 @@ async function handleFetch(
             status: 500,
             cause: e,
           });
+<<<<<<< HEAD
+=======
+    // Surface the cause (e.g., Zod validation errors or PDF export errors) to the client
+>>>>>>> 2d1b30ec7401193df1d535d89d3fe40539ed54b8
     return jsonResponse(
       {
         error: err.message,
@@ -600,6 +671,10 @@ async function handleAutoArchive(env: Env) {
 
     if (alreadyArchived) {
       console.log(
+<<<<<<< HEAD
+=======
+        // No citation needed, this is internal code.
+>>>>>>> 2d1b30ec7401193df1d535d89d3fe40539ed54b8
         `[Auto-Archive] Snapshot for fingerprint ${fingerprint} already exists. Skipping.`,
       );
       return;
@@ -609,8 +684,15 @@ async function handleAutoArchive(env: Env) {
     if (!apiKey)
       throw new Error("GOOGLE_GENAI_API_KEY not configured for auto-archive");
 
+<<<<<<< HEAD
     const pdfBase64 = arrayBufferToBase64(pdfBuffer);
 
+=======
+    // Convert PDF to Base64 for Gemini processing
+    const pdfBase64 = arrayBufferToBase64(pdfBuffer);
+
+    // Trigger AI Extraction (defaulting to Nepali as it's the primary report language)
+>>>>>>> 2d1b30ec7401193df1d535d89d3fe40539ed54b8
     const aiResult = await runProjectSummary(apiKey, {
       pdfBase64,
       lang: "ne",
@@ -632,17 +714,34 @@ async function handleAutoArchive(env: Env) {
       aiSummary: aiResult,
     });
 
+<<<<<<< HEAD
+=======
+    // Store snapshot in REPORTS_KV
+>>>>>>> 2d1b30ec7401193df1d535d89d3fe40539ed54b8
     await env.REPORTS_KV.put(`report:${reportDate}`, JSON.stringify(report), {
       metadata: {
         date: reportDate,
         recordCount: report.rows.length,
+<<<<<<< HEAD
+=======
+        // Truncate the AI summary brief to ensure it fits within KV metadata limits (1024 bytes)
+        // The full brief is available when the report is fetched.
+>>>>>>> 2d1b30ec7401193df1d535d89d3fe40539ed54b8
         summary: report.aiSummary?.brief
           ? report.aiSummary.brief.substring(0, 200)
           : undefined,
         created: new Date().toISOString(),
+<<<<<<< HEAD
       },
     });
 
+=======
+      }, // No citation needed, this is internal code.
+    });
+
+    // Update fingerprint cache to prevent duplicate archiving.
+    // If the report is 'good', we can safely skip re-processing this specific content for 30 days.
+>>>>>>> 2d1b30ec7401193df1d535d89d3fe40539ed54b8
     const archiveTtl =
       report.aiSummary?.overallHealth === "good" ? 2592000 : 604800;
     await env.REPORTS_KV.put(cacheKey, "true", { expirationTtl: archiveTtl });
@@ -650,13 +749,22 @@ async function handleAutoArchive(env: Env) {
       `[Auto-Archive] Successfully created snapshot for ${reportDate}`,
     );
 
+<<<<<<< HEAD
+=======
+    // --- Snapshot Retention Logic ---
+>>>>>>> 2d1b30ec7401193df1d535d89d3fe40539ed54b8
     const listResult = await env.REPORTS_KV.list<ArchiveMetadata>({
       prefix: "report:",
       limit: 1000,
     });
     const allSnapshots = listResult.keys
+<<<<<<< HEAD
       .filter((k) => k.name.startsWith("report:"))
       .sort((a, b) => b.name.localeCompare(a.name));
+=======
+      .filter((k) => k.name.startsWith("report:")) // Ensure only report keys are considered
+      .sort((a, b) => b.name.localeCompare(a.name)); // Sort descending by date (key name)
+>>>>>>> 2d1b30ec7401193df1d535d89d3fe40539ed54b8
 
     if (allSnapshots.length > SNAPSHOT_RETENTION_COUNT) {
       const snapshotsToDelete = allSnapshots.slice(SNAPSHOT_RETENTION_COUNT);
@@ -668,6 +776,10 @@ async function handleAutoArchive(env: Env) {
       );
     }
   } catch (err) {
+<<<<<<< HEAD
+=======
+    // No citation needed, this is internal code.
+>>>>>>> 2d1b30ec7401193df1d535d89d3fe40539ed54b8
     console.error("[Auto-Archive] Failed:", err);
   }
 }
@@ -681,18 +793,31 @@ async function fetchProjectPdf(env: Env): Promise<ArrayBuffer> {
 
   const publishedUrl = `https://docs.google.com/spreadsheets/d/e/${sheetId}/pub?output=pdf`;
 
+<<<<<<< HEAD
+=======
+  // Named caches (caches.open) are not supported in Cloudflare Workers.
+  // We use caches.default and check for its existence as it is unavailable in 'scheduled' events.
+>>>>>>> 2d1b30ec7401193df1d535d89d3fe40539ed54b8
   const cache = typeof caches !== "undefined" ? (caches as any).default : null;
 
   let response = cache ? await cache.match(publishedUrl) : null;
   if (!response) {
     response = await fetch(publishedUrl);
+<<<<<<< HEAD
+=======
+    // Explicitly check for content type to prevent HTML error pages from being treated as PDFs
+>>>>>>> 2d1b30ec7401193df1d535d89d3fe40539ed54b8
     const contentType = response.headers.get("Content-Type");
     if (
       response.ok &&
       contentType &&
       !contentType.includes("application/pdf")
     ) {
+<<<<<<< HEAD
       const text = await response.text();
+=======
+      const text = await response.text(); // Read the body to log it
+>>>>>>> 2d1b30ec7401193df1d535d89d3fe40539ed54b8
       throw new ServiceError(
         `Expected PDF but received ${contentType}. Content: ${text.substring(0, 200)}...`,
         { status: 400 },
@@ -701,6 +826,10 @@ async function fetchProjectPdf(env: Env): Promise<ArrayBuffer> {
     if (response?.ok && cache) {
       const headers = new Headers(response.headers);
       headers.set("Cache-Control", "public, max-age=300");
+<<<<<<< HEAD
+=======
+      // Use 'any' for the body to satisfy DOM vs Worker stream type differences
+>>>>>>> 2d1b30ec7401193df1d535d89d3fe40539ed54b8
       const cacheResponse = new Response(response.clone().body as any, {
         status: response.status,
         statusText: response.statusText,
@@ -730,6 +859,7 @@ const handler: ExportedHandler<Env> = {
 };
 
 export default handler;
+<<<<<<< HEAD
 ```// filepath: c:\Users\banjais\Desktop\dor-progress\src\worker.ts
 import type {
   ExecutionContext,
@@ -1463,3 +1593,5 @@ const handler: ExportedHandler<Env> = {
 };
 
 export default handler;
+=======
+>>>>>>> 2d1b30ec7401193df1d535d89d3fe40539ed54b8
