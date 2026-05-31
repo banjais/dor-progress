@@ -17,6 +17,7 @@ concurrency:
 
 env:
   NODE_VERSION: 22
+  NODE_OPTIONS: "--no-deprecation"
 
 jobs:
   # JOB 1: Validation of Secrets
