@@ -7,6 +7,7 @@ import {
 
 import { Dashboard } from "./Dashboard.js";
 import {
+  BaseEnvSchema,
   type ClientConfig,
   ClientConfigSchema,
   authenticatedFetch,
@@ -19,6 +20,13 @@ import { SplashScreen } from "./components/SplashScreen.js";
 
 export class BootstrapManager {
   static async init(dashboard: Dashboard) {
+    // Validate environment variables immediately
+    const envResult = BaseEnvSchema.safeParse(import.meta.env);
+    if (!envResult.success && import.meta.env.PROD) {
+      console.error("Invalid Environment Configuration:", envResult.error.format());
+      // You could throw here to prevent the app from even trying to load
+    }
+
     // Force a browser paint of the splash screen before starting heavy initialization
     // This ensures Chrome users see the branding even if the CPU is pegged during boot.
     await new Promise((resolve) =>
@@ -56,10 +64,7 @@ export class BootstrapManager {
     // Apply UI branding immediately so the app looks correct during load
     // Use Vite's injected environment variables for the client application.
     // Resolve the worker base URL – ensure it's a full URL and not just '/'
-    const safeWorkerBase =
-      (typeof WORKER_BASE !== "undefined" ? WORKER_BASE : "") ||
-      import.meta.env.VITE_WORKER_BASE ||
-      "";
+    const safeWorkerBase = import.meta.env.VITE_WORKER_BASE || "";
 
     if (!safeWorkerBase || safeWorkerBase === "/") {
       console.error(

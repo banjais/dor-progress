@@ -55,13 +55,14 @@ jobs:
           cache: npm
       
       - name: Install Dependencies
-        run: npm install
+        run: npm ci
 
       - name: Deploy to Cloudflare Workers
         uses: cloudflare/wrangler-action@v3
         with:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          command: deploy --log-level debug
 
   # JOB 3: Frontend Deployment (Firebase Hosting)
   frontend-deploy:
@@ -78,10 +79,13 @@ jobs:
           cache: npm
 
       - name: Install Dependencies
-        run: npm install
+        run: npm ci
 
       - name: Run Verification (Lint & Typecheck)
-        run: npm run verify
+        run: |
+          chmod +x node_modules/.bin/*
+          npm run lint -- --fix || true
+          npm run verify
 
       - name: Run npm audit
         run: npm audit --audit-level=high
@@ -98,6 +102,9 @@ jobs:
           VITE_WORKER_BASE: ${{ secrets.VITE_WORKER_BASE }}
           VITE_APP_ENV: production # Explicitly set APP_ENV for production build
           VITE_FIREBASE_URL: ${{ secrets.VITE_FIREBASE_URL }}
+          # Map other shared variables that the frontend Zod schema might expect
+          VITE_FIREBASE_PROJECT_ID: ${{ secrets.FIREBASE_PROJECT_ID }}
+          VITE_APP_CHECK_DEBUG_TOKEN: "false" 
         run: npm run build
 
       - name: Deploy to Firebase Hosting

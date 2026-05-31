@@ -40,6 +40,7 @@ export type ProjectRow = z.infer<typeof ProjectRowSchema>;
 
 export const AiSummarySchema = z.object({
   brief: z.string(),
+  model: z.string().optional(),
   overallHealth: z.enum(["good", "moderate", "critical"]).optional(),
   criticalProjects: z.array(z.string()).optional().nullable(),
   exceedingProjects: z.array(z.string()).optional().nullable(),

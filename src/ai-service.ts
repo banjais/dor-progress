@@ -61,7 +61,7 @@ async function generateWithFallback(
     generationConfig?: GenerationConfig;
     systemInstruction?: string;
   },
-) {
+): Promise<{ text: string; model: string }> {
   const content = options.parts || options.prompt;
   if (!content) throw new Error("No content provided for AI generation");
 
@@ -77,8 +77,22 @@ async function generateWithFallback(
       const result = await model.generateContent(content);
       const text = result.response.text();
       if (!text) throw new Error("Empty response");
-      return { text };
+
+      // Structured log for usage tracking
+      console.log(JSON.stringify({
+        event: "ai_usage",
+        model: modelId,
+        status: "success"
+      }));
+
+      return { text, model: modelId };
     } catch (err) {
+      console.warn(JSON.stringify({
+        event: "ai_usage",
+        model: modelId,
+        status: "fallback",
+        error: err instanceof Error ? err.message : String(err)
+      }));
       lastError = err;
     }
   }
@@ -222,7 +236,11 @@ ${schemaInstructions}`;
   });
 
   const parsed = JSON.parse(response.text);
-  return AiSummarySchema.parse(parsed);
+  // Inject the successful model ID for audit purposes
+  return AiSummarySchema.parse({
+    ...parsed,
+    model: response.model,
+  });
 }
 
 export async function runTranslation(

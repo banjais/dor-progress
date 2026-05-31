@@ -187,10 +187,7 @@ export const clearTranslationCache = () => tCache.clear();
  */
 // Capture the worker base once at module load.
 // In Browser: uses Vite env. In Worker: uses global WORKER_BASE.
-const RESOLVED_WORKER_BASE =
-  typeof WORKER_BASE !== "undefined"
-    ? WORKER_BASE
-    : import.meta.env.VITE_WORKER_BASE || "";
+const RESOLVED_WORKER_BASE = import.meta.env.VITE_WORKER_BASE || "";
 
 export async function authenticatedFetch(
   path: string,

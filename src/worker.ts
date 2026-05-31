@@ -23,6 +23,17 @@ import {
 } from "./api-shared.js";
 import { devanagariFontBase64 } from "./fonts.js";
 
+/**
+ * Stricter environment schema for the Worker.
+ * Extends the shared schema but marks critical backend keys as required.
+ */
+const WorkerEnvSchema = BaseEnvSchema.extend({
+  GOOGLE_GENAI_API_KEY: z.string().min(1, "Gemini API Key is required for summaries"),
+  PUBLISHED_SHEET_ID: z.string().min(1, "Source Google Sheet ID is required"),
+  FIREBASE_PROJECT_ID: z.string().min(1),
+  FIREBASE_PROJECT_NUMBER: z.string().min(1),
+});
+
 interface Env extends BaseEnv {
   REPORTS_KV: KVNamespace;
 }
@@ -241,12 +252,14 @@ async function handleFetch(
   const url = new URL(request.url);
 
   // Validate environment at the entry point
-  const envValidation = BaseEnvSchema.safeParse(env);
+  const envValidation = WorkerEnvSchema.safeParse(env);
   if (!envValidation.success) {
-    console.error(
-      "❌ Environment configuration mismatch:",
-      envValidation.error.format(),
-    );
+    console.error(JSON.stringify({
+      event: "worker_config_error",
+      status: "critical",
+      message: "Environment configuration mismatch",
+      errors: envValidation.error.flatten().fieldErrors
+    }));
     // Optionally return an error response in development
     if (env.APP_ENV === "development")
       return jsonResponse(
@@ -337,9 +350,14 @@ async function handleFetch(
         isLowData: request.headers.get("X-Low-Data") === "true",
       });
       if (!validation.success) {
+        console.warn(JSON.stringify({
+          event: "api_validation_failed",
+          path: "/api/report",
+          errors: validation.error.flatten().fieldErrors
+        }));
         throw new ServiceError("Validation Failed", {
           status: 400,
-          cause: validation.error.format(),
+          cause: validation.error.flatten(),
         });
       }
       const { lang, date, force: forceRefresh, isLowData } = validation.data;
@@ -400,6 +418,7 @@ async function handleFetch(
                 ctx.waitUntil(
                   env.REPORTS_KV.put(cacheKey, JSON.stringify(aiResult), {
                     expirationTtl: 604800,
+                    metadata: { model: aiResult.model }
                   }),
                 );
               }
@@ -478,9 +497,13 @@ async function handleFetch(
           await request.json(),
         );
         if (!bodyResult.success) {
+          console.warn(JSON.stringify({
+            event: "snapshot_payload_invalid",
+            errors: bodyResult.error.flatten().fieldErrors
+          }));
           throw new ServiceError("Invalid snapshot data", {
             status: 400,
-            cause: bodyResult.error.format(),
+            cause: bodyResult.error.flatten(),
           });
         }
         const body = bodyResult.data;
@@ -605,6 +628,17 @@ async function handleFetch(
 
 async function handleAutoArchive(env: Env) {
   try {
+    // Validate environment at the start of the background task
+    const envValidation = WorkerEnvSchema.safeParse(env);
+    if (!envValidation.success) {
+      console.error(JSON.stringify({
+        event: "auto_archive_config_error",
+        message: "Environment configuration mismatch",
+        errors: envValidation.error.flatten().fieldErrors
+      }));
+      return; // Stop early if config is broken
+    }
+
     const pdfBuffer = await fetchProjectPdf(env);
     const fingerprint = await generateFingerprint(pdfBuffer);
 
