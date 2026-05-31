@@ -27,7 +27,7 @@ export class SearchManager {
           input.value = search;
         }
         const clearBtn = document.getElementById("clear-search");
-        if (clearBtn) clearBtn.style.display = search ? "block" : "none";
+        if (clearBtn) clearBtn.style.display = search !== "" ? "block" : "none";
 
         this.updateSuggestions(search, store);
       },
@@ -253,11 +253,11 @@ export class SearchManager {
     if (this.dashboard.state.search === val) return;
 
     // Debounce logic to prevent lag during typing (moved from main.ts)
-    if (this.searchTimeout) clearTimeout(this.searchTimeout);
+    if (this.searchTimeout !== null) clearTimeout(this.searchTimeout);
     this.searchTimeout = window.setTimeout(() => {
       this.dashboard.state.search = val;
 
-      if (val) {
+      if (val !== "") {
         this.dashboard.pauseTimer();
       } else {
         this.dashboard.resumeTimer();

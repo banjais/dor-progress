@@ -4,12 +4,12 @@ import type { ProjectReport } from "./api-utils.js";
 
 // Fix: api-utils is in the same directory
 
-interface ReportContext {
+export interface ReportContext {
   report: ProjectReport | null;
   error: string | null;
 }
 
-type ReportEvent =
+export type ReportEvent =
   | { type: "FETCH" }
   | { type: "RESOLVE"; report: ProjectReport }
   | { type: "REJECT"; message: string }

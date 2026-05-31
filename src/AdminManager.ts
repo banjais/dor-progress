@@ -23,12 +23,12 @@ export async function requestSnapshotKey(): Promise<string | null> {
   if ((import.meta as any).env.VITE_APP_ENV !== "production")
     return "dev-bypass";
   const cached = sessionStorage.getItem("_snapshot_key");
-  if (cached) return cached;
+  if (cached !== null) return cached;
 
   return new Promise((resolve) => {
     const modalBody = document.getElementById("modal-body");
     const overlay = document.getElementById("modal-overlay");
-    if (!modalBody || !overlay) return resolve(null);
+    if (modalBody === null || overlay === null) return resolve(null);
 
     modalBody.innerHTML = `
       <div class="modal-header">
@@ -50,7 +50,7 @@ export async function requestSnapshotKey(): Promise<string | null> {
     input.focus();
 
     const closeAndResolve = (val: string | null) => {
-      if (val) sessionStorage.setItem("_snapshot_key", val);
+      if (val !== null && val !== "") sessionStorage.setItem("_snapshot_key", val);
       overlay.style.display = "none";
       resolve(val);
     };
@@ -73,13 +73,13 @@ export async function createSnapshotManual(e?: Event) {
   btn.disabled = true;
   try {
     const key = await requestSnapshotKey();
-    if (!key) {
+    if (key === null) {
       btn.innerText = originalText;
       btn.disabled = false;
       return;
     }
 
-    if (!dashboard.state.store) {
+    if (dashboard.state.store === null) {
       dashboard.addToast("error", "No data");
       btn.innerText = originalText;
       btn.disabled = false;
@@ -118,14 +118,14 @@ export async function createSnapshotManual(e?: Event) {
 export async function listSnapshots(force?: boolean) {
   const container = document.getElementById("snapshot-list-container");
   const listEl = document.getElementById("snapshot-list");
-  if (!container || !listEl) return;
-  if (container.style.display !== "none" && !force) {
+  if (container === null || listEl === null) return;
+  if (container.style.display !== "none" && force !== true) {
     container.style.display = "none";
     return;
   }
   try {
     const key = await requestSnapshotKey();
-    if (!key) return;
+    if (key === null) return;
     const response = await authenticatedFetch("/api/reports", {
       headers: { "X-Snapshot-Key": key },
     });
@@ -160,7 +160,7 @@ export async function listSnapshots(force?: boolean) {
 
 export async function downloadSnapshot(date: string) {
   const key = await requestSnapshotKey();
-  if (!key) return;
+  if (key === null) return;
   try {
     const res = await authenticatedFetch(`/api/snapshot?date=${date}`, {
       headers: { "X-Snapshot-Key": key },
@@ -174,7 +174,7 @@ export async function downloadSnapshot(date: string) {
 export async function deleteSnapshot(date: string) {
   if (!confirm(`Delete ${date}?`)) return;
   const key = await requestSnapshotKey();
-  if (!key) return;
+  if (key === null) return;
   try {
     await authenticatedFetch(`/api/snapshot?date=${date}`, {
       method: "DELETE",

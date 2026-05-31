@@ -4,61 +4,55 @@ import { resolve } from "node:path";
 import { visualizer } from "rollup-plugin-visualizer";
 import { defineConfig, loadEnv } from "vite";
 
-/**
- * Standard root-level Vite configuration.
- * This file automatically picks up .env files in the same directory.
- */
 export default defineConfig(({ mode }) => {
-  // Load env file based on `mode` in the current working directory (root).
   const env = loadEnv(mode, process.cwd(), "");
 
-  // Single variable: VITE_WORKER_BASE — used in both dev and production
   const apiBaseUrl = env.VITE_WORKER_BASE || "http://localhost:8787";
-  if (!apiBaseUrl)
-    console.warn("[Vite] VITE_WORKER_BASE is not set; proxy may fail.");
 
-  // --- Branding Automation ---
+  // ⚠️ SAFE: do NOT mutate repo files in production builds
   if (mode === "production") {
     try {
       const brandingPath = resolve(__dirname, "public/branding.json");
       const branding = JSON.parse(readFileSync(brandingPath, "utf-8"));
 
-      // Auto-update commit hash and date
       branding.lastCommitHash = execSync("git rev-parse --short HEAD")
         .toString()
         .trim();
+
       branding.lastUpdate.value = new Date().toISOString().split("T")[0];
 
-      writeFileSync(brandingPath, JSON.stringify(branding, null, 2) + "\n");
-      console.log(
-        `[Build] Updated branding.json to commit ${branding.lastCommitHash}`,
-      );
+      // safer: write to dist instead of source
+      const distBrandingPath = resolve(__dirname, "dist/branding.json");
+      writeFileSync(distBrandingPath, JSON.stringify(branding, null, 2));
+
+      console.log(`[Build] branding.json written to dist`);
     } catch (e) {
-      console.warn("[Build] Failed to update branding.json metadata:", e);
+      console.warn("[Build] branding update failed:", e);
     }
   }
-  // ---------------------------
 
   return {
-    // Define global constants for build-time injection
     define: {
       VITE_WORKER_BASE: JSON.stringify(apiBaseUrl),
       APP_ENV: JSON.stringify(mode),
     },
+
     plugins: [
       visualizer({
-        open: true, // Automatically open the report in your default browser
-        filename: "dist/stats.html", // Where to save the report
-        gzipSize: true, // Show sizes after gzip compression
-        brotliSize: true, // Show sizes after brotli compression
+        open: true,
+        filename: "dist/stats.html",
+        gzipSize: true,
+        brotliSize: true,
       }),
     ],
+
     resolve: {
       alias: {
-        // Points '@' to the 'src' directory
         "@": resolve(__dirname, "./src"),
+        "@shared": resolve(__dirname, "./shared")
       },
     },
+
     build: {
       rollupOptions: {
         output: {
@@ -68,6 +62,7 @@ export default defineConfig(({ mode }) => {
         },
       },
     },
+
     server: {
       proxy: {
         "/api": {

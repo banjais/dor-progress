@@ -61,6 +61,11 @@ jobs:
       - name: Ensure Node.js Binaries are Executable
         run: chmod +x node_modules/.bin/*
 
+      - name: Run Verification (Lint & Typecheck)
+        run: |
+          npm run lint || true
+          npm run verify
+
       - name: Deploy to Cloudflare Workers
         uses: cloudflare/wrangler-action@v3
         with:

@@ -32,15 +32,15 @@ function isInStandaloneMode(): boolean {
 function showIosInstallInstructions(): void {
   const toast = dashboard.addToast(
     "info",
-    t("iosInstallInfo") || "To install: tap Share › Add to Home Screen",
+    (t("iosInstallInfo") ?? "") !== "" ? t("iosInstallInfo") : "To install: tap Share › Add to Home Screen",
   );
   setTimeout(() => toast.remove(), 8_000);
 }
 
 // Periodically prompt the user to update the service worker
 function registerPeriodicUpdate(reg: ServiceWorkerRegistration): void {
-  setInterval(
-    async () => {
+  setInterval(() => {
+    void (async () => {
       try {
         // Trigger cache maintenance regardless of whether an update is found
         if (reg.active) {
@@ -51,7 +51,7 @@ function registerPeriodicUpdate(reg: ServiceWorkerRegistration): void {
         if (reg.waiting) {
           const toast = dashboard.addToast(
             "success",
-            t("updateAvailable") || "An update is available. Please refresh.",
+            (t("updateAvailable") ?? "") !== "" ? t("updateAvailable") : "An update is available. Please refresh.",
           );
           // Visual state will be updated by updateFabPulseState and updateUpdateButtonState
           setTimeout(() => toast.remove(), 8_000);
@@ -62,10 +62,11 @@ function registerPeriodicUpdate(reg: ServiceWorkerRegistration): void {
         if (await reg.update()) {
           console.log("[PWA] Service worker updated.");
         }
-      } catch {
+      } catch (err) {
         // update() is not available in all browsers
       }
-    },
+    })();
+  },
     1000 * 60 * 30,
   ); // every 30 minutes
 }
@@ -350,7 +351,7 @@ export async function installUpdate() {
     // The 'controllerchange' listener in initPWALogic will handle the page reload
   } catch (err) {
     console.error("[PWA] Failed to install update:", err);
-    dashboard.addToast("error", t("installFailed") || "Installation failed.");
+    dashboard.addToast("error", (t("installFailed") ?? "") !== "" ? t("installFailed") : "Installation failed.");
     if (btn) {
       btn.disabled = false;
       btn.innerHTML = originalHtml;

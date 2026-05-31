@@ -9,7 +9,7 @@ import { jsPDF } from "jspdf";
 import autoTable from "jspdf-autotable";
 import { z } from "zod";
 
-import { runProjectSummary } from "./ai-service.ts";
+import { runProjectSummary } from "./ai-service";
 import {
   type AiSummary,
   AiSummarySchema,
@@ -20,7 +20,7 @@ import {
   ProjectReportSchema,
   SnapshotRequestSchema,
   arrayBufferToBase64,
-} from "./api-shared.js";
+} from "@shared/api-shared";
 import { devanagariFontBase64 } from "./fonts.js";
 
 /**
@@ -65,8 +65,8 @@ function generatePdfFromReport(report: ProjectReport): ArrayBuffer {
   doc.text(`Generated on: ${new Date().toISOString().split("T")[0]}`, 14, 36);
 
   // Prepare table data (excluding internal status fields)
-  const tableData = report.rows.map((row) =>
-    report.headers.map((header) => String(row[header] || "")),
+  const tableData = report.rows.map((row: any) =>
+    report.headers.map((header: string) => String(row[header] ?? "")),
   );
 
   autoTable(doc, {
@@ -87,7 +87,7 @@ class ServiceError extends Error {
   constructor(message: string, options?: { cause?: unknown; status?: number }) {
     super(message);
     this.name = "ServiceError";
-    this.status = options?.status || 500;
+    this.status = options?.status !== undefined ? options.status : 500;
     this.cause = options?.cause;
   }
 }
@@ -100,7 +100,7 @@ const JWKS = createRemoteJWKSet(
 
 const getCorsHeaders = (origin: string | null) => {
   const isAllowedOrigin =
-    origin &&
+    origin !== null &&
     (origin === "https://dor-progress.web.app" ||
       origin === "https://dor-progress.firebaseapp.com" ||
       origin.includes("localhost:") ||
@@ -168,7 +168,7 @@ async function generateFingerprint(buffer: ArrayBuffer): Promise<string> {
 async function verifyAppCheck(request: WorkerRequest, env: Env): Promise<void> {
   // Define environments where App Check should be bypassed (e.g., for local development or testing)
   const bypassEnvironments = ["development", "test"];
-  if (env.APP_ENV && bypassEnvironments.includes(env.APP_ENV)) {
+  if (env.APP_ENV !== undefined && bypassEnvironments.includes(env.APP_ENV)) {
     console.warn(`App Check bypassed for ${env.APP_ENV} environment.`);
     return;
   }
@@ -176,7 +176,7 @@ async function verifyAppCheck(request: WorkerRequest, env: Env): Promise<void> {
   const token = request.headers.get("X-Firebase-AppCheck");
   const isFallbackMode = request.headers.get("X-AppCheck-Fallback") === "true";
 
-  if (!token) {
+  if (token === null) {
     if (isFallbackMode) {
       console.warn(
         "[App Check] Request received in fallback mode without a token. Proceeding with caution.",
@@ -190,7 +190,7 @@ async function verifyAppCheck(request: WorkerRequest, env: Env): Promise<void> {
   const projectId = env.FIREBASE_PROJECT_ID;
   const appId = env.FIREBASE_APP_ID;
 
-  if (!projectNumber || !projectId || !appId) {
+  if (projectNumber === undefined || projectId === undefined || appId === undefined) {
     throw new ServiceError(
       "Server configuration error: Firebase configuration missing",
       { status: 500 },
@@ -252,7 +252,7 @@ async function handleFetch(
   const url = new URL(request.url);
 
   // Validate environment at the entry point
-  const envValidation = WorkerEnvSchema.safeParse(env);
+  const envValidation = WorkerEnvSchema.safeParse(env as any);
   if (!envValidation.success) {
     console.error(JSON.stringify({
       event: "worker_config_error",
@@ -261,7 +261,7 @@ async function handleFetch(
       errors: envValidation.error.flatten().fieldErrors
     }));
     // Optionally return an error response in development
-    if (env.APP_ENV === "development")
+    if (env.APP_ENV !== undefined && env.APP_ENV === "development")
       return jsonResponse(
         {
           error: "Environment Configuration Mismatch",
@@ -299,18 +299,18 @@ async function handleFetch(
       return jsonResponse(
         {
           firebase: {
-            apiKey: env.FIREBASE_API_KEY,
+            apiKey: env.FIREBASE_API_KEY ?? "",
             authDomain:
-              env.FIREBASE_AUTH_DOMAIN ||
+              env.FIREBASE_AUTH_DOMAIN ??
               `${env.FIREBASE_PROJECT_ID}.firebaseapp.com`,
             projectId: env.FIREBASE_PROJECT_ID,
             storageBucket:
-              env.FIREBASE_STORAGE_BUCKET ||
+              env.FIREBASE_STORAGE_BUCKET ??
               `${env.FIREBASE_PROJECT_ID}.appspot.com`,
             messagingSenderId:
-              env.FIREBASE_MESSAGING_SENDER_ID || env.FIREBASE_PROJECT_NUMBER,
+              env.FIREBASE_MESSAGING_SENDER_ID ?? env.FIREBASE_PROJECT_NUMBER,
             appId:
-              env.FIREBASE_APP_ID ||
+              env.FIREBASE_APP_ID ??
               `1:${env.FIREBASE_PROJECT_NUMBER}:web:dynamic`,
             measurementId: env.FIREBASE_MEASUREMENT_ID,
           },
@@ -331,8 +331,8 @@ async function handleFetch(
       const archives: ArchiveMetadata[] = list.keys
         .map((k: KVNamespaceListKey<ArchiveMetadata>) => ({
           date: k.name.replace("report:", ""),
-          summary: k.metadata?.summary || "Weekly progress snapshot.",
-          created: k.metadata?.created || "",
+          summary: k.metadata?.summary ?? "Weekly progress snapshot.",
+          created: k.metadata?.created ?? "",
           bsDate: k.metadata?.bsDate,
           recordCount: k.metadata?.recordCount ?? 0,
         }))
@@ -344,8 +344,8 @@ async function handleFetch(
 
     if (url.pathname === "/api/report") {
       const validation = ReportRequestSchema.safeParse({
-        lang: url.searchParams.get("lang") || undefined,
-        date: url.searchParams.get("date") || undefined,
+        lang: url.searchParams.get("lang") ?? undefined,
+        date: url.searchParams.get("date") ?? undefined,
         force: url.searchParams.get("force"),
         isLowData: request.headers.get("X-Low-Data") === "true",
       });
@@ -367,11 +367,11 @@ async function handleFetch(
       let fingerprint: string | undefined;
       let pdfBuffer: ArrayBuffer | undefined;
 
-      if (date) {
+      if (date !== undefined && date !== "" && typeof date === "string") {
         const rawData = await env.REPORTS_KV.get(`report:${date}`, {
           type: "json",
         });
-        if (!rawData)
+        if (rawData === null)
           throw new ServiceError(`Archived report for ${date} not found.`, {
             status: 404,
           });
@@ -394,27 +394,27 @@ async function handleFetch(
         };
       }
 
-      if (!isLowData && !report.aiSummary && fingerprint && pdfBuffer) {
+      if (isLowData === false && (report.aiSummary === null || report.aiSummary === undefined) && fingerprint !== undefined && pdfBuffer !== undefined) {
         const cacheKey = `ai_summary_${lang}_${fingerprint}`;
         const cachedRaw = forceRefresh
           ? null
-          : await env.REPORTS_KV.get(cacheKey, { type: "json" });
+          : await env.REPORTS_KV.get<AiSummary>(cacheKey, { type: "json" });
         let aiResult: AiSummary | null = null;
-        if (cachedRaw) {
+        if (cachedRaw !== null) {
           const parsed = AiSummarySchema.safeParse(cachedRaw);
           if (parsed.success) aiResult = parsed.data;
         }
-        if (!aiResult && pdfBuffer) {
+        if (aiResult === null && pdfBuffer !== undefined) {
           const pdfBase64 = arrayBufferToBase64(pdfBuffer);
           for (let i = 0; i < 2; i++) {
             try {
               const apiKey = env.GOOGLE_GENAI_API_KEY;
-              if (!apiKey)
+              if (apiKey === undefined)
                 throw new ServiceError("GOOGLE_GENAI_API_KEY not configured", {
                   status: 500,
                 });
               aiResult = await runProjectSummary(apiKey, { pdfBase64, lang });
-              if (aiResult?.brief) {
+              if (aiResult !== null && aiResult.brief !== "") {
                 ctx.waitUntil(
                   env.REPORTS_KV.put(cacheKey, JSON.stringify(aiResult), {
                     expirationTtl: 604800,
@@ -430,7 +430,7 @@ async function handleFetch(
           }
         }
         report.aiSummary = aiResult;
-        if (aiResult?.extractedData) {
+        if (aiResult !== null && aiResult.extractedData !== undefined && aiResult.extractedData !== null) {
           report.headers = aiResult.extractedData.headers;
           report.rows = aiResult.extractedData.rows;
         }
@@ -442,7 +442,7 @@ async function handleFetch(
       await verifyAppCheck(request, env);
       const year = url.searchParams.get("year");
       const month = url.searchParams.get("month");
-      if (!year || !month)
+      if (year === null || month === null)
         throw new ServiceError("Year and month are required", { status: 400 });
       const prefix = `report:${year}-${month}`;
       const snapshotListResult = await env.REPORTS_KV.list<ArchiveMetadata>({
@@ -454,31 +454,31 @@ async function handleFetch(
           status: 404,
         });
       }
-      const latestKey = snapshotListResult.keys.sort(
+      const latestKey = [...snapshotListResult.keys].sort(
         (
           a: KVNamespaceListKey<ArchiveMetadata>,
           b: KVNamespaceListKey<ArchiveMetadata>,
         ) => b.name.localeCompare(a.name),
       )[0].name;
-      const report = await env.REPORTS_KV.get(latestKey, { type: "json" });
+      const report = await env.REPORTS_KV.get<ProjectReport>(latestKey, { type: "json" });
       return jsonResponse(report, 200, origin);
     }
 
     if (url.pathname === "/api/snapshot") {
       const snapshotKey = request.headers.get("X-Snapshot-Key");
       const isDev = env.APP_ENV === "development" || env.APP_ENV === "test";
-      if (!isDev && (!snapshotKey || snapshotKey !== env.SNAPSHOT_KEY)) {
+      if (!isDev && (snapshotKey === null || snapshotKey !== env.SNAPSHOT_KEY)) {
         throw new ServiceError("Unauthorized", { status: 401 });
       }
 
       if (request.method === "GET") {
         const date = url.searchParams.get("date");
-        if (!date)
+        if (date === null)
           throw new ServiceError("Missing date parameter", { status: 400 });
         const report = await env.REPORTS_KV.get(`report:${date}`, {
           type: "json",
         });
-        if (!report)
+        if (report === null)
           throw new ServiceError("Snapshot not found", { status: 404 });
 
         const pdfBuffer = generatePdfFromReport(report as ProjectReport);
@@ -509,7 +509,7 @@ async function handleFetch(
         const body = bodyResult.data;
         const date = body.meta.lastUpdate;
         const report = ProjectReportSchema.parse({
-          headers: body.headers || [],
+          headers: body.headers ?? [],
           rows: body.records,
           lastUpdate: date,
           aiSummary: null,
@@ -518,7 +518,7 @@ async function handleFetch(
           metadata: {
             date,
             recordCount: body.meta.total,
-            summary: report.aiSummary?.brief
+            summary: (report.aiSummary?.brief !== undefined && report.aiSummary.brief !== "")
               ? report.aiSummary.brief.substring(0, 200)
               : undefined,
             created: new Date().toISOString(),
@@ -527,9 +527,9 @@ async function handleFetch(
         return jsonResponse({ success: true, date }, 200, origin);
       }
 
-      if (request.method === "DELETE") {
+      if (request.method !== undefined && request.method === "DELETE") {
         const date = url.searchParams.get("date");
-        if (!date)
+        if (date === null)
           throw new ServiceError("Missing date parameter", { status: 400 });
         await env.REPORTS_KV.delete(`report:${date}`);
         return jsonResponse({ success: true }, 200, origin);
@@ -540,7 +540,7 @@ async function handleFetch(
     if (url.pathname === "/api/admin/migrate-metadata") {
       await verifyAppCheck(request, env);
       const snapshotKey = request.headers.get("X-Snapshot-Key");
-      if (!snapshotKey) throw new ServiceError("Unauthorized", { status: 401 });
+      if (snapshotKey === null) throw new ServiceError("Unauthorized", { status: 401 });
 
       const dryRun = url.searchParams.get("dryRun") === "true";
       const listResult = await env.REPORTS_KV.list<ArchiveMetadata>({
@@ -561,7 +561,7 @@ async function handleFetch(
           const currentMetadata = key.metadata;
           const dateFromKey = key.name.replace("report:", "");
           if (
-            currentMetadata?.date &&
+            currentMetadata?.date !== undefined &&
             typeof currentMetadata?.recordCount === "number"
           ) {
             results.skipped++;
@@ -575,14 +575,14 @@ async function handleFetch(
             recordCount = val?.rows?.length ?? 0;
           }
           const updatedMetadata: ArchiveMetadata = {
-            date: currentMetadata?.date || dateFromKey,
+            date: currentMetadata?.date ?? dateFromKey,
             recordCount: recordCount,
-            summary: currentMetadata?.summary || "Weekly progress snapshot.",
-            created: currentMetadata?.created || new Date().toISOString(),
+            summary: currentMetadata?.summary ?? "Weekly progress snapshot.",
+            created: currentMetadata?.created ?? new Date().toISOString(),
             bsDate: currentMetadata?.bsDate,
           };
           const value = await env.REPORTS_KV.get(key.name);
-          if (value) {
+          if (value !== null) {
             if (!dryRun) {
               await env.REPORTS_KV.put(key.name, value, {
                 metadata: updatedMetadata,
@@ -645,7 +645,7 @@ async function handleAutoArchive(env: Env) {
     const cacheKey = `archive_check_${fingerprint}`;
     const alreadyArchived = await env.REPORTS_KV.get(cacheKey);
 
-    if (alreadyArchived) {
+    if (alreadyArchived !== null) {
       console.log(
         // No citation needed, this is internal code.
         `[Auto-Archive] Snapshot for fingerprint ${fingerprint} already exists. Skipping.`,
@@ -654,7 +654,7 @@ async function handleAutoArchive(env: Env) {
     }
 
     const apiKey = env.GOOGLE_GENAI_API_KEY;
-    if (!apiKey)
+    if (apiKey === undefined)
       throw new Error("GOOGLE_GENAI_API_KEY not configured for auto-archive");
 
     // Convert PDF to Base64 for Gemini processing
@@ -666,7 +666,7 @@ async function handleAutoArchive(env: Env) {
       lang: "ne",
     });
 
-    if (!aiResult?.extractedData || !aiResult.extractedData.rows.length) {
+    if (aiResult?.extractedData === undefined || aiResult.extractedData.rows.length === 0) {
       console.error(
         "[Auto-Archive] AI extraction returned no data. Aborting archive.",
       );
@@ -674,7 +674,7 @@ async function handleAutoArchive(env: Env) {
     }
 
     const reportDate =
-      aiResult.extractedData.date || new Date().toISOString().split("T")[0];
+      aiResult.extractedData.date ?? new Date().toISOString().split("T")[0];
     const report = ProjectReportSchema.parse({
       headers: aiResult.extractedData.headers,
       rows: aiResult.extractedData.rows,
@@ -689,7 +689,7 @@ async function handleAutoArchive(env: Env) {
         recordCount: report.rows.length,
         // Truncate the AI summary brief to ensure it fits within KV metadata limits (1024 bytes)
         // The full brief is available when the report is fetched.
-        summary: report.aiSummary?.brief
+        summary: (report.aiSummary?.brief !== undefined && report.aiSummary.brief !== "")
           ? report.aiSummary.brief.substring(0, 200)
           : undefined,
         created: new Date().toISOString(),
@@ -710,7 +710,7 @@ async function handleAutoArchive(env: Env) {
       prefix: "report:",
       limit: 1000,
     });
-    const allSnapshots = listResult.keys
+    const allSnapshots = (listResult.keys as any[])
       .filter((k) => k.name.startsWith("report:")) // Ensure only report keys are considered
       .sort((a, b) => b.name.localeCompare(a.name)); // Sort descending by date (key name)
 
@@ -731,7 +731,7 @@ async function handleAutoArchive(env: Env) {
 
 async function fetchProjectPdf(env: Env): Promise<ArrayBuffer> {
   const sheetId = env.PUBLISHED_SHEET_ID;
-  if (!sheetId)
+  if (sheetId === undefined)
     throw new ServiceError("Google Sheet ID is not configured.", {
       status: 500,
     });
@@ -742,14 +742,14 @@ async function fetchProjectPdf(env: Env): Promise<ArrayBuffer> {
   // We use caches.default and check for its existence as it is unavailable in 'scheduled' events.
   const cache = typeof caches !== "undefined" ? (caches as any).default : null;
 
-  let response = cache ? await cache.match(publishedUrl) : null;
-  if (!response) {
+  let response = cache !== null ? await (cache as any).match(publishedUrl) : null;
+  if (response === null) {
     response = await fetch(publishedUrl);
     // Explicitly check for content type to prevent HTML error pages from being treated as PDFs
     const contentType = response.headers.get("Content-Type");
     if (
-      response.ok &&
-      contentType &&
+      response.ok === true &&
+      contentType !== null &&
       !contentType.includes("application/pdf")
     ) {
       const text = await response.text(); // Read the body to log it
@@ -758,7 +758,7 @@ async function fetchProjectPdf(env: Env): Promise<ArrayBuffer> {
         { status: 400 },
       );
     }
-    if (response?.ok && cache) {
+    if (response !== null && response.ok === true && cache !== null) {
       const headers = new Headers(response.headers);
       headers.set("Cache-Control", "public, max-age=300");
       // Use 'any' for the body to satisfy DOM vs Worker stream type differences
@@ -771,7 +771,7 @@ async function fetchProjectPdf(env: Env): Promise<ArrayBuffer> {
     }
   }
 
-  if (!response?.ok)
+  if (response === null || response.ok === false)
     throw new ServiceError(
       `Failed to fetch PDF report: ${response?.statusText || "Unknown Error"}`,
       {

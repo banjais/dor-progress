@@ -1,6 +1,6 @@
 {
   "name": "dor-progress",
-  "version": "1.0.507",
+  "version": "1.0.510",
   "private": true,
   "type": "module",
   "scripts": {
@@ -9,10 +9,7 @@
     "build": "vite build",
     "preview": "vite preview",
     "serve:hosting": "npm run build && firebase emulators:start --only hosting",
-    "cf-typegen": "wrangler types src/worker-configuration.d.ts",
     "lint": "eslint . --max-warnings 0 --no-warn-ignored",
-    "typecheck": "tsc -b tsconfig.app.json",
-    "typecheck:worker": "tsc -p src/tsconfig.worker.json",
     "verify": "npm run lint && tsc -b",
     "audit:check": "npm audit --audit-level=high",
     "audit:fix": "npm audit fix",

@@ -113,9 +113,13 @@ export class AudioEngine {
 
       // Wire graph
       this.uiGain.connect(this.ctx.destination);
-      this.musicGain?.connect(this.musicFilter!).connect(this.ctx.destination);
-      this.musicFilter.connect(analyserNode); // Use the non-nullable local constant
-      this.humFilter.connect(this.humGain).connect(this.ctx.destination);
+      if (this.musicGain && this.musicFilter) {
+          this.musicGain.connect(this.musicFilter).connect(this.ctx.destination);
+      }
+      if (this.musicFilter) this.musicFilter.connect(analyserNode);
+      if (this.humFilter && this.humGain) {
+          this.humFilter.connect(this.humGain).connect(this.ctx.destination);
+      }
 
       await this.preRenderAll();
       await this.updateVolumes();
@@ -159,7 +163,8 @@ export class AudioEngine {
     }
 
     // Pre-render other packs in background
-    setTimeout(async () => {
+    setTimeout(() => {
+      void (async () => {
       for (const [packName, profiles] of Object.entries(
         AudioEngine.SOUND_PROFILES,
       )) {
@@ -169,6 +174,7 @@ export class AudioEngine {
           this.bufferPool.set(`${packName}:${soundId}`, buffer);
         }
       }
+      })();
     }, 2000);
   }
 

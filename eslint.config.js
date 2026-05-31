@@ -27,6 +27,10 @@ export default tseslint.config(
     },
     files: ["**/*.ts"],
     languageOptions: {
+      parserOptions: {
+        projectService: true,
+        tsconfigRootDir: import.meta.dirname,
+      },
       globals: {
         ...globals.browser,
         ...globals.es2021,
@@ -53,6 +57,14 @@ export default tseslint.config(
       // Optional: Enable auto-fixing for unused imports as well
       "unused-imports/no-unused-imports": "error",
       "no-console": "off",
+      "@typescript-eslint/no-floating-promises": "error",
+      "@typescript-eslint/no-misused-promises": "error",
+      "@typescript-eslint/no-unnecessary-condition": "warn",
+      "@typescript-eslint/strict-boolean-expressions": [
+        "error",
+        { allowString: false, allowNumber: false },
+      ],
+      "@typescript-eslint/no-non-null-assertion": "error",
     },
   },
   {

@@ -97,7 +97,7 @@ self.onmessage = (e: MessageEvent) => {
     width = data.width;
     height = data.height;
     generateSwarmTargets();
-    if (data.canvas) {
+    if (data.canvas !== undefined && data.canvas !== null) {
       offscreenCanvas = data.canvas;
       ctx = offscreenCanvas!.getContext("2d");
     }

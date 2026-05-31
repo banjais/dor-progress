@@ -1,24 +1,24 @@
 {
   "compilerOptions": {
     "target": "ESNext",
-    "useDefineForClassFields": true,
     "module": "ESNext",
     "moduleResolution": "bundler",
+
     "strict": true,
-    "noUnusedLocals": true,
-    "noUnusedParameters": true,
-    "noFallthroughCasesInSwitch": true,
-    "allowImportingTsExtensions": true,
-    "resolveJsonModule": true,
-    "isolatedModules": true,
-    "noEmit": true,
     "skipLibCheck": true,
+    "noEmit": true,
+    "isolatedModules": true,
+
     "forceConsistentCasingInFileNames": true,
-    "ignoreDeprecations": "5.0",
+    "resolveJsonModule": true,
+    "allowImportingTsExtensions": true,
+
     "baseUrl": ".",
+
     "paths": {
-      "@/*": ["src/*"]
-    },
-    "composite": true
+      "@/*": ["src/*"],
+      "@shared/*": ["shared/*"],
+      "@shared/api-shared": ["shared/api-shared.ts"]
+    }
   }
 }
