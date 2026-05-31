@@ -1,6 +1,7 @@
 import { jsPDF } from "jspdf";
 import autoTable from "jspdf-autotable";
 
+import type { Dashboard } from "./Dashboard.js";
 import {
   DashboardState,
   ReportState,
@@ -20,8 +21,6 @@ import {
   toNepaliNumerals,
 } from "./api-utils.js";
 import { devanagariFontBase64 } from "./fonts.js";
-
-import type { Dashboard } from "./Dashboard.js";
 
 // Assuming fonts.js exists and exports this
 

@@ -2,7 +2,6 @@
 
 import { spawnSync, execSync } from "child_process";
 import fs from "fs";
-import "dotenv/config";
 
 process.env.NODE_NO_WARNINGS = "1";
 
@@ -45,21 +44,6 @@ console.log(
   `${colors.bold}${colors.cyan}🚀 Starting DoR Progress Deployment${colors.reset}\n`
 );
 
-// ─────────────────────────────────────────────────────────────
-// Environment Validation
-// ─────────────────────────────────────────────────────────────
-
-console.log("📋 Checking environment variables...");
-const requiredEnvs = ["VITE_WORKER_BASE", "VITE_FIREBASE_URL"];
-const missingEnvs = requiredEnvs.filter(env => !process.env[env] && !process.env.GITHUB_ACTIONS);
-
-if (missingEnvs.length > 0) {
-  console.error(`${colors.red}❌ Missing required local environment variables: ${missingEnvs.join(", ")}${colors.reset}`);
-  console.error(`Ensure these are set in your terminal or .env file.`);
-  process.exit(1);
-}
-console.log("✅ Environment validation passed.\n");
-
 const today = new Date().toISOString().split("T")[0];
 
 const branch =
@@ -81,20 +65,6 @@ console.log("🔍 Running Security Audit...");
 run("npm", ["audit", "--audit-level=high"]);
 
 console.log("✅ Security audit passed.\n");
-
-// ─────────────────────────────────────────────────────────────
-// Clean & Verify (Moved up to prevent version bumps on failure)
-// ─────────────────────────────────────────────────────────────
-
-console.log("🧹 Cleaning...");
-run("npm", ["run", "clean"]);
-
-console.log("✅ Clean completed.\n");
-
-console.log("🧪 Running verification...");
-run("npm", ["run", "verify"]);
-
-console.log("✅ Verification passed.\n");
 
 // ─────────────────────────────────────────────────────────────
 // Update Version
@@ -171,6 +141,24 @@ if (fs.existsSync("public/sw.v2.js")) {
 }
 
 console.log(`✅ Version updated to ${newVersion}\n`);
+
+// ─────────────────────────────────────────────────────────────
+// Clean
+// ─────────────────────────────────────────────────────────────
+
+console.log("🧹 Cleaning...");
+run("npm", ["run", "clean"]);
+
+console.log("✅ Clean completed.\n");
+
+// ─────────────────────────────────────────────────────────────
+// Verify
+// ─────────────────────────────────────────────────────────────
+
+console.log("🧪 Running verification...");
+run("npm", ["run", "verify"]);
+
+console.log("✅ Verification passed.\n");
 
 // ─────────────────────────────────────────────────────────────
 // Build

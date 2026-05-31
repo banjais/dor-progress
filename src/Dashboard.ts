@@ -2,6 +2,12 @@ import { AppCheck } from "firebase/app-check";
 import { interpret } from "xstate";
 
 // Fix: reportMachine is in src/
+import { LoadingIndicatorManager } from "./LoadingIndicatorManager.js";
+import { TelemetryManager } from "./TelemetryManager.js";
+// Import interpret
+import { ThemeManager } from "./ThemeManager.js";
+import { TimerManager } from "./TimerManager.js";
+import { ToastManager } from "./ToastManager.js";
 import {
   type DashboardState,
   type ProjectReport,
@@ -18,13 +24,7 @@ import {
   typeText,
 } from "./api-utils.js";
 import { AudioEngine } from "./components/AudioEngine.js";
-import { LoadingIndicatorManager } from "./LoadingIndicatorManager.js";
 import { reportMachine } from "./reportMachine.js";
-import { TelemetryManager } from "./TelemetryManager.js";
-// Import interpret
-import { ThemeManager } from "./ThemeManager.js";
-import { TimerManager } from "./TimerManager.js";
-import { ToastManager } from "./ToastManager.js";
 
 export class Dashboard {
   private static _instance: Dashboard | null = null;

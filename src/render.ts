@@ -1,3 +1,4 @@
+import { Dashboard } from "./Dashboard.js";
 import {
   type DashboardState,
   type ProjectReport,
@@ -9,7 +10,6 @@ import {
   toArabicNumerals,
   toNepaliNumerals,
 } from "./api-utils.js";
-import { Dashboard } from "./Dashboard.js";
 import { renderMiniChart, renderSparkline } from "./utils.js";
 
 /** Global state for incremental rendering */

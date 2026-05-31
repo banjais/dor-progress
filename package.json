@@ -1,6 +1,6 @@
 {
   "name": "dor-progress",
-  "version": "1.0.506",
+  "version": "1.0.500",
   "private": true,
   "type": "module",
   "scripts": {
@@ -8,21 +8,18 @@
     "dev:worker": "wrangler dev --port 8787",
     "build": "vite build",
     "preview": "vite preview",
-    "logs": "wrangler tail",
-    "logs:errors": "wrangler tail --status 4xx --status 5xx --search \"error\"",
     "serve:hosting": "npm run build && firebase emulators:start --only hosting",
     "cf-typegen": "wrangler types src/worker-configuration.d.ts",
-    "lint": "eslint . --fix --max-warnings 0 --no-warn-ignored",
+    "lint": "eslint . --max-warnings 0 --no-warn-ignored",
     "typecheck": "tsc -b tsconfig.app.json",
     "typecheck:worker": "tsc -p src/tsconfig.worker.json",
     "verify": "npm run lint && tsc -b",
     "audit:check": "npm audit --audit-level=high",
     "audit:fix": "npm audit fix",
     "prebuild": "npm run clean",
-    "find-unused": "node scripts/find-unused.js",
     "clean": "rimraf dist node_modules/.vite .tsbuildinfo",
     "deploy": "node scripts/deploy.js",
-    "deploy:hosting": "npm run build && firebase deploy --only hosting",
+    "deploy:hosting": "firebase deploy --only hosting --non-interactive",
     "check-updates": "npx npm-check-updates",
     "test": "echo \"No tests specified\" && exit 0",
     "reinstall": "rimraf node_modules package-lock.json && npm install",
@@ -39,8 +36,6 @@
     "env-cmd": "^11.0.0",
     "eslint": "^9.39.4",
     "eslint-config-prettier": "^10.1.8",
-    "eslint-import-resolver-typescript": "^3.8.3",
-    "eslint-plugin-import": "^2.31.0",
     "eslint-plugin-unused-imports": "^4.4.1",
     "firebase": "^12.13.0",
     "firebase-tools": "^13.35.1",
@@ -71,12 +66,11 @@
     "google-gax": "^5.0.0",
     "@google-cloud/pubsub": "^5.0.0",
     "retry-request": "^8.0.0",
-    "teeny-request": "^10.0.0",
-    "glob": "^11.0.0"
+    "teeny-request": "^10.0.0"
   },
   "lint-staged": {
     "*.{js,ts}": [
-      "node scripts/find-unused.js",
+      "eslint --fix --max-warnings 0 --no-warn-ignored",
       "prettier --write"
     ]
   },
@@ -88,12 +82,10 @@
       "^react",
       "<THIRD_PARTY_MODULES>",
       "^@/(.*)$",
-      "^[./]",
-      "\\.(css|scss|sass|less|png|jpg|jpeg|svg|gif|webp|woff|woff2|ttf|eot)$"
+      "^[./]"
     ],
     "importOrderSeparation": true,
-    "importOrderSortSpecifiers": true,
-    "importOrderCaseInsensitive": true
+    "importOrderSortSpecifiers": true
   },
   "engines": {
     "node": ">=22"

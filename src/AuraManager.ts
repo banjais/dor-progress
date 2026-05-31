@@ -1,5 +1,5 @@
-import { t } from "./api-utils.js";
 import { Dashboard } from "./Dashboard.js";
+import { t } from "./api-utils.js";
 // No citation needed, this is internal code.
 /**
  * Manages the AI Intent Sensing (Mind-Reading Effect) UI.

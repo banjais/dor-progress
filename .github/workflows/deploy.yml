@@ -17,7 +17,6 @@ concurrency:
 
 env:
   NODE_VERSION: 22
-  NPM_CONFIG_ALLOW_SCRIPTS: true
 
 jobs:
   # JOB 1: Validation of Secrets
@@ -33,53 +32,19 @@ jobs:
           AI_KEY: ${{ secrets.GOOGLE_GENAI_API_KEY }}
           SNAP_KEY: ${{ secrets.SNAPSHOT_KEY }}
           FB_ID: ${{ secrets.FIREBASE_PROJECT_ID }}
-          FB_NUM: ${{ secrets.FIREBASE_PROJECT_NUMBER }}
-          FB_APP: ${{ secrets.FIREBASE_APP_ID }}
-          FB_KEY: ${{ secrets.FIREBASE_API_KEY }}
-          SHEET_ID: ${{ secrets.PUBLISHED_SHEET_ID }}
-          VITE_BASE: ${{ secrets.VITE_WORKER_BASE }}
-          VITE_URL: ${{ secrets.VITE_FIREBASE_URL }}
-          # Additional Worker Config
-          FB_DOMAIN: ${{ secrets.FIREBASE_AUTH_DOMAIN }}
-          FB_STORAGE: ${{ secrets.FIREBASE_STORAGE_BUCKET }}
-          FB_SENDER: ${{ secrets.FIREBASE_MESSAGING_SENDER_ID }}
         run: |
           echo "Checking required GitHub Secrets..."
-          ERRORS=0
-          check_secret() {
-            if [ -z "$1" ]; then
-              echo "❌ Missing secret: $2"
-              ERRORS=1
-            fi
-          }
-
-          # Infrastructure & Auth
-          check_secret "$CF_TOKEN" "CLOUDFLARE_API_TOKEN"
-          check_secret "$CF_ID" "CLOUDFLARE_ACCOUNT_ID"
-          check_secret "$FB_SA" "FIREBASE_SERVICE_ACCOUNT"
-          
-          # Worker Core (BaseEnvSchema)
-          check_secret "$FB_ID" "FIREBASE_PROJECT_ID"
-          check_secret "$FB_NUM" "FIREBASE_PROJECT_NUMBER"
-          check_secret "$FB_APP" "FIREBASE_APP_ID"
-          check_secret "$FB_KEY" "FIREBASE_API_KEY"
-          check_secret "$AI_KEY" "GOOGLE_GENAI_API_KEY"
-          check_secret "$SNAP_KEY" "SNAPSHOT_KEY"
-          check_secret "$SHEET_ID" "PUBLISHED_SHEET_ID"
-          
-          # Frontend Deployment Keys
-          check_secret "$VITE_BASE" "VITE_WORKER_BASE"
-          check_secret "$VITE_URL" "VITE_FIREBASE_URL"
-
-          if [ $ERRORS -eq 1 ]; then
-            echo "Critical secrets are missing. Deployment aborted."
-            exit 1
-          fi
+          test -n "$CF_TOKEN" || (echo "❌ Missing CLOUDFLARE_API_TOKEN" && exit 1)
+          test -n "$CF_ID" || (echo "❌ Missing CLOUDFLARE_ACCOUNT_ID" && exit 1)
+          test -n "$FB_SA" || (echo "❌ Missing FIREBASE_SERVICE_ACCOUNT" && exit 1)
+          test -n "$FB_ID" || (echo "❌ Missing FIREBASE_PROJECT_ID" && exit 1)
+          test -n "$AI_KEY" || (echo "❌ Missing GOOGLE_GENAI_API_KEY" && exit 1)
+          test -n "$SNAP_KEY" || (echo "❌ Missing SNAPSHOT_KEY" && exit 1)
           echo "✅ All required secrets exist"
 
-  # NEW JOB: Security Audit as a gatekeeper
-  security-audit:
-    name: Security Audit
+  # JOB 2: Backend Deployment (Cloudflare Workers)
+  backend-deploy:
+    name: Build & Deploy Backend
     needs: [validate-secrets]
     runs-on: ubuntu-latest
     steps:
@@ -89,54 +54,14 @@ jobs:
           node-version: ${{ env.NODE_VERSION }}
           cache: npm
       
-      # This runs the audit check against the resolutions defined in audit-resolve.json.
-      # It will only fail if NEW or UNRESOLVED vulnerabilities are detected.
-      - name: Run suppressed npm audit
-        run: npx check-audit
-
-  # JOB 2: Backend Deployment (Cloudflare Workers)
-  backend-deploy:
-    name: Build & Deploy Backend
-    needs: [validate-secrets, security-audit]
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: ${{ env.NODE_VERSION }}
-          cache: npm
-      
       - name: Install Dependencies
-        run: npm install --foreground-scripts
-
-      - name: Upload NPM Logs on Failure
-        if: failure()
-        uses: actions/upload-artifact@v4
-        with:
-          name: npm-logs-backend
-          path: ~/.npm/_logs/*.log
+        run: npm install
 
       - name: Deploy to Cloudflare Workers
         uses: cloudflare/wrangler-action@v3
         with:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-        env:
-          # Cloudflare Worker Environment Variables (from BaseEnvSchema)
-          APP_ENV: production # Explicitly set for production deployment
-          FIREBASE_PROJECT_NUMBER: ${{ secrets.FIREBASE_PROJECT_NUMBER }}
-          FIREBASE_PROJECT_ID: ${{ secrets.FIREBASE_PROJECT_ID }}
-          FIREBASE_APP_ID: ${{ secrets.FIREBASE_APP_ID }}
-          FIREBASE_API_KEY: ${{ secrets.FIREBASE_API_KEY }}
-          FIREBASE_AUTH_DOMAIN: ${{ secrets.FIREBASE_AUTH_DOMAIN }}
-          FIREBASE_STORAGE_BUCKET: ${{ secrets.FIREBASE_STORAGE_BUCKET }}
-          FIREBASE_MESSAGING_SENDER_ID: ${{ secrets.FIREBASE_MESSAGING_SENDER_ID }}
-          FIREBASE_MEASUREMENT_ID: ${{ secrets.FIREBASE_MEASUREMENT_ID }}
-          RECAPTCHA_SITE_KEY: ${{ secrets.RECAPTCHA_SITE_KEY }}
-          DIGITAL_SIGNATURE: ${{ secrets.DIGITAL_SIGNATURE }}
-          GOOGLE_GENAI_API_KEY: ${{ secrets.GOOGLE_GENAI_API_KEY }}
-          PUBLISHED_SHEET_ID: ${{ secrets.PUBLISHED_SHEET_ID }}
-          SNAPSHOT_KEY: ${{ secrets.SNAPSHOT_KEY }}
 
   # JOB 3: Frontend Deployment (Firebase Hosting)
   frontend-deploy:
@@ -153,28 +78,27 @@ jobs:
           cache: npm
 
       - name: Install Dependencies
-        run: npm install --foreground-scripts
-
-      - name: Upload NPM Logs on Failure
-        if: failure()
-        uses: actions/upload-artifact@v4
-        with:
-          name: npm-logs-frontend
-          path: ~/.npm/_logs/*.log
+        run: npm install
 
       - name: Run Verification (Lint & Typecheck)
         run: npm run verify
+
+      - name: Run npm audit
+        run: npm audit --audit-level=high
 
       # Run the automated deployment script to bump versions in package.json, branding.json, etc.
       # This script is expected to commit and push changes.
       - name: Run Automated Deployment Script (Version Bump)
         run: npm run deploy
         env:
-          VITE_WORKER_BASE: ${{ secrets.VITE_WORKER_BASE }}
-          VITE_FIREBASE_URL: ${{ secrets.VITE_FIREBASE_URL }}
-          VITE_APP_ENV: production
           GIT_AUTHOR_NAME: 'github-actions[bot]' # Attribute the commit to the bot
           GIT_AUTHOR_EMAIL: 'github-actions[bot]@users.noreply.github.com' # Bot's email
+      - name: Build Frontend Project
+        env:
+          VITE_WORKER_BASE: ${{ secrets.VITE_WORKER_BASE }}
+          VITE_APP_ENV: production # Explicitly set APP_ENV for production build
+          VITE_FIREBASE_URL: ${{ secrets.VITE_FIREBASE_URL }}
+        run: npm run build
 
       - name: Deploy to Firebase Hosting
         uses: FirebaseExtended/action-hosting-deploy@v0

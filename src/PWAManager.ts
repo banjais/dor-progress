@@ -1,5 +1,5 @@
-import { t, toNepaliNumerals } from "./api-utils.js";
 import { Dashboard } from "./Dashboard.js";
+import { t, toNepaliNumerals } from "./api-utils.js";
 import { devanagariFontBase64 } from "./fonts.js";
 
 // PWA install qualification delay (ms): 3 seconds

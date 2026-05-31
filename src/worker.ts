@@ -1,9 +1,15 @@
+import type {
+  ExecutionContext,
+  ExportedHandler,
+  KVNamespace,
+  KVNamespaceListKey,
+} from "@cloudflare/workers-types";
 import { createRemoteJWKSet, jwtVerify } from "jose";
 import { jsPDF } from "jspdf";
 import autoTable from "jspdf-autotable";
 import { z } from "zod";
 
-import { runProjectSummary } from "./ai-service";
+import { runProjectSummary } from "./ai-service.ts";
 import {
   type AiSummary,
   AiSummarySchema,
@@ -14,22 +20,16 @@ import {
   ProjectReportSchema,
   SnapshotRequestSchema,
   arrayBufferToBase64,
-} from "./api-shared";
-import { devanagariFontBase64 } from "./fonts";
-
-import type {
-  ExecutionContext,
-  ExportedHandler,
-  KVNamespace,
-  KVNamespaceListKey,
-  ScheduledController,
-  Request as WorkerRequest,
-  Response as WorkerResponse,
-} from "@cloudflare/workers-types";
+} from "./api-shared.js";
+import { devanagariFontBase64 } from "./fonts.js";
 
 interface Env extends BaseEnv {
   REPORTS_KV: KVNamespace;
 }
+
+// Type aliases to use Cloudflare-specific interfaces without shadowing global values.
+type WorkerRequest = import("@cloudflare/workers-types").Request;
+type WorkerResponse = import("@cloudflare/workers-types").Response;
 
 /**
  * Generates a tabular PDF report from JSON data.
@@ -123,10 +123,12 @@ function jsonResponse(
   status = 200,
   origin: string | null = null,
 ): WorkerResponse {
-  return new Response(JSON.stringify(data), {
+  // No citation needed, this is internal code.
+  return new Response(JSON.stringify(data) as any, {
+    // No citation needed, this is internal code.
     status,
     headers: getCorsHeaders(origin),
-  }) as unknown as WorkerResponse;
+  }) as unknown as WorkerResponse; // No citation needed, this is internal code.
 }
 
 async function generateFingerprint(buffer: ArrayBuffer): Promise<string> {
@@ -203,7 +205,7 @@ async function verifyAppCheck(request: WorkerRequest, env: Env): Promise<void> {
     }
   } catch (e: any) {
     // Log the specific jose verification error to Cloudflare Logs for debugging
-    console.error(`[App Check] 401 Failure: ${e.message}`, {
+    console.error(`[App Check] Verification failed: ${e.message}`, {
       code: e.code,
       project: projectId,
     });
@@ -254,17 +256,17 @@ async function handleFetch(
         },
         500,
         origin,
-    );
+      );
   }
 
   // Diagnostic log to verify Vite proxy hand-off
-  console.log(`[Worker] ${request.method} ${url.pathname} | Origin: ${origin}`);
+  console.log(`[Worker] ${request.method} ${url.pathname} (Origin: ${origin})`);
 
   if (request.method === "OPTIONS") {
-    return (new Response(null, {
+    return new Response(null, {
       status: 204,
       headers: getCorsHeaders(origin),
-    }) as unknown as WorkerResponse);
+    }) as unknown as WorkerResponse;
   }
 
   try {
@@ -439,17 +441,8 @@ async function handleFetch(
           b: KVNamespaceListKey<ArchiveMetadata>,
         ) => b.name.localeCompare(a.name),
       )[0].name;
-      const rawReport = await env.REPORTS_KV.get(latestKey, { type: "json" });
-      if (!rawReport)
-        throw new ServiceError("Summary snapshot not found", { status: 404 });
-  
-      const summaryValidation = ProjectReportSchema.safeParse(rawReport);
-      if (!summaryValidation.success)
-        throw new ServiceError(`Corrupted summary data for ${latestKey}`, {
-          status: 500,
-        });
-  
-      return jsonResponse(summaryValidation.data, 200, origin);
+      const report = await env.REPORTS_KV.get(latestKey, { type: "json" });
+      return jsonResponse(report, 200, origin);
     }
 
     if (url.pathname === "/api/snapshot") {
@@ -471,13 +464,13 @@ async function handleFetch(
 
         const pdfBuffer = generatePdfFromReport(report as ProjectReport);
 
-        return (new Response(pdfBuffer, {
+        return new Response(pdfBuffer, {
           headers: {
             ...getCorsHeaders(origin),
             "Content-Type": "application/pdf",
             "Content-Disposition": `attachment; filename="DoR_Snapshot_${date}.pdf"`,
           },
-        }) as unknown as WorkerResponse);
+        }) as unknown as WorkerResponse;
       }
 
       if (request.method === "POST") {
@@ -586,10 +579,10 @@ async function handleFetch(
       );
     }
 
-    return (new Response(`Not Found: ${url.pathname}`, {
+    return new Response(`Not Found: ${url.pathname}`, {
       status: 404,
       headers: getCorsHeaders(origin),
-    }) as unknown as WorkerResponse);
+    }) as unknown as WorkerResponse;
   } catch (e) {
     const err =
       e instanceof ServiceError
@@ -598,7 +591,6 @@ async function handleFetch(
             status: 500,
             cause: e,
           });
-    console.error(`[ServiceError] ${err.status}: ${err.message}`, err.cause);
     // Surface the cause (e.g., Zod validation errors or PDF export errors) to the client
     return jsonResponse(
       {
@@ -607,7 +599,7 @@ async function handleFetch(
       },
       err.status,
       origin,
-    );
+    ) as WorkerResponse;
   }
 }
 
@@ -756,10 +748,12 @@ async function fetchProjectPdf(env: Env): Promise<ArrayBuffer> {
   return await response.arrayBuffer();
 }
 
-export default {
+const handler: ExportedHandler<Env> = {
   fetch: handleFetch,
-  scheduled(_controller: ScheduledController, env: Env, ctx: ExecutionContext) {
+  scheduled(_controller: any, env: Env, ctx: ExecutionContext) {
     console.log("[Auto-Archive] Starting scheduled task...");
     ctx.waitUntil(handleAutoArchive(env));
   },
-} satisfies ExportedHandler<Env>;
+};
+
+export default handler;

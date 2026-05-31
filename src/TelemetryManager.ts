@@ -1,5 +1,5 @@
-import { type DashboardState, t } from "./api-utils.js";
 import { Dashboard } from "./Dashboard.js";
+import { type DashboardState, t } from "./api-utils.js";
 
 export class TelemetryManager {
   private dashboard: Dashboard;

@@ -1,5 +1,5 @@
-import { animateCounter } from "../api-utils.js";
 import { Dashboard } from "../Dashboard.js";
+import { animateCounter } from "../api-utils.js";
 import { BrandingEngine } from "./BrandingEngine.js";
 
 export class SplashScreen {

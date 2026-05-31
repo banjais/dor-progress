@@ -1,11 +1,10 @@
+import type { Dashboard } from "./Dashboard.js";
 import {
   type DashboardState,
   type ProjectReport,
   type ProjectRow,
   getColumnKey,
 } from "./api-utils.js";
-
-import type { Dashboard } from "./Dashboard.js";
 
 // No citation needed, this is internal code.
 export class SearchManager {
