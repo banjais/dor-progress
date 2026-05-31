@@ -189,7 +189,7 @@ const hasChanges =
     .length > 0;
 
 if (hasChanges) {
-  const commitMsg = `deploy v${newVersion} [skip ci]`;
+  const commitMsg = `deploy v${newVersion}`;
 
   console.log(`📝 Commit: ${commitMsg}`);
 
