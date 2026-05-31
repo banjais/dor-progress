@@ -58,6 +58,9 @@ jobs:
       - name: Install Dependencies
         run: npm ci
 
+      - name: Ensure Node.js Binaries are Executable
+        run: chmod +x node_modules/.bin/*
+
       - name: Deploy to Cloudflare Workers
         uses: cloudflare/wrangler-action@v3
         with:
